@@ -166,6 +166,14 @@ func (s *Server) HandleAPILogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientIP := getClientIP(r)
+
+	// Check rate limiting
+	if s.isRateLimited(clientIP) {
+		http.Error(w, "Too many login attempts. Please wait 15 minutes.", http.StatusTooManyRequests)
+		return
+	}
+
 	var loginReq struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -177,6 +185,7 @@ func (s *Server) HandleAPILogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if loginReq.Username == "" || loginReq.Password == "" {
+		s.recordLoginAttempt(clientIP)
 		http.Error(w, "Username and password are required", http.StatusBadRequest)
 		return
 	}
@@ -190,9 +199,13 @@ func (s *Server) HandleAPILogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := store.Authenticate(loginReq.Username, loginReq.Password)
 	if err != nil {
+		s.recordLoginAttempt(clientIP)
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 		return
 	}
+
+	// Clear login attempts on successful authentication
+	s.clearLoginAttempts(clientIP)
 
 	// Create session
 	session, err := s.sessionManager.CreateSession(user)

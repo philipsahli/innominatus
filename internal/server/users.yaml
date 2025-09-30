@@ -1,0 +1,9 @@
+users:
+  - username: admin
+    password: admin123
+    team: platform
+    role: admin
+  - username: testuser
+    password: testpass123
+    team: engineering
+    role: developer

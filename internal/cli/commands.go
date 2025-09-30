@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"innominatus/internal/admin"
+	"innominatus/internal/database"
 	"innominatus/internal/demo"
 	"innominatus/internal/errors"
 	"innominatus/internal/goldenpaths"
@@ -16,6 +17,7 @@ import (
 	"innominatus/internal/workflow"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -729,6 +731,26 @@ func (c *Client) DemoNukeCommand() error {
 		cheatSheet.PrintProgress(fmt.Sprintf("Deleting namespace %s...", namespace))
 		if err := installer.DeleteNamespace(namespace); err != nil {
 			fmt.Printf("Warning: Failed to delete namespace %s: %v\n", namespace, err)
+		}
+	}
+
+	// Clean database using same defaults as server startup
+	cheatSheet.PrintProgress("Cleaning database tables...")
+	db, err := database.NewDatabase()
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not connect to database: %v\n", err)
+		fmt.Printf("   Skipping database cleanup. Database may not be running.\n")
+		dbName := os.Getenv("DB_NAME")
+		if dbName == "" {
+			dbName = "idp_orchestrator"
+		}
+		fmt.Printf("   To manually clean: psql -d %s -c \"TRUNCATE TABLE workflow_executions, resource_instances CASCADE;\"\n", dbName)
+	} else {
+		defer db.Close()
+		if err := db.CleanDatabase(); err != nil {
+			fmt.Printf("⚠️  Warning: Failed to clean database: %v\n", err)
+		} else {
+			cheatSheet.PrintProgress("✓ Database tables cleaned")
 		}
 	}
 

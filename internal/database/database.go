@@ -266,6 +266,31 @@ ALTER TABLE resource_dependencies ADD CONSTRAINT chk_dependency_type
 	return nil
 }
 
+// CleanDatabase truncates all tables, removing all data while preserving schema
+// This is intended for demo/testing environments only
+func (d *Database) CleanDatabase() error {
+	if d == nil || d.db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
+	// Truncate tables in order (respecting foreign key constraints)
+	// CASCADE will automatically clean child tables
+	truncateSQL := `
+-- Truncate workflow tables (CASCADE will clean workflow_step_executions)
+TRUNCATE TABLE workflow_executions CASCADE;
+
+-- Truncate resource tables (CASCADE will clean transitions, health checks, dependencies)
+TRUNCATE TABLE resource_instances CASCADE;
+`
+
+	_, err := d.db.Exec(truncateSQL)
+	if err != nil {
+		return fmt.Errorf("failed to clean database: %w", err)
+	}
+
+	return nil
+}
+
 // getEnvWithDefault returns environment variable value or default if not set
 func getEnvWithDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

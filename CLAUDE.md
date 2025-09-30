@@ -217,12 +217,13 @@ innominatus includes a complete demo environment feature that sets up a developm
 - **Kubernetes Dashboard**: Full cluster management UI with admin ServiceAccount
 - **Grafana Dashboards**: Pre-loaded with Cluster Health Dashboard for monitoring
 - **Credential Display**: Shows all service credentials and quick start guide
+- **Database Cleanup**: `demo-nuke` automatically cleans database tables using default connection settings
 
 **Architecture:**
 - All services run in dedicated Kubernetes namespaces
 - Git repository seeding creates ArgoCD Application manifests
 - Demo app deployed via Score specification
-- Complete cleanup with namespace deletion and PVC removal
+- Complete cleanup with namespace deletion, PVC removal, and database table truncation (localhost:5432/idp_orchestrator)
 
 The demo environment is perfect for:
 - Testing Score specifications and workflow development
