@@ -124,7 +124,7 @@ The new workflow types are automatically available in the existing server. Just 
 
 ```bash
 # Deploy a spec with TFE workflow
-./idp-o-ctl deploy example-tfe-workflow.yaml
+./innominatus-ctl deploy example-tfe-workflow.yaml
 ```
 
 ## Implementation Details

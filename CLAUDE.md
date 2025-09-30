@@ -108,9 +108,6 @@ go build -o innominatus cmd/server/main.go
 
 **Use the CLI:**
 ```bash
-# Deploy a Score spec
-./innominatus-ctl deploy score-spec.yaml
-
 # List deployed applications
 ./innominatus-ctl list
 
@@ -303,8 +300,8 @@ For development, you can also run directly:
 # Run server in development
 go run cmd/server/main.go
 
-# Run CLI commands in development  
-go run cmd/cli/main.go deploy score-spec.yaml
+# Run CLI commands in development
+go run cmd/cli/main.go run deploy-app score-spec.yaml
 
 # Run workflow from Score spec
 go run . score-spec-with-workflow.yaml

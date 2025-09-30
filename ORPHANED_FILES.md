@@ -116,7 +116,7 @@ test-build
 test-lifecycle
 test-server
 idp-o
-idp-o-ctl
+innominatus-ctl
 main
 
 # Next.js

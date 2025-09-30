@@ -73,14 +73,6 @@ func main() {
 		}
 	}
 	switch command {
-	case "deploy":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: deploy command requires a file path\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s deploy <score-spec.yaml>\n", os.Args[0])
-			os.Exit(1)
-		}
-		err = client.DeployCommand(flag.Args()[1])
-
 	case "list":
 		err = client.ListCommand(*details)
 
@@ -236,7 +228,6 @@ func printUsage() {
 	fmt.Printf("Open Alps CLI\n\n")
 	fmt.Printf("Usage: %s [--server <url>] <command> [arguments]\n\n", os.Args[0])
 	fmt.Printf("Commands:\n")
-	fmt.Printf("  deploy <file>         Deploy Score spec to orchestrator\n")
 	fmt.Printf("  list                  List all deployed applications\n")
 	fmt.Printf("  status <name>         Show application status and resources\n")
 	fmt.Printf("  validate <file>       Validate Score spec locally\n")
@@ -263,7 +254,6 @@ func printUsage() {
 	fmt.Printf("Options:\n")
 	fmt.Printf("  --server <url>        Orchestrator server URL (default: http://localhost:8081)\n\n")
 	fmt.Printf("Examples:\n")
-	fmt.Printf("  %s deploy score-spec.yaml\n", os.Args[0])
 	fmt.Printf("  %s list\n", os.Args[0])
 	fmt.Printf("  %s status product-service\n", os.Args[0])
 	fmt.Printf("  %s validate score-spec.yaml\n", os.Args[0])

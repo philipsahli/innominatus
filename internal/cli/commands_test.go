@@ -23,45 +23,6 @@ func TestNewClient(t *testing.T) {
 	// We can only test that the client was created successfully
 }
 
-func TestDeployCommand(t *testing.T) {
-	// Create test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/api/specs" {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		fmt.Fprintf(w, `{"message": "Application deployed successfully", "environment": "test-env"}`)
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL)
-
-	// Create temporary test file
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test-spec.yaml")
-	testContent := `apiVersion: score.dev/v1b1
-metadata:
-  name: test-app
-containers:
-  web:
-    image: nginx:latest`
-
-	err := ioutil.WriteFile(testFile, []byte(testContent), 0644)
-	require.NoError(t, err)
-
-	// Test successful deployment
-	err = client.DeployCommand(testFile)
-	assert.NoError(t, err)
-
-	// Test file not found
-	err = client.DeployCommand("nonexistent-file.yaml")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read file")
-}
-
 func TestListCommand(t *testing.T) {
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

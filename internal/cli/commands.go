@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"os/exec"
-	"path/filepath"
 	"innominatus/internal/admin"
 	"innominatus/internal/demo"
 	"innominatus/internal/errors"
@@ -18,31 +14,16 @@ import (
 	"innominatus/internal/users"
 	"innominatus/internal/validation"
 	"innominatus/internal/workflow"
+	"io/ioutil"
+	"net/http"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
-
-func (c *Client) DeployCommand(filename string) error {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", filename, err)
-	}
-
-	result, err := c.Deploy(data)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("✓ %s\n", result.Message)
-	if result.Environment != "" {
-		fmt.Printf("✓ %s\n", result.Environment)
-	}
-
-	return nil
-}
 
 func (c *Client) ListCommand(showDetails bool) error {
 	specs, err := c.ListSpecs()
@@ -177,7 +158,7 @@ func (c *Client) StatusCommand(name string) error {
 		if resourceMap, ok := resource.(map[string]interface{}); ok {
 			if resourceType, ok := resourceMap["Type"].(string); ok {
 				fmt.Printf("  - %s (type: %s)\n", resourceName, resourceType)
-				
+
 				// Show parameters if present
 				if params, ok := resourceMap["Params"].(map[string]interface{}); ok && len(params) > 0 {
 					for key, value := range params {
@@ -553,7 +534,7 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 
 	// Ensure we have authentication
 	if c.token == "" {
-		return fmt.Errorf("authentication required: please login first with './idp-o-ctl login'")
+		return fmt.Errorf("authentication required: please login first with './innominatus-ctl login'")
 	}
 
 	// Make API request to server for golden path execution
@@ -1055,7 +1036,7 @@ func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
 	fmt.Printf("   Expires: %s\n", apiKey.ExpiresAt.Format(time.RFC3339))
 	fmt.Printf("\n💡 Store this API key securely. You can use it with:\n")
 	fmt.Printf("   export IDP_API_KEY=%s\n", apiKey.Key)
-	fmt.Printf("   ./idp-o-ctl list\n")
+	fmt.Printf("   ./innominatus-ctl list\n")
 
 	return nil
 }

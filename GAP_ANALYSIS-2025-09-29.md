@@ -46,7 +46,7 @@ The user requested a comprehensive gap analysis for their graph-based IDP Orches
 ### **Current DevEx State Assessment**
 
 #### ✅ **Strengths**
-- **Clear CLI Interface**: `idp-o-ctl` commands are intuitive (`deploy`, `list`, `status`, `validate`)
+- **Clear CLI Interface**: `innominatus-ctl` commands are intuitive (`deploy`, `list`, `status`, `validate`)
 - **Golden Paths Support**: Pre-defined workflows reduce cognitive load
 - **Demo Environment**: Complete local development setup with Docker Desktop
 - **Web UI Visualization**: Real-time graph visualization helps understanding
