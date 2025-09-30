@@ -1,0 +1,53 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: ecommerce-web
+  # Product metadata for workflow resolution
+  product: ecommerce
+  team: ecommerce-frontend-team
+  costCenter: engineering
+  environment: development
+
+containers:
+  web:
+    image: nginx:latest
+    variables:
+      APP_NAME: ecommerce-web
+      ENVIRONMENT: ${metadata.environment}
+      PRODUCT: ${metadata.product}
+
+resources:
+  # Database resource for the ecommerce application
+  database:
+    type: postgres
+    params:
+      size: "10GB"
+      version: "13"
+
+  # Redis cache for session storage
+  cache:
+    type: redis
+    params:
+      memory: "1GB"
+      version: "6.2"
+
+  # Vault space for secrets management
+  secrets:
+    type: vault-space
+    params:
+      secrets:
+        - name: app-config
+        - name: database-credentials
+        - name: api-keys
+        - name: payment-credentials
+
+  # Ingress for external access
+  ingress:
+    type: route
+    params:
+      host: ecommerce.localtest.me
+      tls: true
+
+# Environment configuration
+environment:
+  type: development
+  ttl: "7d"

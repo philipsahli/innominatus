@@ -1,0 +1,650 @@
+openapi: 3.0.0
+info:
+  title: innominatus API
+  description: API for Score spec parsing and dependency graph visualization
+  version: 1.0.0
+  contact:
+    name: innominatus
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+paths:
+  /:
+    get:
+      summary: Get web UI
+      description: Returns the HTML web interface for visualizing Score dependency graphs
+      operationId: getWebUI
+      tags:
+        - UI
+      responses:
+        '200':
+          description: HTML web interface
+          content:
+            text/html:
+              schema:
+                type: string
+                example: "<!DOCTYPE html><html>..."
+
+  /api/specs:
+    get:
+      summary: List all deployed specs
+      description: Returns all deployed Score specifications
+      operationId: listSpecs
+      tags:
+        - Specs
+      responses:
+        '200':
+          description: List of deployed specs
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/SpecResponse'
+    post:
+      summary: Deploy new Score spec
+      description: Deploy a new Score specification to the orchestrator
+      operationId: deploySpec
+      tags:
+        - Specs
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: '#/components/schemas/ScoreSpec'
+      responses:
+        '201':
+          description: Successfully deployed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeployResponse'
+        '400':
+          description: Invalid YAML or request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/specs/{name}:
+    get:
+      summary: Get specific spec details
+      description: Returns details of a specific deployed spec
+      operationId: getSpec
+      tags:
+        - Specs
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the spec
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Spec details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpecResponse'
+        '404':
+          description: Spec not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete deployed spec
+      description: Removes a deployed spec from the orchestrator
+      operationId: deleteSpec
+      tags:
+        - Specs
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Name of the spec to delete
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Spec not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/environments:
+    get:
+      summary: List active environments
+      description: Returns all active environments
+      operationId: listEnvironments
+      tags:
+        - Environments
+      responses:
+        '200':
+          description: List of environments
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/Environment'
+
+  /api/workflows:
+    get:
+      summary: List workflow executions
+      description: Returns workflow execution history with optional filtering
+      operationId: listWorkflows
+      tags:
+        - Workflows
+      parameters:
+        - name: app
+          in: query
+          description: Filter by application name
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of results (default 50, max 100)
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          description: Number of results to skip (default 0)
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of workflow executions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkflowExecution'
+
+  /api/workflows/{id}:
+    get:
+      summary: Get workflow execution details
+      description: Returns details of a specific workflow execution
+      operationId: getWorkflow
+      tags:
+        - Workflows
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Workflow execution ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Workflow execution details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecution'
+        '404':
+          description: Workflow not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/teams:
+    get:
+      summary: List teams
+      description: Returns all teams in the system
+      operationId: listTeams
+      tags:
+        - Teams
+      responses:
+        '200':
+          description: List of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+    post:
+      summary: Create new team
+      description: Creates a new team
+      operationId: createTeam
+      tags:
+        - Teams
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Team created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Team already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/teams/{id}:
+    get:
+      summary: Get team details
+      description: Returns details of a specific team
+      operationId: getTeam
+      tags:
+        - Teams
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404':
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete team
+      description: Deletes a team (cannot delete default team)
+      operationId: deleteTeam
+      tags:
+        - Teams
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '403':
+          description: Cannot delete default team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/graph:
+    get:
+      summary: Get dependency graph data (legacy)
+      description: Legacy endpoint for backward compatibility
+      operationId: getGraphData
+      tags:
+        - Legacy
+      responses:
+        '200':
+          description: Score spec data with dependency graph
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpecResponse'
+
+  /swagger:
+    get:
+      summary: Get Swagger UI
+      description: Returns the Swagger UI for API documentation
+      operationId: getSwaggerUI
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  schemas:
+    SpecResponse:
+      type: object
+      required:
+        - metadata
+        - containers
+        - resources
+        - graph
+      properties:
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        containers:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Container'
+        resources:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Resource'
+        environment:
+          $ref: '#/components/schemas/Environment'
+        graph:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          description: Map of container names to their resource dependencies
+          example:
+            "container:main": ["db", "bucket"]
+
+    GraphResponse:
+      allOf:
+        - $ref: '#/components/schemas/SpecResponse'
+
+    ScoreSpec:
+      type: object
+      required:
+        - apiVersion
+        - metadata
+        - containers
+      properties:
+        apiVersion:
+          type: string
+          example: "score.dev/v1b1"
+        metadata:
+          $ref: '#/components/schemas/Metadata'
+        containers:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Container'
+        resources:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/Resource'
+        environment:
+          $ref: '#/components/schemas/Environment'
+        workflows:
+          type: object
+          additionalProperties:
+            type: object
+
+    DeployResponse:
+      type: object
+      required:
+        - message
+        - name
+      properties:
+        message:
+          type: string
+          example: "Successfully deployed 'product-service'"
+        name:
+          type: string
+          example: "product-service"
+        environment:
+          type: string
+          example: "Creating ephemeral environment with TTL=24h"
+
+    Metadata:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Application name from Score spec
+          example: "product-service"
+
+    Container:
+      type: object
+      required:
+        - image
+      properties:
+        image:
+          type: string
+          description: Container image reference
+          example: "ghcr.io/example/product-service:1.0.0"
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+          description: Environment variables for the container
+          example:
+            DBCONN: "postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.name}"
+            BUCKET_NAME: "${resources.bucket.name}"
+
+    Resource:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          description: Resource type
+          example: "postgres"
+          enum:
+            - postgres
+            - s3
+            - route
+            - redis
+            - volume
+        params:
+          type: object
+          additionalProperties: true
+          description: Optional resource parameters
+          example:
+            path: "/products"
+            port: 3000
+
+    Environment:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - ephemeral
+            - persistent
+          example: "ephemeral"
+        ttl:
+          type: string
+          description: Time to live for ephemeral environments
+          example: "24h"
+        status:
+          type: string
+          example: "active"
+        createdAt:
+          type: string
+          format: date-time
+        resources:
+          type: array
+          items:
+            type: string
+
+    WorkflowExecution:
+      type: object
+      required:
+        - id
+        - appName
+        - status
+        - createdAt
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        appName:
+          type: string
+          example: "product-service"
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - completed
+            - failed
+          example: "completed"
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowStep'
+
+    WorkflowStep:
+      type: object
+      required:
+        - id
+        - name
+        - status
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          example: "Build container"
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - completed
+            - failed
+        output:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Team:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - created_at
+        - members
+      properties:
+        id:
+          type: string
+          description: Unique team identifier
+          example: "backend-team"
+        name:
+          type: string
+          description: Human-readable team name
+          example: "Backend Team"
+        description:
+          type: string
+          description: Team description
+          example: "Team responsible for backend services"
+        created_at:
+          type: string
+          format: date-time
+          description: Team creation timestamp
+        members:
+          type: array
+          items:
+            type: string
+          description: List of team member emails
+          example: ["john@example.com", "jane@example.com"]
+
+    CreateTeamRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Team name
+          example: "Backend Team"
+        description:
+          type: string
+          description: Team description
+          example: "Team responsible for backend services"
+
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "No spec loaded"
+
+tags:
+  - name: UI
+    description: Web interface endpoints
+  - name: Specs
+    description: Score specification management
+  - name: Environments
+    description: Environment management
+  - name: Workflows
+    description: Workflow execution tracking
+  - name: Teams
+    description: Team management
+  - name: Legacy
+    description: Legacy API endpoints for backward compatibility
+  - name: Documentation
+    description: API documentation endpoints

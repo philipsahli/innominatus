@@ -1,0 +1,86 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: undeploy-app
+  description: Undeploy application and clean up infrastructure with GitOps integration
+spec:
+  steps:
+    - name: verify-application-exists
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+          echo "🔍 Verifying application exists for undeploy: ${metadata.name}"
+
+          NAMESPACE="${metadata.name}-${environment.type}"
+
+          # Check if namespace exists
+          if kubectl get namespace ${NAMESPACE} &>/dev/null; then
+            echo "✅ Found namespace: ${NAMESPACE}"
+          else
+            echo "⚠️  Namespace ${NAMESPACE} not found - application may already be undeployed"
+          fi
+
+          # Check if ArgoCD application exists
+          if kubectl get application ${metadata.name}-${environment.type} -n argocd &>/dev/null; then
+            echo "✅ Found ArgoCD application: ${metadata.name}-${environment.type}"
+          else
+            echo "⚠️  ArgoCD application not found - may already be removed"
+          fi
+
+    - name: remove-argocd-application
+      type: argocd-delete
+      appName: "${metadata.name}-${environment.type}"
+      cascadeDelete: true
+
+    - name: undeploy-application
+      type: kubernetes-delete
+      config:
+        namespace: "${metadata.name}-${environment.type}"
+        manifests: ["deployment.yaml", "service.yaml"]
+        deleteNamespace: true
+
+    - name: remove-monitoring
+      type: ansible
+      config:
+        playbook: "monitoring-cleanup.yml"
+
+    - name: deprovision-infrastructure
+      type: terraform
+      config:
+        workspace: "infra"
+        commands:
+          - destroy
+          - clean
+
+    - name: archive-git-repository
+      type: gitea-archive
+      repoName: "${metadata.name}"
+      archiveReason: "Application undeployed via golden path"
+
+    - name: verify-cleanup
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+          echo "🔍 Verifying cleanup completion for: ${metadata.name}"
+
+          NAMESPACE="${metadata.name}-${environment.type}"
+
+          # Verify namespace is removed
+          if kubectl get namespace ${NAMESPACE} &>/dev/null; then
+            echo "❌ Warning: Namespace ${NAMESPACE} still exists"
+          else
+            echo "✅ Namespace ${NAMESPACE} successfully removed"
+          fi
+
+          # Verify ArgoCD application is removed
+          if kubectl get application ${metadata.name}-${environment.type} -n argocd &>/dev/null; then
+            echo "❌ Warning: ArgoCD application still exists"
+          else
+            echo "✅ ArgoCD application successfully removed"
+          fi
+
+          echo "✅ Undeploy verification completed"

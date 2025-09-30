@@ -1,0 +1,14 @@
+---
+- name: Database Setup Playbook
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Create database setup marker
+      local_action:
+        module: copy
+        content: "Database configured successfully by Ansible!"
+        dest: ./ansible/db_configured.txt
+        
+    - name: Display setup completion
+      debug:
+        msg: "Database configuration completed successfully"

@@ -1,0 +1,25 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: observability-setup
+  description: Setup monitoring and observability stack
+spec:
+  steps:
+    - name: deploy-prometheus
+      type: kubernetes
+      config:
+        namespace: "monitoring"
+        manifests: ["prometheus.yaml"]
+    - name: deploy-grafana
+      type: kubernetes
+      config:
+        namespace: "monitoring"
+        manifests: ["grafana.yaml"]
+    - name: configure-alerts
+      type: ansible
+      config:
+        playbook: "alerting-setup.yml"
+    - name: setup-dashboards
+      type: ansible
+      config:
+        playbook: "dashboard-import.yml"

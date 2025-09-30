@@ -1,0 +1,30 @@
+apiVersion: workflow.dev/v1
+kind: ProductWorkflow
+metadata:
+  name: data-pipeline
+  description: Analytics data pipeline setup and configuration
+  product: analytics
+  owner: analytics-infrastructure-team
+  phase: pre-deployment
+spec:
+  triggers:
+    - product_deployment
+  steps:
+    - name: provision-data-lake
+      type: terraform
+      path: "./terraform/analytics/data-lake"
+    - name: setup-kafka-streams
+      type: kubernetes
+      namespace: "analytics-streaming"
+      config:
+        manifests: "./k8s/kafka"
+    - name: configure-spark-cluster
+      type: kubernetes
+      namespace: "analytics-processing"
+      config:
+        manifests: "./k8s/spark"
+    - name: setup-data-catalog
+      type: database-schema
+      config:
+        schema: "./schemas/data-catalog.sql"
+        migrations: "./migrations/analytics"

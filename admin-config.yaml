@@ -1,0 +1,86 @@
+admin:
+  defaultCostCenter: "engineering"
+  defaultRuntime: "kubernetes"
+  splunkIndex: "orchestrator-logs"
+
+resourceDefinitions:
+  postgres: "managed-postgres-cluster"
+  redis: "redis-cluster"
+  volume: "persistent-volume-claim"
+  route: "ingress-route"
+  vault-space: "vault-application-namespace"
+
+policies:
+  enforceBackups: true
+  allowedEnvironments:
+    - "development"
+    - "staging"
+    - "production"
+
+workflowPolicies:
+  # Root workflows directory
+  workflowsRoot: "./workflows"
+
+  # Required platform workflows that must run for all deployments
+  requiredPlatformWorkflows:
+    - security-scan
+    - cost-monitoring
+
+  # Product workflows that are allowed to run
+  allowedProductWorkflows:
+    - ecommerce/database-setup
+    - ecommerce/payment-integration
+    - analytics/data-pipeline
+
+  # Override policies - who can override what
+  workflowOverrides:
+    platform: true   # Platform workflows can override product workflows
+    product: true    # Product workflows can override application workflows
+
+  # Execution constraints
+  maxWorkflowDuration: "30m"
+  maxConcurrentWorkflows: 10
+  maxStepsPerWorkflow: 50
+
+  # Security policies
+  security:
+    requireApproval:
+      - production
+    allowedExecutors:
+      - platform-team
+      - infrastructure-teams
+    secretsAccess:
+      vault: "read-only"
+      kubernetes: "namespace-scoped"
+
+  # Allowed step types for security
+  allowedStepTypes:
+    - terraform
+    - kubernetes
+    - ansible
+    - database-migration
+    - vault-setup
+    - monitoring
+    - validation
+    - security
+    - policy
+    - tagging
+    - cost-analysis
+    - resource-provisioning
+
+gitea:
+  url: "http://gitea.localtest.me"
+  internalURL: "http://gitea-http.gitea.svc.cluster.local:3000"
+  username: "giteaadmin"
+  password: "admin"
+  orgName: "platform-team"
+
+argocd:
+  url: "http://argocd.localtest.me"
+  username: "admin"
+  password: "admin123"
+
+vault:
+  url: "http://vault.localtest.me"
+  token: "root"
+  namespace: ""

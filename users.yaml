@@ -1,0 +1,33 @@
+users:
+    - username: admin
+      password: admin123
+      team: platform
+      role: admin
+      api_keys:
+        - key: dc07a063c13a4b10cea4518c3caa76290da7404557b8a35683d3e9b5b5c01283
+          name: test-key
+          created_at: 2025-09-24T21:13:16.239792+02:00
+          last_used_at: 2025-09-24T21:14:36.280085+02:00
+          expires_at: 0001-01-01T00:00:00Z
+        - key: 5bf80ac9bb8f1dfb39db0af78fd922a2874530f093a8da75c3f6daf6aa0161a2
+          name: valid-key
+          created_at: 2025-09-24T21:17:19.463202+02:00
+          last_used_at: 2025-09-24T21:17:46.031539+02:00
+          expires_at: 2025-10-01T21:17:19.463203+02:00
+        - key: cf1d1f5afb8c1f1b2e17079c835b1f22d3719f651b4673f1bc4e3a006ebeb5db
+          name: cli-key
+          created_at: 2025-09-25T11:04:05.646963+02:00
+          last_used_at: 2025-09-30T17:58:00.680866+02:00
+          expires_at: 2025-12-24T11:04:05.646963+01:00
+    - username: alice
+      password: alice123
+      team: frontend
+      role: user
+    - username: bob
+      password: bob123
+      team: backend
+      role: user
+    - username: charlie
+      password: charlie123
+      team: platform
+      role: user

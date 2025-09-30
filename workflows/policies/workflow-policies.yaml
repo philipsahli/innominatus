@@ -1,0 +1,53 @@
+apiVersion: workflow.dev/v1
+kind: WorkflowPolicies
+metadata:
+  name: organization-workflow-policies
+  description: Organization-wide workflow execution policies
+  owner: platform-team
+spec:
+  # Required platform workflows that must run for all deployments
+  requiredPlatformWorkflows:
+    - security-scan
+    - cost-monitoring
+
+  # Product workflows that are allowed to run
+  allowedProductWorkflows:
+    - ecommerce/database-setup
+    - ecommerce/payment-integration
+    - analytics/data-pipeline
+
+  # Override policies - who can override what
+  workflowOverrides:
+    platform: true   # Platform workflows can override product workflows
+    product: true    # Product workflows can override application workflows
+
+  # Execution constraints
+  maxWorkflowDuration: "30m"
+
+  # Security policies
+  security:
+    requireApproval:
+      - production
+    allowedExecutors:
+      - platform-team
+      - infrastructure-teams
+    secretsAccess:
+      vault: "read-only"
+      kubernetes: "namespace-scoped"
+
+  # Resource constraints
+  resources:
+    maxConcurrentWorkflows: 10
+    maxStepsPerWorkflow: 50
+    allowedStepTypes:
+      - terraform
+      - kubernetes
+      - ansible
+      - database-migration
+      - vault-setup
+      - monitoring
+      - validation
+      - security
+      - policy
+      - tagging
+      - cost-analysis

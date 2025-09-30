@@ -1,0 +1,4 @@
+steps:
+  - name: dummy-step
+    type: dummy
+    path: ""

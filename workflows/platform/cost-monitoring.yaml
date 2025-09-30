@@ -1,0 +1,24 @@
+apiVersion: workflow.dev/v1
+kind: PlatformWorkflow
+metadata:
+  name: cost-monitoring
+  description: Cost tracking and budget enforcement
+  owner: platform-team
+  phase: post-deployment
+spec:
+  triggers:
+    - all_deployments
+  steps:
+    - name: resource-tagging
+      type: tagging
+      config:
+        tags:
+          cost-center: "${metadata.costCenter}"
+          environment: "${environment.type}"
+          team: "${metadata.team}"
+    - name: budget-check
+      type: cost-analysis
+      config:
+        budgetLimit: "${admin.defaultBudget}"
+        alertThreshold: 80
+        enforceLimit: true

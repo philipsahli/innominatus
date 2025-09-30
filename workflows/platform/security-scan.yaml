@@ -1,0 +1,22 @@
+apiVersion: workflow.dev/v1
+kind: PlatformWorkflow
+metadata:
+  name: security-scan
+  description: Organization-wide security scanning
+  owner: platform-team
+  phase: pre-deployment
+spec:
+  triggers:
+    - all_deployments
+  steps:
+    - name: vulnerability-scan
+      type: security
+      config:
+        scanner: "trivy"
+        severityThreshold: "HIGH"
+        failOnVulnerabilities: true
+    - name: compliance-check
+      type: policy
+      config:
+        engine: "opa"
+        policies: ["cis-benchmark", "pci-dss"]

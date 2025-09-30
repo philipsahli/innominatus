@@ -1,0 +1,27 @@
+apiVersion: workflow.dev/v1
+kind: ProductWorkflow
+metadata:
+  name: payment-integration
+  description: Payment service integration and configuration
+  product: ecommerce
+  owner: ecommerce-infrastructure-team
+  phase: deployment
+spec:
+  triggers:
+    - product_deployment
+  steps:
+    - name: setup-payment-vault
+      type: vault-setup
+      config:
+        secrets: ["stripe-api-key", "paypal-client-secret", "payment-webhook-secret"]
+        policies: ["payment-service-read", "payment-audit-write"]
+    - name: configure-payment-gateway
+      type: kubernetes
+      namespace: "${application.name}-payment"
+      config:
+        manifests: "./k8s/payment-gateway"
+    - name: verify-payment-connectivity
+      type: validation
+      config:
+        healthChecks: ["stripe-connectivity", "paypal-connectivity"]
+        timeout: "30s"

@@ -1,0 +1,6 @@
+goldenpaths:
+  deploy-app: ./workflows/deploy-app.yaml
+  undeploy-app: ./workflows/undeploy-app.yaml
+  ephemeral-env: ./workflows/ephemeral-env.yaml
+  db-lifecycle: ./workflows/db-lifecycle.yaml
+  observability-setup: ./workflows/observability-setup.yaml

@@ -1,0 +1,40 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: web-application
+
+#workflows:
+#  setup:
+#    steps:
+ #   - name: "Create platform configuration repository"
+ #     type: "gitea-repo"
+ #     repoName: "platform-config"
+ #     description: "GitOps platform configuration repository for automated deployments"
+ #     private: false
+ #     owner: "platform-team"
+
+  #  - name: "Create application repository"
+  #    type: "gitea-repo"
+  #    repoName: "web-application"
+  #    description: "Sample application repository"
+  #    private: false
+
+  #  - name: "Generate and commit Kubernetes manifests"
+  #    type: "git-commit-manifests"
+  #    repoName: "web-application"
+  #    manifestPath: "."
+
+  #  - name: "Onboard repository to ArgoCD"
+  #    type: "argocd-app"
+  #    repoName: "web-application"
+  #    appName: "web-application-dev"
+  #    targetPath: "."
+  #    namespace: "web-application-development"
+  #    syncPolicy: "auto"
+
+containers:
+  web:
+    image: nginx:latest
+    variables:
+      APP_NAME: platform-config
+
+resources: {}

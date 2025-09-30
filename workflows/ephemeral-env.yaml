@@ -1,0 +1,22 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: ephemeral-env
+  description: Create temporary environment for testing
+spec:
+  steps:
+    - name: create-namespace
+      type: kubernetes
+      config:
+        namespace: "ephemeral-${metadata.name}-${timestamp}"
+        manifests: ["namespace.yaml"]
+    - name: deploy-minimal-stack
+      type: kubernetes
+      config:
+        namespace: "ephemeral-${metadata.name}-${timestamp}"
+        manifests: ["deployment.yaml", "service.yaml"]
+    - name: setup-cleanup-job
+      type: kubernetes
+      config:
+        namespace: "ephemeral-${metadata.name}-${timestamp}"
+        manifests: ["cleanup-cronjob.yaml"]

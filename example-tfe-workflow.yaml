@@ -1,0 +1,40 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: postgres-app
+
+containers:
+  web:
+    image: postgres:15
+    variables:
+      POSTGRES_DB: "appdb"
+      POSTGRES_USER: "appuser"
+
+resources:
+  postgres:
+    type: postgres
+    params:
+      version: "15"
+      size: "large"
+
+workflows:
+  provision-db-via-tfe:
+    steps:
+      - name: generate-tf
+        type: terraform-generate
+        resource: postgres
+        outputDir: ./tmp-tf
+
+      - name: push-to-git
+        type: git-pr
+        repo: git@github.com:org/infrastructure.git
+        branch: feature/provision-db
+        commitMessage: "Provision new Postgres DB via Orchestrator"
+
+      - name: wait-for-merge
+        type: git-check-pr
+        repo: git@github.com:org/infrastructure.git
+        branch: feature/provision-db
+
+      - name: wait-for-tfe
+        type: tfe-status
+        workspace: db-workspace

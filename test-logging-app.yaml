@@ -1,0 +1,46 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: test-logging-app
+
+containers:
+  main:
+    image: nginx:1.21
+    variables:
+      SERVER_NAME: ${resources.hostname.value}
+      DATABASE_URL: postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.name}
+
+resources:
+  hostname:
+    type: route
+    params:
+      value: "web.example.com"
+      port: 80
+
+  db:
+    type: postgres
+    params:
+      host: "postgres-service"
+      port: 5432
+      name: "webdb"
+      username: "webuser"
+      password: "secretpass"
+
+  storage:
+    type: volume
+    params:
+      size: "2Gi"
+      mountPath: "/var/www/html"
+
+environment:
+  type: development
+  ttl: 24h
+
+workflows:
+  deploy:
+    steps:
+      - name: provision-infra
+        type: terraform
+        path: ./terraform/infra
+      - name: deploy-app
+        type: kubernetes
+        namespace: web-service-dev

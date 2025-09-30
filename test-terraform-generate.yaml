@@ -1,0 +1,19 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: postgres-app
+
+containers:
+  web:
+    image: postgres:15
+
+resources:
+  postgres:
+    type: postgres
+
+workflows:
+  test-generate:
+    steps:
+      - name: generate-tf
+        type: terraform-generate
+        resource: postgres
+        outputDir: ./tmp-tf

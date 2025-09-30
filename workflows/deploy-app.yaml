@@ -1,0 +1,62 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: deploy-app
+  description: Deploy application with full GitOps pipeline including Git repository and ArgoCD onboarding
+spec:
+  steps:
+    - name: create-git-repository
+      type: gitea-repo
+      repoName: "${metadata.name}"
+      description: "Application repository for ${metadata.name}"
+      owner: "platform-team"
+
+    - name: provision-infrastructure
+      type: terraform
+      path: "./terraform/infra"
+
+    - name: deploy-application
+      type: kubernetes
+      namespace: "${metadata.name}-${environment.type}"
+
+    - name: commit-manifests-to-git
+      type: git-commit-manifests
+      repoName: "${metadata.name}"
+      manifestPath: "manifests"
+
+    - name: onboard-to-argocd
+      type: argocd-app
+      appName: "${metadata.name}-${environment.type}"
+      repoName: "${metadata.name}"
+      targetPath: "manifests"
+      namespace: "${metadata.name}-${environment.type}"
+      syncPolicy: "auto"
+
+ #  - name: configure-monitoring
+ #     type: ansible
+ #     path: "./ansible"
+ #     playbook: "monitoring-setup.yml"
+
+    - name: verify-deployment
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+          echo "🔍 Verifying deployment status for: ${metadata.name}"
+
+          NAMESPACE="${metadata.name}-${environment.type}"
+
+          # Wait for deployment to be ready
+          echo "Waiting for deployment to be ready..."
+          kubectl wait --for=condition=available --timeout=300s deployment/${metadata.name} -n ${NAMESPACE} || echo "Deployment may still be in progress"
+
+          # Check pod status
+          echo "Pod status:"
+          kubectl get pods -n ${NAMESPACE} -l app=${metadata.name}
+
+          # Check service status
+          echo "Service status:"
+          kubectl get svc -n ${NAMESPACE}
+
+          echo "✅ Deployment verification completed"

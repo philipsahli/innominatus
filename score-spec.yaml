@@ -1,0 +1,18 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: my-app3
+containers:
+  main:
+    image: nginx:latest
+    ports:
+      - name: http
+        port: 80
+        protocol: TCP
+resources:
+  db:
+    type: postgres
+    params:
+      size: small
+environment:
+  type: kubernetes
+  ttl: 1h

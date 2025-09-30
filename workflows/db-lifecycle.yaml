@@ -1,0 +1,22 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: db-lifecycle
+  description: Manage database lifecycle operations
+spec:
+  steps:
+    - name: backup-database
+      type: ansible
+      config:
+        playbook: "db-backup.yml"
+        vars:
+          database_name: "${resources.db.name}"
+    - name: run-migrations
+      type: kubernetes
+      config:
+        namespace: "${metadata.name}-${environment.type}"
+        manifests: ["migration-job.yaml"]
+    - name: verify-health
+      type: ansible
+      config:
+        playbook: "db-health-check.yml"

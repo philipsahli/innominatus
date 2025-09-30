@@ -1,0 +1,25 @@
+apiVersion: workflow.dev/v1
+kind: ProductWorkflow
+metadata:
+  name: database-setup
+  description: Database provisioning and configuration for ecommerce platform
+  product: ecommerce
+  owner: ecommerce-infrastructure-team
+  phase: pre-deployment
+spec:
+  triggers:
+    - product_deployment
+  steps:
+    - name: provision-database
+      type: terraform
+      path: "./terraform/database"
+    - name: configure-migrations
+      type: database-migration
+      config:
+        migrationPath: "./migrations"
+        connectionString: "${terraform.database_connection_string}"
+    - name: setup-monitoring
+      type: monitoring
+      config:
+        service: "postgresql"
+        alerts: ["connection_count", "query_performance", "disk_usage"]

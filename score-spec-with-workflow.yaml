@@ -1,0 +1,37 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: database-service
+
+containers:
+  main:
+    image: postgres:13
+    variables:
+      POSTGRES_DB: ${resources.db.name}
+      POSTGRES_USER: ${resources.db.username}
+      POSTGRES_PASSWORD: ${resources.db.password}
+
+resources:
+  db:
+    type: postgres
+    params:
+      name: "myapp_db"
+      username: "dbuser"
+      password: "secretpassword"
+  storage:
+    type: volume
+    params:
+      size: "10Gi"
+
+environment:
+  type: ephemeral
+  ttl: 2h
+
+#workflows:
+#  provision-db:
+#    steps:
+#      - name: terraform-provision
+#        type: terraform
+#        path: ./terraform/db
+#      - name: ansible-setup
+#        playbook: ./ansible/db-setup.yml
+#        type: ansible

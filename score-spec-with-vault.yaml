@@ -1,0 +1,42 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: vault-demo-app
+containers:
+  main:
+    image: nginx:latest
+    ports:
+      - name: http
+        port: 80
+        protocol: TCP
+    variables:
+      # These will be populated from vault-space secrets
+      DATABASE_URL: ${resources.secrets.outputs.database-url}
+      API_KEY: ${resources.secrets.outputs.api-key}
+      APP_CONFIG: ${resources.secrets.outputs.app-config}
+resources:
+  db:
+    type: postgres
+    params:
+      size: small
+  secrets:
+    type: vault-space
+    params:
+      secrets:
+        - name: database-credentials
+          keys:
+            - database-url
+            - username
+            - password
+        - name: api-keys
+          keys:
+            - api-key
+            - webhook-secret
+        - name: app-config
+          keys:
+            - app-config
+            - feature-flags
+      sync_to_namespace: true
+      auto_rotate: true
+environment:
+  type: kubernetes
+  ttl: 24h
