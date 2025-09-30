@@ -2136,7 +2136,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	} else if resp.StatusCode != 201 {
 		errMsg := fmt.Sprintf("Failed to create repository, status %d: %s", resp.StatusCode, string(body))
 		logBuffer.Write([]byte(errMsg))
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("failed to create repository, status %d: %s", resp.StatusCode, string(body))
 	} else {
 		logBuffer.Write([]byte("Repository created successfully"))
 	}

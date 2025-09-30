@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
@@ -14,19 +11,25 @@ type Client struct {
 	baseURL string
 	client  *http.Client
 	token   string
+	http    *HTTPHelper // HTTP helper for common operations
 }
 
 func NewClient(baseURL string) *Client {
-	client := &Client{
-		baseURL: baseURL,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second,
 	}
 
+	token := ""
 	// Check for API key in environment variable
 	if apiKey := os.Getenv("IDP_API_KEY"); apiKey != "" {
-		client.token = apiKey
+		token = apiKey
+	}
+
+	client := &Client{
+		baseURL: baseURL,
+		client:  httpClient,
+		token:   token,
+		http:    newHTTPHelper(baseURL, httpClient, token),
 	}
 
 	return client
@@ -85,343 +88,89 @@ func (c *Client) Login(username, password string) error {
 		"password": password,
 	}
 
-	jsonData, err := json.Marshal(loginData)
-	if err != nil {
-		return fmt.Errorf("failed to marshal login data: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", c.baseURL+"/api/login", bytes.NewReader(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create login request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to login: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read login response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("login failed (%d): %s", resp.StatusCode, string(body))
-	}
-
 	var loginResp LoginResponse
-	if err := json.Unmarshal(body, &loginResp); err != nil {
-		return fmt.Errorf("failed to parse login response: %w", err)
+	if err := c.http.POST("/api/login", loginData, &loginResp); err != nil {
+		return fmt.Errorf("login failed: %w", err)
 	}
 
+	// Update token in both client and http helper
 	c.token = loginResp.Token
+	c.http.token = loginResp.Token
 	return nil
 }
 
-// setAuthHeader adds the Authorization header if token is available
-func (c *Client) setAuthHeader(req *http.Request) {
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-}
-
 func (c *Client) Deploy(yamlContent []byte) (*DeployResponse, error) {
-	req, err := http.NewRequest("POST", c.baseURL+"/api/specs", bytes.NewReader(yamlContent))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-yaml")
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
+	var result DeployResponse
+	if err := c.http.doYAMLRequest("POST", "/api/specs", yamlContent, &result); err != nil {
 		return nil, fmt.Errorf("failed to deploy spec: %w", err)
 	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	var result DeployResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
 	return &result, nil
 }
 
 func (c *Client) ListSpecs() (map[string]*SpecResponse, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/api/specs", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list specs: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
 	var result map[string]*SpecResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := c.http.GET("/api/specs", &result); err != nil {
+		return nil, err
 	}
-
 	return result, nil
 }
 
 func (c *Client) GetSpec(name string) (*SpecResponse, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/api/specs/"+name, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get spec: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("spec '%s' not found", name)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
 	var result SpecResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := c.http.GET("/api/specs/"+name, &result); err != nil {
+		return nil, err
 	}
-
 	return &result, nil
 }
 
 func (c *Client) DeleteSpec(name string) error {
-	req, err := http.NewRequest("DELETE", c.baseURL+"/api/specs/"+name, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to delete spec: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("spec '%s' not found", name)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return c.http.DELETE("/api/specs/" + name)
 }
 
 func (c *Client) ListEnvironments() (map[string]*Environment, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/api/environments", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list environments: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
 	var result map[string]*Environment
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := c.http.GET("/api/environments", &result); err != nil {
+		return nil, err
 	}
-
 	return result, nil
 }
 
 // ListWorkflows retrieves workflow executions from the server
 func (c *Client) ListWorkflows(appName string) ([]interface{}, error) {
-	url := c.baseURL + "/api/workflows"
+	path := "/api/workflows"
 	if appName != "" {
-		url += "?app=" + appName
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list workflows: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
+		path += "?app=" + appName
 	}
 
 	var result []interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := c.http.GET(path, &result); err != nil {
+		return nil, err
 	}
-
 	return result, nil
 }
 
 // ListResources retrieves resource instances from the server
 func (c *Client) ListResources(appName string) (map[string][]*ResourceInstance, error) {
-	url := c.baseURL + "/api/resources"
+	path := "/api/resources"
 	if appName != "" {
-		url += "?app=" + appName
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list resources: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
+		path += "?app=" + appName
 	}
 
 	var result map[string][]*ResourceInstance
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := c.http.GET(path, &result); err != nil {
+		return nil, err
 	}
-
 	return result, nil
 }
 
 // DeleteApplication performs complete application deletion (infrastructure + database records)
 func (c *Client) DeleteApplication(name string) error {
-	req, err := http.NewRequest("DELETE", c.baseURL+"/api/applications/"+name, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to delete application: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("application '%s' not found", name)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return c.http.DELETE("/api/applications/" + name)
 }
 
 // DeprovisionApplication performs infrastructure teardown with audit trail preserved
 func (c *Client) DeprovisionApplication(name string) error {
-	req, err := http.NewRequest("POST", c.baseURL+"/api/applications/"+name+"/deprovision", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to deprovision application: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("application '%s' not found", name)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return c.http.POST("/api/applications/"+name+"/deprovision", nil, nil)
 }
 
 // WorkflowStepDetail represents a detailed workflow step with logs
@@ -453,36 +202,9 @@ type WorkflowExecutionDetail struct {
 
 // GetWorkflowDetail retrieves detailed workflow execution information including step logs
 func (c *Client) GetWorkflowDetail(workflowID string) (*WorkflowExecutionDetail, error) {
-	req, err := http.NewRequest("GET", c.baseURL+"/api/workflows/"+workflowID, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Accept", "application/json")
-	c.setAuthHeader(req)
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get workflow detail: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("workflow '%s' not found", workflowID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server error (%d): %s", resp.StatusCode, string(body))
-	}
-
 	var result WorkflowExecutionDetail
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+	if err := c.http.GET("/api/workflows/"+workflowID, &result); err != nil {
+		return nil, err
 	}
-
 	return &result, nil
 }

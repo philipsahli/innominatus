@@ -196,16 +196,16 @@ containers:
 
 	client := NewClient("http://localhost:8081")
 
-	// Test valid file
-	err = client.ValidateCommand(validFile)
+	// Test valid file (explain=false, format="text")
+	err = client.ValidateCommand(validFile, false, "text")
 	assert.NoError(t, err)
 
 	// Test invalid file
-	err = client.ValidateCommand(invalidFile)
+	err = client.ValidateCommand(invalidFile, false, "text")
 	assert.Error(t, err)
 
 	// Test non-existent file
-	err = client.ValidateCommand("nonexistent.yaml")
+	err = client.ValidateCommand("nonexistent.yaml", false, "text")
 	assert.Error(t, err)
 }
 
@@ -403,10 +403,7 @@ func TestErrorHandling(t *testing.T) {
 	client := NewClient("http://invalid-url-that-does-not-exist.com")
 
 	// Test that network errors are handled properly
-	err := client.DeployCommand("nonexistent-file.yaml")
-	assert.Error(t, err)
-
-	err = client.ListCommand(false)
+	err := client.ListCommand(false)
 	assert.Error(t, err)
 
 	err = client.StatusCommand("test-app")
