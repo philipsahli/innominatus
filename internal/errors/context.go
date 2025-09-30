@@ -80,7 +80,7 @@ func (ec *ExecutionContext) WrapError(err error, message string) *RichError {
 
 	// Add execution context
 	for k, v := range ec.ToMap() {
-		richErr.WithContext(k, v)
+		richErr = richErr.WithContext(k, v)
 	}
 
 	return richErr
@@ -174,7 +174,7 @@ func ErrorWithContext(ctx context.Context, err error, message string) error {
 
 	// Add trace ID if available
 	if traceID := GetTraceID(ctx); traceID != "" {
-		richErr.WithContext("trace_id", traceID)
+		richErr = richErr.WithContext("trace_id", traceID)
 	}
 
 	return richErr
@@ -192,9 +192,9 @@ func RecoverWithContext(ctx context.Context) error {
 
 		richErr := execCtx.WrapError(err, "Operation panicked")
 		richErr.Severity = SeverityFatal
-		richErr.WithContext("panic_value", r)
-		richErr.WithSuggestion("This is a critical error - please report this bug")
-		richErr.WithSuggestion("Include the full error details and stack trace")
+		richErr = richErr.WithContext("panic_value", r)
+		richErr = richErr.WithSuggestion("This is a critical error - please report this bug")
+		richErr = richErr.WithSuggestion("Include the full error details and stack trace")
 
 		return richErr
 	}

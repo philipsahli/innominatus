@@ -3,13 +3,13 @@ package workflow
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"innominatus/internal/admin"
+	"innominatus/internal/types"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"innominatus/internal/admin"
-	"innominatus/internal/types"
 	"strings"
 	"sync"
 	"time"
@@ -68,7 +68,7 @@ func (s *Spinner) Stop(success bool, resultMessage string) {
 	s.mu.Unlock()
 
 	s.done <- true
-	
+
 	if success {
 		fmt.Printf("\r✅ %s\n", resultMessage)
 	} else {
@@ -105,6 +105,7 @@ func RunWorkflow(w types.Workflow, appName string, envType string) error {
 	return nil
 }
 
+//nolint:unused // Legacy implementation kept for reference
 func runStep(step types.Step) error {
 	switch step.Type {
 	case "terraform":
@@ -139,48 +140,49 @@ func runStepWithSpinner(step types.Step, appName string, envType string, spinner
 	}
 }
 
+//nolint:unused // Legacy implementation kept for reference
 func runTerraformStep(step types.Step) error {
 	fmt.Printf("Running Terraform in path: %s\n", step.Path)
-	
+
 	// Check if directory exists
 	if _, err := os.Stat(step.Path); os.IsNotExist(err) {
 		return fmt.Errorf("terraform path does not exist: %s", step.Path)
 	}
-	
+
 	// Run terraform init
 	fmt.Println("Running: terraform init")
 	initCmd := exec.Command("terraform", "init")
 	initCmd.Dir = step.Path
 	initCmd.Stdout = os.Stdout
 	initCmd.Stderr = os.Stderr
-	
+
 	if err := initCmd.Run(); err != nil {
 		return fmt.Errorf("terraform init failed: %w", err)
 	}
-	
+
 	// Run terraform apply
 	fmt.Println("Running: terraform apply -auto-approve")
 	applyCmd := exec.Command("terraform", "apply", "-auto-approve")
 	applyCmd.Dir = step.Path
 	applyCmd.Stdout = os.Stdout
 	applyCmd.Stderr = os.Stderr
-	
+
 	if err := applyCmd.Run(); err != nil {
 		return fmt.Errorf("terraform apply failed: %w", err)
 	}
-	
+
 	// Get terraform outputs
 	fmt.Println("Getting terraform outputs...")
 	outputCmd := exec.Command("terraform", "output", "-json")
 	outputCmd.Dir = step.Path
 	outputCmd.Stderr = os.Stderr
-	
+
 	output, err := outputCmd.Output()
 	if err != nil {
 		fmt.Printf("Warning: could not get terraform outputs: %v\n", err)
 		return nil // Don't fail the step for output errors
 	}
-	
+
 	if len(output) > 0 {
 		fmt.Println("Terraform outputs:")
 		var outputs map[string]interface{}
@@ -192,18 +194,18 @@ func runTerraformStep(step types.Step) error {
 			fmt.Printf("  %s\n", string(output))
 		}
 	}
-	
+
 	return nil
 }
 
 func runTerraformStepWithSpinner(step types.Step, appName string, envType string, spinner *Spinner) error {
 	spinner.Update("Checking Terraform path...")
-	
+
 	// Check if directory exists
 	if _, err := os.Stat(step.Path); os.IsNotExist(err) {
 		return fmt.Errorf("terraform path does not exist: %s", step.Path)
 	}
-	
+
 	// Run terraform init
 	spinner.Update("Running terraform init...")
 	initCmd := exec.Command("terraform", "init")
@@ -212,11 +214,11 @@ func runTerraformStepWithSpinner(step types.Step, appName string, envType string
 		initCmd.Stdout = os.Stdout
 		initCmd.Stderr = os.Stderr
 	}
-	
+
 	if err := initCmd.Run(); err != nil {
 		return fmt.Errorf("terraform init failed: %w", err)
 	}
-	
+
 	// Run terraform apply
 	spinner.Update("Applying terraform configuration...")
 	applyCmd := exec.Command("terraform", "apply", "-auto-approve")
@@ -225,11 +227,11 @@ func runTerraformStepWithSpinner(step types.Step, appName string, envType string
 		applyCmd.Stdout = os.Stdout
 		applyCmd.Stderr = os.Stderr
 	}
-	
+
 	if err := applyCmd.Run(); err != nil {
 		return fmt.Errorf("terraform apply failed: %w", err)
 	}
-	
+
 	// Get terraform outputs
 	spinner.Update("Retrieving terraform outputs...")
 	outputCmd := exec.Command("terraform", "output", "-json")
@@ -237,13 +239,13 @@ func runTerraformStepWithSpinner(step types.Step, appName string, envType string
 	if spinner == nil {
 		outputCmd.Stderr = os.Stderr
 	}
-	
+
 	output, err := outputCmd.Output()
 	if err != nil {
 		// Don't fail the step for output errors
 		return nil
 	}
-	
+
 	if len(output) > 0 && spinner == nil {
 		fmt.Println("Terraform outputs:")
 		var outputs map[string]interface{}
@@ -255,22 +257,23 @@ func runTerraformStepWithSpinner(step types.Step, appName string, envType string
 			fmt.Printf("  %s\n", string(output))
 		}
 	}
-	
+
 	return nil
 }
 
+//nolint:unused // Legacy implementation kept for reference
 func runAnsibleStep(step types.Step) error {
 	if step.Playbook == "" {
 		return fmt.Errorf("ansible step requires playbook field")
 	}
-	
+
 	fmt.Printf("Running Ansible playbook: %s\n", step.Playbook)
-	
+
 	// Check if playbook exists
 	if _, err := os.Stat(step.Playbook); os.IsNotExist(err) {
 		return fmt.Errorf("ansible playbook does not exist: %s", step.Playbook)
 	}
-	
+
 	// Run ansible-playbook
 	fmt.Printf("Running: ansible-playbook %s\n", step.Playbook)
 	cmd := exec.Command("ansible-playbook", step.Playbook)
@@ -279,11 +282,11 @@ func runAnsibleStep(step types.Step) error {
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ansible-playbook failed: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -291,14 +294,14 @@ func runAnsibleStepWithSpinner(step types.Step, appName string, envType string, 
 	if step.Playbook == "" {
 		return fmt.Errorf("ansible step requires playbook field")
 	}
-	
+
 	spinner.Update("Checking Ansible playbook...")
-	
+
 	// Check if playbook exists
 	if _, err := os.Stat(step.Playbook); os.IsNotExist(err) {
 		return fmt.Errorf("ansible playbook does not exist: %s", step.Playbook)
 	}
-	
+
 	// Run ansible-playbook
 	spinner.Update("Running ansible-playbook...")
 	cmd := exec.Command("ansible-playbook", step.Playbook)
@@ -309,14 +312,15 @@ func runAnsibleStepWithSpinner(step types.Step, appName string, envType string, 
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
-	
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("ansible-playbook failed: %w", err)
 	}
-	
+
 	return nil
 }
 
+//nolint:unused // Legacy implementation kept for reference
 func runKubernetesStep(step types.Step) error {
 	fmt.Printf("Running Kubernetes deployment")
 	if step.Namespace != "" {
@@ -503,7 +507,7 @@ func runGiteaRepoStepWithSpinner(step types.Step, appName string, envType string
 	if resp.StatusCode == 409 {
 		fmt.Printf("Repository %s/%s already exists, skipping creation\n", owner, step.RepoName)
 	} else if resp.StatusCode != 201 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to create repository, status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -636,7 +640,7 @@ func runArgoCDAppStepWithSpinner(step types.Step, appName string, envType string
 	defer createResp.Body.Close()
 
 	if createResp.StatusCode != 200 && createResp.StatusCode != 201 {
-		body, _ := ioutil.ReadAll(createResp.Body)
+		body, _ := io.ReadAll(createResp.Body)
 		return fmt.Errorf("failed to create ArgoCD application, status %d: %s", createResp.StatusCode, string(body))
 	}
 
@@ -646,7 +650,7 @@ func runArgoCDAppStepWithSpinner(step types.Step, appName string, envType string
 
 	// Check if we should wait for sync completion
 	waitForSync := true
-	if step.WaitForSync != nil && *step.WaitForSync == false {
+	if step.WaitForSync != nil && !*step.WaitForSync {
 		waitForSync = false
 	}
 
@@ -786,7 +790,7 @@ spec:
 
 	// Write manifest file
 	manifestFilePath := filepath.Join(tmpDir, "deployment.yaml")
-	if err := ioutil.WriteFile(manifestFilePath, []byte(manifestContent), 0644); err != nil {
+	if err := os.WriteFile(manifestFilePath, []byte(manifestContent), 0644); err != nil {
 		return fmt.Errorf("failed to write manifest file: %w", err)
 	}
 
@@ -881,7 +885,7 @@ func authenticateArgoCD(argoCDURL, username, password string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("authentication failed, status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -889,7 +893,7 @@ func authenticateArgoCD(argoCDURL, username, password string) (string, error) {
 		Token string `json:"token"`
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
@@ -942,7 +946,7 @@ func waitForArgoCDSync(appName, argoCDURL, token string, timeoutSeconds int, spi
 		}
 
 		// Parse the response
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			time.Sleep(10 * time.Second)
 			continue

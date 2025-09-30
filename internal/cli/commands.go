@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -1298,7 +1299,7 @@ func (c *Client) displayWorkflowAnalysis(analysis *workflow.WorkflowAnalysis) {
 	fmt.Printf("   ═══════════════════════════════════════════\n\n")
 
 	for i, phase := range analysis.ExecutionPlan.Phases {
-		fmt.Printf("   Phase %d: %s (%v)\n", phase.Order, strings.Title(phase.Name), phase.EstimatedTime)
+		fmt.Printf("   Phase %d: %s (%v)\n", phase.Order, toTitle(phase.Name), phase.EstimatedTime)
 
 		for j, group := range phase.ParallelGroups {
 			if len(group.Steps) == 1 {
@@ -1593,4 +1594,14 @@ func (c *Client) getAvailableStepNames(steps []WorkflowStepDetail) string {
 		names = append(names, step.StepName)
 	}
 	return strings.Join(names, ", ")
+}
+
+// toTitle converts a string to title case (replacement for deprecated strings.Title)
+func toTitle(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }

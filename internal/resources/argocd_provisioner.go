@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/database"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 )
@@ -142,7 +142,7 @@ func (ap *ArgoCDProvisioner) Provision(resource *database.ResourceInstance, conf
 	}
 	defer resp.Body.Close()
 
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == 409 {
 		fmt.Printf("   ℹ️  Application '%s' already exists\n", appName)
@@ -193,7 +193,7 @@ func (ap *ArgoCDProvisioner) Deprovision(resource *database.ResourceInstance) er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 404 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to delete application, status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -255,7 +255,7 @@ func (ap *ArgoCDProvisioner) GetStatus(resource *database.ResourceInstance) (map
 
 	// Parse response
 	var appInfo map[string]interface{}
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	if err := json.Unmarshal(body, &appInfo); err == nil {
 		if statusInfo, ok := appInfo["status"].(map[string]interface{}); ok {
 			if syncStatus, ok := statusInfo["sync"].(map[string]interface{}); ok {
@@ -294,12 +294,12 @@ func (ap *ArgoCDProvisioner) authenticateArgoCD(argoCDURL, username, password st
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("authentication failed, status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result map[string]interface{}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}

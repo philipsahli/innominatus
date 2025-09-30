@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
+	
 	"net/http"
 	"os"
 	"os/exec"
@@ -63,7 +63,10 @@ func (lb *LogBuffer) Write(p []byte) (n int, err error) {
 	if lb.stepID != nil && *lb.stepID > 0 && lb.repo != nil {
 		logContent := lb.buffer.String()
 		if logContent != "" {
-			lb.repo.AddWorkflowStepLogs(*lb.stepID, logContent)
+			if err := lb.repo.AddWorkflowStepLogs(*lb.stepID, logContent); err != nil {
+				// Log error but don't fail the write operation
+				fmt.Fprintf(os.Stderr, "failed to store workflow logs: %v\n", err)
+			}
 			lb.buffer.Reset() // Clear buffer after storing
 		}
 	}
@@ -216,7 +219,9 @@ func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +232,7 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Error reading request body", http.StatusBadRequest)
 		return
@@ -436,7 +441,9 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) HandleSpecDetail(w http.ResponseWriter, r *http.Request) {
@@ -481,7 +488,9 @@ func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request, name stri
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) handleDeleteSpec(w http.ResponseWriter, r *http.Request, name string) {
@@ -515,7 +524,9 @@ func (s *Server) handleDeleteSpec(w http.ResponseWriter, r *http.Request, name s
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) HandleEnvironments(w http.ResponseWriter, r *http.Request) {
@@ -527,7 +538,9 @@ func (s *Server) HandleEnvironments(w http.ResponseWriter, r *http.Request) {
 	environments := s.storage.ListEnvironments()
 	
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(environments)
+	if err := json.NewEncoder(w).Encode(environments); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // Legacy endpoint for compatibility
@@ -560,7 +573,9 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
+			if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 			return
 		}
 	}
@@ -589,7 +604,9 @@ func (s *Server) handleAppGraph(w http.ResponseWriter, r *http.Request, appName 
 
 	// Return the enhanced graph
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resourceGraph)
+	if err := json.NewEncoder(w).Encode(resourceGraph); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // addWorkflowDataToGraph adds workflow execution data to the resource graph
@@ -727,7 +744,9 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(workflows)
+	if err := json.NewEncoder(w).Encode(workflows); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request, workflowID int64) {
@@ -742,7 +761,9 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request, workf
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(workflow)
+	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleTeams handles team-related API requests
@@ -780,7 +801,9 @@ func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 	teams := s.teamManager.ListTeams()
 	
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(teams)
+	if err := json.NewEncoder(w).Encode(teams); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
@@ -807,7 +830,9 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 	
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(team)
+	if err := json.NewEncoder(w).Encode(team); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request, teamID string) {
@@ -818,7 +843,9 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request, teamID st
 	}
 	
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(team)
+	if err := json.NewEncoder(w).Encode(team); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request, teamID string) {
@@ -833,9 +860,11 @@ func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request, teamID
 	}
 	
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": fmt.Sprintf("Team '%s' deleted successfully", teamID),
-	})
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // Rate limiting for login attempts
@@ -923,7 +952,9 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // Memory workflow tracking methods
@@ -1103,7 +1134,9 @@ func (s *Server) handleListMemoryWorkflows(w http.ResponseWriter, r *http.Reques
 	workflows := s.ListMemoryWorkflowExecutions(appName, limit, offset)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(workflows)
+	if err := json.NewEncoder(w).Encode(workflows); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // handleGetMemoryWorkflow handles getting a specific workflow execution from memory
@@ -1131,7 +1164,9 @@ func (s *Server) handleGetMemoryWorkflow(w http.ResponseWriter, r *http.Request)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(workflow)
+		if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -1226,10 +1261,12 @@ func (s *Server) HandleDemoStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"components": components,
 		"timestamp":  time.Now(),
-	})
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleDemoTime handles POST /api/demo/time - Execute demo-time command
@@ -1250,7 +1287,9 @@ func (s *Server) HandleDemoTime(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleDemoNuke handles POST /api/demo/nuke - Execute demo-nuke command
@@ -1271,7 +1310,9 @@ func (s *Server) HandleDemoNuke(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleStats handles GET /api/stats - Returns dashboard statistics
@@ -1331,7 +1372,9 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	if err := json.NewEncoder(w).Encode(stats); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // startWorkflowScheduler starts a background goroutine that triggers dummy workflows every minute
@@ -1354,6 +1397,7 @@ func (s *Server) startWorkflowScheduler() {
 }
 
 // stopWorkflowScheduler stops the background workflow scheduler
+//nolint:unused // Reserved for future graceful shutdown implementation
 func (s *Server) stopWorkflowScheduler() {
 	if s.workflowTicker != nil {
 		s.workflowTicker.Stop()
@@ -1421,7 +1465,7 @@ func (s *Server) handleAnalyzeWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read request body
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
@@ -1474,7 +1518,7 @@ func (s *Server) handleAnalyzeWorkflowPreview(w http.ResponseWriter, r *http.Req
 	}
 
 	// Read request body
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
@@ -1602,7 +1646,9 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // handleDeprovisionApplication performs infrastructure teardown with audit trail preserved
@@ -1645,7 +1691,9 @@ func (s *Server) handleDeprovisionApplication(w http.ResponseWriter, r *http.Req
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleGoldenPathExecution handles golden path workflow execution with resource management integration
@@ -1677,7 +1725,7 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Read Score spec from request body
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Error reading request body", http.StatusBadRequest)
 		return
@@ -1699,7 +1747,7 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 
 	// Load golden path workflow
 	workflowFile := fmt.Sprintf("./workflows/%s.yaml", goldenPathName)
-	workflowData, err := ioutil.ReadFile(workflowFile)
+	workflowData, err := os.ReadFile(workflowFile)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Golden path '%s' not found", goldenPathName), http.StatusNotFound)
 		return
@@ -1747,7 +1795,9 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 			// Mark workflow as failed
 			if workflowExecution != nil {
 				errorMsg := err.Error()
-				s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusFailed, &errorMsg)
+				if updateErr := s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusFailed, &errorMsg); updateErr != nil {
+					fmt.Fprintf(os.Stderr, "failed to update workflow status: %v\n", updateErr)
+				}
 			}
 			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
 			return
@@ -1755,7 +1805,9 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 
 		// Mark workflow as completed
 		if workflowExecution != nil {
-			s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusCompleted, nil)
+			if err := s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusCompleted, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to update workflow status: %v\n", err)
+			}
 		}
 	} else {
 		// Fallback to basic workflow execution without database tracking
@@ -1787,7 +1839,9 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // executeGoldenPathWorkflowWithResources executes a workflow with full resource management integration
@@ -1813,7 +1867,9 @@ func (s *Server) executeGoldenPathWorkflowWithResources(workflow *types.Workflow
 				fmt.Printf("Warning: Failed to create step record: %v\n", err)
 			} else {
 				// Mark step as running
-				s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil)
+				if err := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", err)
+				}
 			}
 		}
 
@@ -1827,14 +1883,18 @@ func (s *Server) executeGoldenPathWorkflowWithResources(workflow *types.Workflow
 			// Mark step as failed
 			if stepRecord != nil {
 				errorMsg := err.Error()
-				s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
+				if updateErr := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg); updateErr != nil {
+					fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", updateErr)
+				}
 			}
 			return fmt.Errorf("step %s failed: %w", step.Name, err)
 		}
 
 		// Mark step as completed
 		if stepRecord != nil {
-			s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusCompleted, nil)
+			if err := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusCompleted, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", err)
+			}
 		}
 
 		fmt.Printf("✅ Step %s completed successfully\n", step.Name)
@@ -1902,7 +1962,9 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 	}
 
 	// Log step start
-	logBuffer.Write([]byte(fmt.Sprintf("Starting step: %s (type: %s)", step.Name, step.Type)))
+	if _, err := logBuffer.Write([]byte(fmt.Sprintf("Starting step: %s (type: %s)", step.Name, step.Type))); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
+	}
 
 	// Execute the step based on its type
 	switch step.Type {
@@ -1932,7 +1994,9 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 		return s.executeDummyStep(step, appName, envType, logBuffer)
 	default:
 		fmt.Printf("   ❓ Executing unknown step type: %s\n", step.Type)
-		logBuffer.Write([]byte(fmt.Sprintf("Warning: Unknown step type '%s', skipping execution", step.Type)))
+		if _, err := logBuffer.Write([]byte(fmt.Sprintf("Warning: Unknown step type '%s', skipping execution", step.Type))); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
+		}
 		return nil
 	}
 }
@@ -1949,18 +2013,24 @@ func (s *Server) executeCommand(command string, args []string, workDir string, l
 	cmd.Stderr = logBuffer
 
 	execMsg := fmt.Sprintf("Executing: %s %s", command, strings.Join(args, " "))
-	logBuffer.Write([]byte(execMsg))
+	if _, err := logBuffer.Write([]byte(execMsg)); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
+	}
 	fmt.Println("   " + execMsg)
 
 	err := cmd.Run()
 	if err != nil {
 		errMsg := fmt.Sprintf("Command failed with error: %v", err)
-		logBuffer.Write([]byte(errMsg))
+		if _, writeErr := logBuffer.Write([]byte(errMsg)); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "failed to write error log: %v\n", writeErr)
+		}
 		fmt.Println("   " + errMsg)
 		return err
 	}
 
-	logBuffer.Write([]byte("Command completed successfully"))
+	if _, err := logBuffer.Write([]byte("Command completed successfully")); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
+	}
 	fmt.Println("   Command completed successfully")
 	return nil
 }
@@ -1973,14 +2043,14 @@ func (s *Server) executeTerraformStep(step types.Step, appName string, envType s
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		err = os.MkdirAll(workDir, 0755)
 		if err != nil {
-			logBuffer.Write([]byte(fmt.Sprintf("Failed to create workspace directory: %v", err)))
+			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create workspace directory: %v", err)))
 			return err
 		}
 	}
 
 	// Copy terraform files from step.Path to workspace
 	if step.Path != "" {
-		logBuffer.Write([]byte(fmt.Sprintf("Copying terraform files from %s to %s", step.Path, workDir)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Copying terraform files from %s to %s", step.Path, workDir)))
 		err := s.executeCommand("cp", []string{"-r", step.Path + "/.", workDir}, "", logBuffer)
 		if err != nil {
 			return err
@@ -2011,7 +2081,7 @@ func (s *Server) executeKubernetesStep(step types.Step, appName string, envType 
 	}
 
 	// Create namespace if it doesn't exist
-	logBuffer.Write([]byte(fmt.Sprintf("Creating namespace: %s", namespace)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating namespace: %s", namespace)))
 	err := s.executeCommand("kubectl", []string{"create", "namespace", namespace}, "", logBuffer)
 	if err != nil {
 		// Namespace might already exist, which is fine

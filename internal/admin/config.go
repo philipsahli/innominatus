@@ -2,7 +2,6 @@ package admin
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -57,7 +56,7 @@ func LoadAdminConfig(configPath string) (*AdminConfig, error) {
 		return nil, fmt.Errorf("failed to read config file: %s", configPath)
 	}
 
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}

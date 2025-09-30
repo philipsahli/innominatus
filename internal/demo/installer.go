@@ -208,7 +208,7 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 			fmt.Printf("   Progress: ")
 		case <-installCtx.Done():
 			fmt.Printf("\n")
-			cmd.Process.Kill()
+			_ = cmd.Process.Kill()
 			return fmt.Errorf("helm install for %s timed out after 15 minutes", component.Name)
 		}
 	}

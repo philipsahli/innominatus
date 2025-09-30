@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // CheatSheet handles the display of demo environment status and credentials
@@ -287,8 +288,18 @@ func (c *CheatSheet) formatServiceName(name string) string {
 	case "kubernetes-dashboard":
 		return "K8s Dashboard"
 	default:
-		return strings.Title(name)
+		return toTitle(name)
 	}
+}
+
+// toTitle converts a string to title case (replacement for deprecated strings.Title)
+func toTitle(s string) string {
+	if s == "" {
+		return s
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }
 
 // getCliName returns the CLI executable name

@@ -158,7 +158,7 @@ func (m *Manager) ProvisionResource(resourceID int64, providerID string, provide
 		err = provisioner.Provision(resource, providerMetadata, transitionedBy)
 		if err != nil {
 			// Transition to failed state
-			m.TransitionResourceState(resourceID, database.ResourceStateFailed,
+			_ = m.TransitionResourceState(resourceID, database.ResourceStateFailed,
 				fmt.Sprintf("Provisioning failed: %v", err), transitionedBy, nil)
 			return fmt.Errorf("provisioning failed: %w", err)
 		}

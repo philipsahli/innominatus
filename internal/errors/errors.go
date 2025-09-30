@@ -242,9 +242,9 @@ func NewWorkflowError(workflowID, stepName string, stepIndex int, message string
 		StepName:   stepName,
 		StepIndex:  stepIndex,
 	}
-	err.WithContext("workflow_id", workflowID)
-	err.WithContext("step_name", stepName)
-	err.WithContext("step_index", stepIndex)
+	err.RichError = err.WithContext("workflow_id", workflowID)
+	err.RichError = err.WithContext("step_name", stepName)
+	err.RichError = err.WithContext("step_index", stepIndex)
 	return err
 }
 
@@ -265,9 +265,9 @@ func NewResourceError(resourceType, resourceName, operation, message string) *Re
 		ResourceName: resourceName,
 		Operation:    operation,
 	}
-	err.WithContext("resource_type", resourceType)
-	err.WithContext("resource_name", resourceName)
-	err.WithContext("operation", operation)
+	err.RichError = err.RichError.WithContext("resource_type", resourceType)
+	err.RichError = err.RichError.WithContext("resource_name", resourceName)
+	err.RichError = err.RichError.WithContext("operation", operation)
 	return err
 }
 
@@ -285,8 +285,8 @@ func NewNetworkError(url, message string) *NetworkError {
 		RichError: NewRichError(CategoryNetwork, SeverityError, message),
 		URL:       url,
 	}
-	err.WithContext("url", url)
-	err.WithRetriable(true) // Network errors are often retriable
+	err.RichError = err.WithContext("url", url)
+	err.RichError = err.WithRetriable(true) // Network errors are often retriable
 	return err
 }
 
@@ -304,7 +304,7 @@ func NewConfigurationError(configFile, configKey, message string) *Configuration
 		ConfigFile: configFile,
 		ConfigKey:  configKey,
 	}
-	err.WithContext("config_file", configFile)
-	err.WithContext("config_key", configKey)
+	err.RichError = err.RichError.WithContext("config_file", configFile)
+	err.RichError = err.RichError.WithContext("config_key", configKey)
 	return err
 }

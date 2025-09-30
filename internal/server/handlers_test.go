@@ -29,7 +29,7 @@ func createAuthenticatedRequest(method, url, body string) *http.Request {
 	}
 
 	// Add user to request context
-	ctx := context.WithValue(req.Context(), "user", testUser)
+	ctx := context.WithValue(req.Context(), contextKeyUser, testUser)
 	req = req.WithContext(ctx)
 
 	return req

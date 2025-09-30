@@ -162,10 +162,8 @@ func (g *Graph) UpdateResourceStatus(resourceName string, status NodeStatus, met
 		if node.Type == NodeTypeResource && node.Name == resourceName {
 			node.Status = status
 			node.UpdatedAt = time.Now()
-			if metadata != nil {
-				for k, v := range metadata {
-					node.Metadata[k] = v
-				}
+			for k, v := range metadata {
+				node.Metadata[k] = v
 			}
 			break
 		}

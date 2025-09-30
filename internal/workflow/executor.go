@@ -124,7 +124,7 @@ func (e *WorkflowExecutor) ExecuteMultiTierWorkflows(ctx context.Context, app *A
 		if err := e.executePhaseWorkflows(ctx, app.Name, phase, workflows, execution.ID); err != nil {
 			// Mark execution as failed
 			errorMsg := err.Error()
-			e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &errorMsg)
+			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &errorMsg)
 			return fmt.Errorf("failed executing %s workflows: %w", phase, err)
 		}
 
@@ -169,7 +169,7 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 
 		stepRecord, err := e.repo.CreateWorkflowStep(execution.ID, i+1, step.Name, step.Type, stepConfig)
 		if err != nil {
-			e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, stringPtr(fmt.Sprintf("Failed to create step record: %v", err)))
+			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, stringPtr(fmt.Sprintf("Failed to create step record: %v", err)))
 			return fmt.Errorf("failed to create workflow step: %w", err)
 		}
 		stepRecords[i] = stepRecord
@@ -193,11 +193,11 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		if err != nil {
 			// Update step as failed
 			errorMsg := err.Error()
-			e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
+			_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
 
 			// Update workflow as failed
 			workflowErrorMsg := fmt.Sprintf("workflow failed at step '%s': %v", step.Name, err)
-			e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &workflowErrorMsg)
+			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &workflowErrorMsg)
 
 			spinner.Stop(false, fmt.Sprintf("Step '%s' failed: %v", step.Name, err))
 			return fmt.Errorf("workflow failed at step '%s': %w", step.Name, err)
@@ -323,7 +323,7 @@ func (e *WorkflowExecutor) executeResolvedWorkflow(ctx context.Context, appName 
 		if err := e.executeStepWithExecutor(ctx, step, appName, execID); err != nil {
 			// Mark step as failed
 			errorMsg := err.Error()
-			e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
+			_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
 			return fmt.Errorf("step %s failed: %w", step.Name, err)
 		}
 

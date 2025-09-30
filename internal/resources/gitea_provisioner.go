@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/database"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -95,7 +95,7 @@ func (gp *GiteaProvisioner) Provision(resource *database.ResourceInstance, confi
 	}
 	defer resp.Body.Close()
 
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == 409 {
 		fmt.Printf("   ℹ️  Repository %s/%s already exists\n", owner, repoName)
@@ -144,7 +144,7 @@ func (gp *GiteaProvisioner) Deprovision(resource *database.ResourceInstance) err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 204 && resp.StatusCode != 404 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to delete repository, status %d: %s", resp.StatusCode, string(body))
 	}
 

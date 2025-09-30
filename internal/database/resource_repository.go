@@ -192,7 +192,7 @@ func (r *ResourceRepository) UpdateResourceInstanceState(id int64, newState Reso
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Ignore rollback error as commit supersedes it
 
 	// Get current state
 	var currentState string

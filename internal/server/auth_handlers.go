@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"innominatus/internal/users"
 )
 
@@ -152,7 +154,9 @@ func (s *Server) HandleUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(userInfo)
+	if err := json.NewEncoder(w).Encode(userInfo); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleAPILogin handles API authentication for CLI clients
@@ -207,7 +211,9 @@ func (s *Server) HandleAPILogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleImpersonate handles user impersonation requests (admin only)
@@ -250,7 +256,9 @@ func (s *Server) HandleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(userList)
+	if err := json.NewEncoder(w).Encode(userList); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) startImpersonation(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +308,9 @@ func (s *Server) startImpersonation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) stopImpersonation(w http.ResponseWriter, r *http.Request) {
@@ -325,7 +335,9 @@ func (s *Server) stopImpersonation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 func (s *Server) getImpersonationStatus(w http.ResponseWriter, r *http.Request) {
@@ -357,13 +369,15 @@ func (s *Server) getImpersonationStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // getUserFromContext retrieves user from request context
 // This will be set by the authentication middleware
 func (s *Server) getUserFromContext(r *http.Request) *users.User {
-	if user, ok := r.Context().Value("user").(*users.User); ok {
+	if user, ok := r.Context().Value(contextKeyUser).(*users.User); ok {
 		return user
 	}
 	return nil

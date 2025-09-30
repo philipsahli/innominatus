@@ -89,7 +89,9 @@ func TestListCommand(t *testing.T) {
 	// Restore stdout and read output
 	w.Close()
 	os.Stdout = originalStdout
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
 	output := buf.String()
 
 	assert.Contains(t, output, "test-app")
@@ -119,7 +121,9 @@ func TestListCommandEmptyResponse(t *testing.T) {
 	// Restore stdout and read output
 	w.Close()
 	os.Stdout = originalStdout
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
 	output := buf.String()
 
 	assert.Contains(t, output, "No applications deployed")

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -161,6 +160,7 @@ func (sm *SessionManager) cleanupExpiredSessions() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
+	//nolint:gosimple // for-select with single case is intentional for cleanup goroutine pattern
 	for {
 		select {
 		case <-ticker.C:
@@ -271,7 +271,7 @@ func generateSessionID() (string, error) {
 
 // loadSessions loads sessions from disk
 func (sm *SessionManager) loadSessions() {
-	data, err := ioutil.ReadFile(sm.sessionFile)
+	data, err := os.ReadFile(sm.sessionFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// File doesn't exist, that's okay for first run
@@ -317,7 +317,7 @@ func (sm *SessionManager) saveSessions() {
 		return
 	}
 
-	if err := ioutil.WriteFile(sm.sessionFile, data, 0644); err != nil {
+	if err := os.WriteFile(sm.sessionFile, data, 0644); err != nil {
 		fmt.Printf("Warning: Could not save sessions to disk: %v\n", err)
 	}
 }

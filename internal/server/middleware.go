@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// contextKey is a custom type for context keys to avoid collisions
+type contextKey string
+
+const (
+	contextKeyUser       contextKey = "user"
+	contextKeyTeamFilter contextKey = "team_filter"
+)
+
 // CorsMiddleware adds CORS headers to allow cross-origin requests from the frontend
 func (s *Server) CorsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +75,7 @@ func (s *Server) AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		s.sessionManager.ExtendSession(session.ID)
 
 		// Add user to request context
-		ctx := context.WithValue(r.Context(), "user", session.User)
+		ctx := context.WithValue(r.Context(), contextKeyUser, session.User)
 		r = r.WithContext(ctx)
 
 		next(w, r)
@@ -126,7 +134,7 @@ func (s *Server) TeamFilterMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Add team filter to request context for API handlers to use
-		ctx := context.WithValue(r.Context(), "team_filter", user.Team)
+		ctx := context.WithValue(r.Context(), contextKeyTeamFilter, user.Team)
 		r = r.WithContext(ctx)
 
 		next(w, r)
@@ -134,8 +142,9 @@ func (s *Server) TeamFilterMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // getTeamFromContext retrieves team filter from request context
+//nolint:unused // Reserved for future multi-tenancy filtering
 func (s *Server) getTeamFromContext(r *http.Request) string {
-	if team, ok := r.Context().Value("team_filter").(string); ok {
+	if team, ok := r.Context().Value(contextKeyTeamFilter).(string); ok {
 		return team
 	}
 	return ""

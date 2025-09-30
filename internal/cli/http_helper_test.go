@@ -55,7 +55,7 @@ func TestHTTPHelper_GET(t *testing.T) {
 	t.Run("GET request with 404 error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("resource not found"))
+			_, _ = w.Write([]byte("resource not found"))
 		}))
 		defer server.Close()
 
@@ -71,7 +71,7 @@ func TestHTTPHelper_GET(t *testing.T) {
 	t.Run("GET request with server error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("internal server error"))
+			_, _ = w.Write([]byte("internal server error"))
 		}))
 		defer server.Close()
 
@@ -87,7 +87,7 @@ func TestHTTPHelper_GET(t *testing.T) {
 	t.Run("GET request with invalid JSON response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("invalid json"))
+			_, _ = w.Write([]byte("invalid json"))
 		}))
 		defer server.Close()
 
@@ -108,7 +108,7 @@ func TestHTTPHelper_POST(t *testing.T) {
 			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
 			var reqBody map[string]string
-			json.NewDecoder(r.Body).Decode(&reqBody)
+			_ = json.NewDecoder(r.Body).Decode(&reqBody)
 			assert.Equal(t, "test-value", reqBody["test-key"])
 
 			w.WriteHeader(http.StatusOK)
@@ -161,7 +161,7 @@ func TestHTTPHelper_DELETE(t *testing.T) {
 	t.Run("DELETE request with 404 error", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
-			w.Write([]byte("resource not found"))
+			_, _ = w.Write([]byte("resource not found"))
 		}))
 		defer server.Close()
 
@@ -236,7 +236,7 @@ func TestHTTPHelper_PUT(t *testing.T) {
 			assert.Equal(t, "PUT", r.Method)
 
 			var reqBody map[string]string
-			json.NewDecoder(r.Body).Decode(&reqBody)
+			_ = json.NewDecoder(r.Body).Decode(&reqBody)
 			assert.Equal(t, "updated-value", reqBody["key"])
 
 			w.WriteHeader(http.StatusOK)

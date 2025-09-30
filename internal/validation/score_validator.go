@@ -45,10 +45,10 @@ func (sv *ScoreValidator) Validate() ([]*errors.RichError, error) {
 		// Try to extract line number from YAML error
 		lineNum, colNum := extractYAMLErrorLocation(err.Error())
 		richErr := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "Invalid YAML syntax")
-		richErr.WithLocation(sv.filePath, lineNum, colNum, sv.getLine(lineNum))
-		richErr.WithSuggestion("Check for proper YAML indentation (use spaces, not tabs)")
-		richErr.WithSuggestion("Ensure all strings with special characters are quoted")
-		richErr.WithSuggestion("Validate YAML syntax at https://www.yamllint.com/")
+		richErr = richErr.WithLocation(sv.filePath, lineNum, colNum, sv.getLine(lineNum))
+		richErr = richErr.WithSuggestion("Check for proper YAML indentation (use spaces, not tabs)")
+		richErr = richErr.WithSuggestion("Ensure all strings with special characters are quoted")
+		richErr = richErr.WithSuggestion("Validate YAML syntax at https://www.yamllint.com/")
 		validationErrors = append(validationErrors, richErr)
 		return validationErrors, err
 	}
@@ -56,9 +56,9 @@ func (sv *ScoreValidator) Validate() ([]*errors.RichError, error) {
 	// Step 2: Parse into Score spec structure
 	if err := yaml.Unmarshal(sv.content, &sv.spec); err != nil {
 		richErr := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "Failed to parse Score specification")
-		richErr.WithCause(err)
-		richErr.WithSuggestion("Check the Score specification format: https://score.dev")
-		richErr.WithSuggestion("Ensure all required fields are present")
+		richErr = richErr.WithCause(err)
+		richErr = richErr.WithSuggestion("Check the Score specification format: https://score.dev")
+		richErr = richErr.WithSuggestion("Ensure all required fields are present")
 		validationErrors = append(validationErrors, richErr)
 		return validationErrors, err
 	}
@@ -93,14 +93,14 @@ func (sv *ScoreValidator) validateRequiredFields() []*errors.RichError {
 		lineNum := sv.findFieldLine("apiVersion")
 		err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "Missing required field: apiVersion").
 			WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-		err.WithSuggestion("Add 'apiVersion: score.dev/v1b1' to your Score spec")
-		err.WithSuggestion("Check the Score specification: https://score.dev")
+		err = err.WithSuggestion("Add 'apiVersion: score.dev/v1b1' to your Score spec")
+		err = err.WithSuggestion("Check the Score specification: https://score.dev")
 		errs = append(errs, err)
 	} else if !isValidAPIVersion(sv.spec.APIVersion) {
 		lineNum := sv.findFieldLine("apiVersion")
 		err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Invalid apiVersion: %s", sv.spec.APIVersion)).
 			WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-		err.WithSuggestion("Use 'score.dev/v1b1' as the apiVersion")
+		err = err.WithSuggestion("Use 'score.dev/v1b1' as the apiVersion")
 		errs = append(errs, err)
 	}
 
@@ -109,8 +109,8 @@ func (sv *ScoreValidator) validateRequiredFields() []*errors.RichError {
 		lineNum := sv.findFieldLine("name")
 		err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "Missing required field: metadata.name").
 			WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-		err.WithSuggestion("Add a name to your application metadata")
-		err.WithSuggestion("Example: metadata:\n  name: my-app")
+		err = err.WithSuggestion("Add a name to your application metadata")
+		err = err.WithSuggestion("Example: metadata:\n  name: my-app")
 		errs = append(errs, err)
 	}
 
@@ -119,8 +119,8 @@ func (sv *ScoreValidator) validateRequiredFields() []*errors.RichError {
 		lineNum := sv.findFieldLine("containers")
 		err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "At least one container is required").
 			WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-		err.WithSuggestion("Add at least one container definition")
-		err.WithSuggestion("Example: containers:\n  web:\n    image: nginx:latest")
+		err = err.WithSuggestion("Add at least one container definition")
+		err = err.WithSuggestion("Example: containers:\n  web:\n    image: nginx:latest")
 		errs = append(errs, err)
 	}
 
@@ -176,7 +176,7 @@ func (sv *ScoreValidator) validateResourceType(name string, resource types.Resou
 	switch resource.Type {
 	case "postgres", "mysql", "mongodb":
 		// Database resources should have required params
-		if resource.Params == nil || len(resource.Params) == 0 {
+		if len(resource.Params) == 0 {
 			lineNum := sv.findFieldLineInSection("resources", name)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Database resource '%s' should have parameters", name)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
 			err.Severity = errors.SeverityWarning
@@ -298,10 +298,10 @@ func extractYAMLErrorLocation(errMsg string) (int, int) {
 	col := 0
 
 	if len(lineMatch) > 1 {
-		fmt.Sscanf(lineMatch[1], "%d", &line)
+		_, _ = fmt.Sscanf(lineMatch[1], "%d", &line)
 	}
 	if len(colMatch) > 1 {
-		fmt.Sscanf(colMatch[1], "%d", &col)
+		_, _ = fmt.Sscanf(colMatch[1], "%d", &col)
 	}
 
 	return line, col

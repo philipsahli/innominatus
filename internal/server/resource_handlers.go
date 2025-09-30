@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"innominatus/internal/database"
 	"strconv"
 	"strings"
@@ -117,7 +118,9 @@ func (s *Server) HandleResourceTransition(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resource)
+	if err := json.NewEncoder(w).Encode(resource); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleResourceHealth handles resource health operations
@@ -179,10 +182,12 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"application": appName,
 			"resources":   resources,
-		})
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
 	} else {
 		// Return all deployed applications and their resources
 		specs := s.storage.ListStoredSpecs()
@@ -213,7 +218,9 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(allResources)
+		if err := json.NewEncoder(w).Encode(allResources); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
 	}
 }
 
@@ -236,7 +243,9 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request, resou
 	resource.StateTransitions = transitions
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resource)
+	if err := json.NewEncoder(w).Encode(resource); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // handleUpdateResource updates resource configuration or metadata
@@ -271,7 +280,9 @@ func (s *Server) handleUpdateResource(w http.ResponseWriter, r *http.Request, re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resource)
+	if err := json.NewEncoder(w).Encode(resource); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // handleDeleteResource deletes a resource
@@ -308,7 +319,9 @@ func (s *Server) handleGetResourceHealth(w http.ResponseWriter, r *http.Request,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(healthInfo)
+	if err := json.NewEncoder(w).Encode(healthInfo); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // handleCheckResourceHealth performs a health check on a resource

@@ -1,8 +1,10 @@
 package server
 
 import (
-	"io/ioutil"
+	"fmt"
+	
 	"net/http"
+	"os"
 )
 
 func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
@@ -91,11 +93,14 @@ func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
 </html>`
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(html))
+	if _, err := w.Write([]byte(html)); err != nil {
+		// Client disconnected or write failed - log but don't error
+		fmt.Fprintf(os.Stderr, "failed to write response: %v\n", err)
+	}
 }
 
 func (s *Server) HandleSwaggerYAML(w http.ResponseWriter, r *http.Request) {
-	data, err := ioutil.ReadFile("swagger.yaml")
+	data, err := os.ReadFile("swagger.yaml")
 	if err != nil {
 		http.Error(w, "Could not read swagger.yaml", http.StatusInternalServerError)
 		return
@@ -103,5 +108,7 @@ func (s *Server) HandleSwaggerYAML(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write response: %v\n", err)
+	}
 }

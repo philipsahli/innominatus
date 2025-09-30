@@ -99,7 +99,10 @@ func main() {
 		// Parse remaining arguments for validate command
 		validateArgs := flag.Args()[2:]
 		if len(validateArgs) > 0 {
-			validateFlags.Parse(validateArgs)
+			if err := validateFlags.Parse(validateArgs); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing validate flags: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		err = client.ValidateCommand(flag.Args()[1], *explainFlag, *formatFlag)
@@ -200,7 +203,10 @@ func main() {
 		// Parse remaining arguments for logs command
 		logsArgs := flag.Args()[2:]
 		if len(logsArgs) > 0 {
-			logsFlags.Parse(logsArgs)
+			if err := logsFlags.Parse(logsArgs); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing logs flags: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		options := cli.LogsOptions{

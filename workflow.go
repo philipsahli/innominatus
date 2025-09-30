@@ -1265,7 +1265,7 @@ func runArgoCDAppStepWithSpinner(step Step, appName string, envType string, spin
 	// Check if we should wait for sync completion
 	// Default to waiting for argocd-app steps unless explicitly disabled
 	waitForSync := true
-	if step.WaitForSync != nil && *step.WaitForSync == false {
+	if step.WaitForSync != nil && !*step.WaitForSync {
 		// Only disable if explicitly set to false
 		waitForSync = false
 	}

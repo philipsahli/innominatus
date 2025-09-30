@@ -225,7 +225,7 @@ func (store *UserStore) AuthenticateWithAPIKey(apiKey string) (*User, error) {
 
 				// Update last used time
 				store.Users[i].APIKeys[j].LastUsedAt = time.Now()
-				store.SaveUsers() // Save last used time (ignore error to not block authentication)
+				_ = store.SaveUsers() // Save last used time (ignore error to not block authentication)
 
 				return &user, nil
 			}
