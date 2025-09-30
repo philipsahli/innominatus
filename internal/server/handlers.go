@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	
+
 	"net/http"
 	"os"
 	"os/exec"
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
+	"innominatus/internal/demo"
 	"innominatus/internal/graph"
 	"innominatus/internal/resources"
 	"innominatus/internal/teams"
@@ -1249,15 +1250,28 @@ func (s *Server) HandleDemoStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Static demo components data (in production this would check actual health)
-	components := []map[string]interface{}{
-		{"name": "Gitea", "url": "http://gitea.localtest.me", "status": true, "credentials": "admin / admin"},
-		{"name": "Argo CD", "url": "http://argocd.localtest.me", "status": true, "credentials": "admin / argocd123"},
-		{"name": "Vault", "url": "http://vault.localtest.me", "status": true, "credentials": "root"},
-		{"name": "Grafana", "url": "http://grafana.localtest.me", "status": true, "credentials": "admin / admin"},
-		{"name": "Prometheus", "url": "http://prometheus.localtest.me", "status": true, "credentials": "none"},
-		{"name": "Demo App", "url": "http://demo.localtest.me", "status": true, "credentials": "-"},
-		{"name": "K8s Dashboard", "url": "https://k8s.localtest.me", "status": true, "credentials": "kubectl -n kubernetes-dashboard create token admin-user"},
+	// Create demo environment and health checker
+	env := demo.NewDemoEnvironment()
+	healthChecker := demo.NewHealthChecker(5 * time.Second)
+
+	// Perform actual health checks
+	healthResults := healthChecker.CheckAll(env)
+
+	// Build response with actual health status
+	components := []map[string]interface{}{}
+	for _, result := range healthResults {
+		component := map[string]interface{}{
+			"name":       result.Name,
+			"url":        getComponentURL(result.Name, result.Host),
+			"status":     result.Healthy,
+			"credentials": getComponentCredentials(result.Name, env),
+			"health":     result.Status,
+			"latency_ms": result.Latency.Milliseconds(),
+		}
+		if result.Error != "" {
+			component["error"] = result.Error
+		}
+		components = append(components, component)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1267,6 +1281,47 @@ func (s *Server) HandleDemoStatus(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
+}
+
+// getComponentURL returns the URL for a component based on its name and host
+func getComponentURL(name, host string) string {
+	if host == "" {
+		return ""
+	}
+	protocol := "http"
+	if name == "kubernetes-dashboard" {
+		protocol = "https"
+	}
+	return fmt.Sprintf("%s://%s", protocol, host)
+}
+
+// getComponentCredentials returns the credentials for a component from environment
+func getComponentCredentials(name string, env *demo.DemoEnvironment) string {
+	// Find component in environment
+	for _, comp := range env.Components {
+		if comp.Name == name {
+			if username, ok := comp.Credentials["username"]; ok {
+				if password, ok := comp.Credentials["password"]; ok {
+					return fmt.Sprintf("%s / %s", username, password)
+				}
+			}
+		}
+	}
+
+	// Special cases for components without username/password
+	switch name {
+	case "vault":
+		return "root"
+	case "prometheus":
+		return "none"
+	case "kubernetes-dashboard":
+		return "kubectl -n kubernetes-dashboard create token admin-user"
+	case "demo-app":
+		return "-"
+	case "nginx-ingress":
+		return "-"
+	}
+	return ""
 }
 
 // HandleDemoTime handles POST /api/demo/time - Execute demo-time command
