@@ -78,6 +78,38 @@ steps:
       ENVIRONMENT: ${workflow.ENVIRONMENT}
 ```
 
+### 5. Resource Parameter Interpolation
+
+Use workflow variables and step outputs in Score resource parameters:
+
+```yaml
+apiVersion: score.dev/v1b1
+metadata:
+  name: myapp
+
+variables:
+  ENVIRONMENT: production
+  REGION: us-east-1
+
+resources:
+  database:
+    type: postgres
+    params:
+      name: "myapp-db-${workflow.ENVIRONMENT}"
+      region: "${workflow.REGION}"
+      version: "${db-config.pg_version}"
+      tags:
+        - "env:${workflow.ENVIRONMENT}"
+        - "app:myapp"
+        - "version:${build.version}"
+```
+
+Resource parameters support full variable interpolation including:
+- Workflow variables: `${workflow.VAR}`
+- Step outputs: `${step.output}`
+- Nested maps and arrays
+- Mixed with static values
+
 ## Variable Syntax
 
 ### Reference Formats
@@ -432,6 +464,255 @@ spec:
       when: on_failure
       env:
         REASON: "Quality gate failed or deployment failed"
+```
+
+## Resource Parameter Interpolation
+
+### Overview
+
+Resource parameters in Score specifications support full variable interpolation. This enables dynamic resource configuration based on workflow state, environment, and previous step outputs.
+
+### Interpolation Features
+
+**Supported in resource params:**
+- Workflow variables: `${workflow.VAR}`
+- Step outputs: `${step.output}`
+- Nested maps and objects
+- Arrays and lists
+- Mixed with static values
+
+### Score Spec Example
+
+```yaml
+apiVersion: score.dev/v1b1
+metadata:
+  name: myapp
+
+variables:
+  ENVIRONMENT: production
+  REGION: us-east-1
+
+resources:
+  database:
+    type: postgres
+    params:
+      # Simple interpolation
+      name: "myapp-db-${workflow.ENVIRONMENT}"
+      region: "${workflow.REGION}"
+
+      # Reference step outputs
+      version: "${db-config.pg_version}"
+      instance_class: "${sizing.db_instance}"
+
+      # Nested configuration
+      backup:
+        enabled: true
+        retention_days: "${sizing.backup_retention}"
+        window: "02:00-04:00"
+
+      # Array with interpolation
+      tags:
+        - "env:${workflow.ENVIRONMENT}"
+        - "region:${workflow.REGION}"
+        - "version:${build.version}"
+        - "managed-by:innominatus"
+
+  cache:
+    type: redis
+    params:
+      name: "myapp-cache-${workflow.ENVIRONMENT}"
+      region: "${workflow.REGION}"
+      # Nested object with mixed values
+      cluster:
+        node_type: "${sizing.cache_node_type}"
+        replicas: 3  # Static value
+        version: "7.0"
+```
+
+### How It Works
+
+When a workflow processes a Score specification:
+
+1. **Workflow Execution**: Steps run and populate the execution context with:
+   - Workflow variables (defined in `variables:`)
+   - Step outputs (from `outputFile` and `setVariables`)
+
+2. **Resource Processing**: Before resources are provisioned:
+   - Resource params are recursively traversed
+   - String values containing `${...}` are interpolated
+   - Variables are resolved from execution context
+   - Non-string values (numbers, booleans) pass through unchanged
+
+3. **Variable Precedence**: Same as step environment variables:
+   - Step env > Workflow variables > Context env > System env
+
+### Practical Example
+
+```yaml
+apiVersion: score.dev/v1b1
+metadata:
+  name: payment-api
+
+variables:
+  APP_NAME: payment-api
+  ENVIRONMENT: production
+  REGION: us-west-2
+
+workflows:
+  deploy:
+    steps:
+      # Step 1: Build application
+      - name: build
+        type: validation
+        outputFile: /tmp/build.json
+        # Outputs: version, image_url, commit_sha
+
+      # Step 2: Determine infrastructure sizing
+      - name: sizing
+        type: validation
+        setVariables:
+          DB_INSTANCE: "db.r5.xlarge"
+          CACHE_NODES: "3"
+          APP_REPLICAS: "5"
+        env:
+          ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+      # Step 3: Provision TLS certificate
+      - name: tls
+        type: validation
+        outputFile: /tmp/tls.json
+        # Outputs: cert_arn, cert_domain
+
+      # Resources are processed after steps complete
+      # with full access to all variables and outputs
+
+resources:
+  database:
+    type: postgres
+    params:
+      identifier: "${workflow.APP_NAME}-${workflow.ENVIRONMENT}"
+      instance_class: "${sizing.DB_INSTANCE}"
+      region: "${workflow.REGION}"
+      backup_retention_period: 30
+      tags:
+        Name: "${workflow.APP_NAME}-database"
+        Environment: "${workflow.ENVIRONMENT}"
+        Version: "${build.version}"
+
+  cache:
+    type: redis
+    params:
+      cluster_id: "${workflow.APP_NAME}-cache-${workflow.ENVIRONMENT}"
+      node_type: "cache.r5.large"
+      num_cache_nodes: "${sizing.CACHE_NODES}"
+      engine_version: "7.0"
+
+  route:
+    type: route
+    params:
+      # Build full hostname from variables
+      host: "${workflow.APP_NAME}.${workflow.REGION}.example.com"
+      port: 443
+      certificate_arn: "${tls.cert_arn}"
+
+      # Can use outputs in nested config
+      backend:
+        protocol: "HTTPS"
+        port: 8443
+        health_check: "/health"
+```
+
+### Use Cases
+
+**1. Environment-Specific Configuration**
+```yaml
+variables:
+  ENVIRONMENT: staging
+
+resources:
+  database:
+    type: postgres
+    params:
+      # Different naming per environment
+      name: "myapp-${workflow.ENVIRONMENT}"
+      # Conditional sizing via step outputs
+      instance_class: "${sizing.db_instance}"
+```
+
+**2. Multi-Region Deployment**
+```yaml
+variables:
+  REGION: eu-west-1
+
+resources:
+  database:
+    type: postgres
+    params:
+      region: "${workflow.REGION}"
+      replica_regions:
+        - "${workflow.SECONDARY_REGION}"
+      endpoint: "db.${workflow.REGION}.example.com"
+```
+
+**3. Version Tagging**
+```yaml
+resources:
+  all-resources:
+    params:
+      tags:
+        - "version:${build.version}"
+        - "commit:${build.commit_sha}"
+        - "deployed:${deployment.timestamp}"
+```
+
+**4. Dynamic Connection Strings**
+```yaml
+resources:
+  application:
+    params:
+      environment:
+        DATABASE_URL: "postgresql://${db.host}:${db.port}/${db.name}"
+        CACHE_URL: "redis://${cache.endpoint}:${cache.port}"
+        API_VERSION: "${build.version}"
+```
+
+### Best Practices
+
+**1. Use workflow variables for configuration:**
+```yaml
+# Good - centralized configuration
+variables:
+  ENVIRONMENT: production
+  REGION: us-east-1
+
+resources:
+  db:
+    params:
+      name: "app-${workflow.ENVIRONMENT}"
+```
+
+**2. Reference step outputs for dynamic values:**
+```yaml
+# Good - uses actual provisioned values
+steps:
+  - name: provision-cert
+    outputFile: /tmp/cert.json
+
+resources:
+  route:
+    params:
+      certificate_arn: "${provision-cert.cert_arn}"
+```
+
+**3. Keep static values as-is:**
+```yaml
+# Good - clear distinction
+resources:
+  db:
+    params:
+      name: "${workflow.APP_NAME}-db"  # Dynamic
+      version: "15"                     # Static
+      backup_enabled: true              # Static
 ```
 
 ## Best Practices

@@ -1,0 +1,304 @@
+# Example 1: Database Provisioning with Dynamic Configuration
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: database-with-interpolation
+  description: Provision database using workflow variables and step outputs
+
+variables:
+  ENVIRONMENT: production
+  REGION: us-east-1
+  APP_NAME: myapp
+  DB_VERSION: "15"
+
+spec:
+  steps:
+    # Step 1: Determine database sizing based on environment
+    - name: size-calculator
+      type: validation
+      setVariables:
+        DB_SIZE: "large"
+        DB_REPLICAS: "3"
+        DB_BACKUP_RETENTION: "30"
+      env:
+        ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+    # Step 2: Generate database configuration
+    - name: db-config
+      type: validation
+      outputFile: /tmp/db-config.json
+      # Outputs: instance_class, storage_size, iops
+
+    # Step 3: Provision database with interpolated parameters
+    # In a real workflow, this would use terraform or cloud provider
+    - name: provision-database
+      type: validation
+      env:
+        # Resource parameters would be interpolated here
+        DB_NAME: "${workflow.APP_NAME}-db-${workflow.ENVIRONMENT}"
+        DB_REGION: "${workflow.REGION}"
+        DB_VERSION: "${workflow.DB_VERSION}"
+        DB_SIZE: "${workflow.DB_SIZE}"
+        DB_REPLICAS: "${workflow.DB_REPLICAS}"
+        INSTANCE_CLASS: "${db-config.instance_class}"
+        STORAGE_SIZE: "${db-config.storage_size}"
+        BACKUP_RETENTION: "${workflow.DB_BACKUP_RETENTION}"
+
+---
+# Example 2: Multi-Region Deployment with Resource Interpolation
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: multi-region-deployment
+  description: Deploy application to multiple regions with dynamic resource configuration
+
+variables:
+  APP_NAME: web-app
+  PRIMARY_REGION: us-east-1
+  SECONDARY_REGION: eu-west-1
+  ENVIRONMENT: production
+
+spec:
+  steps:
+    - name: build-app
+      type: validation
+      outputFile: /tmp/build-outputs.json
+      # Outputs: version, image_url, build_id
+
+    - name: create-primary-resources
+      type: validation
+      setVariables:
+        PRIMARY_DB_HOST: "db-primary.${workflow.PRIMARY_REGION}.example.com"
+        PRIMARY_CACHE_HOST: "cache-primary.${workflow.PRIMARY_REGION}.example.com"
+      env:
+        REGION: ${workflow.PRIMARY_REGION}
+        VERSION: ${build-app.version}
+
+    - name: create-secondary-resources
+      type: validation
+      setVariables:
+        SECONDARY_DB_HOST: "db-secondary.${workflow.SECONDARY_REGION}.example.com"
+        SECONDARY_CACHE_HOST: "cache-secondary.${workflow.SECONDARY_REGION}.example.com"
+      env:
+        REGION: ${workflow.SECONDARY_REGION}
+        VERSION: ${build-app.version}
+
+    - name: deploy-primary
+      type: kubernetes
+      namespace: ${workflow.ENVIRONMENT}-primary
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+        VERSION: ${build-app.version}
+        IMAGE: ${build-app.image_url}
+        DATABASE_URL: "postgresql://${workflow.PRIMARY_DB_HOST}:5432/${workflow.APP_NAME}"
+        CACHE_URL: "redis://${workflow.PRIMARY_CACHE_HOST}:6379"
+        REGION: ${workflow.PRIMARY_REGION}
+
+    - name: deploy-secondary
+      type: kubernetes
+      namespace: ${workflow.ENVIRONMENT}-secondary
+      when: on_success
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+        VERSION: ${build-app.version}
+        IMAGE: ${build-app.image_url}
+        DATABASE_URL: "postgresql://${workflow.SECONDARY_DB_HOST}:5432/${workflow.APP_NAME}"
+        CACHE_URL: "redis://${workflow.SECONDARY_CACHE_HOST}:6379"
+        REGION: ${workflow.SECONDARY_REGION}
+
+---
+# Example 3: Score Spec with Resource Interpolation
+# This would be used with POST /api/specs endpoint
+apiVersion: score.dev/v1b1
+metadata:
+  name: dynamic-app
+
+variables:
+  ENVIRONMENT: staging
+  REGION: us-west-2
+  DB_VERSION: "15"
+  CACHE_VERSION: "7"
+
+resources:
+  # Database resource with interpolated parameters
+  database:
+    type: postgres
+    params:
+      # Dynamic naming based on workflow variables
+      name: "app-db-${workflow.ENVIRONMENT}"
+      region: "${workflow.REGION}"
+      version: "${workflow.DB_VERSION}"
+
+      # Can reference step outputs (from previous workflow steps)
+      size: "${sizing.db_size}"
+      replicas: "${sizing.db_replicas}"
+
+      # Nested configuration
+      backup:
+        enabled: true
+        retention: "${sizing.backup_retention_days}"
+        schedule: "0 2 * * *"
+
+      # Tags with interpolation
+      tags:
+        - "environment:${workflow.ENVIRONMENT}"
+        - "region:${workflow.REGION}"
+        - "managed-by:innominatus"
+
+  # Cache resource with interpolation
+  cache:
+    type: redis
+    params:
+      name: "app-cache-${workflow.ENVIRONMENT}"
+      version: "${workflow.CACHE_VERSION}"
+      region: "${workflow.REGION}"
+      node_type: "${sizing.cache_node_type}"
+      num_nodes: "${sizing.cache_num_nodes}"
+
+  # Route with dynamic hostname
+  route:
+    type: route
+    params:
+      # Build hostname from variables
+      host: "${workflow.ENVIRONMENT}.${workflow.REGION}.example.com"
+      port: 443
+      ssl: true
+      # Reference TLS certificate from step output
+      certificate_arn: "${tls-cert.cert_arn}"
+
+workflows:
+  deploy:
+    steps:
+      # Step to determine resource sizing
+      - name: sizing
+        type: validation
+        setVariables:
+          db_size: "db.r5.xlarge"
+          db_replicas: "3"
+          backup_retention_days: "30"
+          cache_node_type: "cache.r5.large"
+          cache_num_nodes: "2"
+        env:
+          ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+      # Step to provision or lookup TLS certificate
+      - name: tls-cert
+        type: validation
+        outputFile: /tmp/tls-cert.json
+        # Outputs: cert_arn
+        env:
+          DOMAIN: "${workflow.ENVIRONMENT}.${workflow.REGION}.example.com"
+
+      # Resources are automatically processed with interpolation
+      # when the workflow executor processes the Score spec
+
+---
+# Example 4: Complex Nested Resource Configuration
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: complex-resource-config
+  description: Demonstrate nested map and array interpolation
+
+variables:
+  APP_NAME: payment-service
+  ENVIRONMENT: production
+  REGION: us-east-1
+
+spec:
+  steps:
+    - name: get-config
+      type: validation
+      outputFile: /tmp/app-config.json
+      # Outputs: api_version, feature_flags, monitoring_tier
+
+    # This step would process resources with complex nested parameters
+    - name: create-infrastructure
+      type: validation
+      env:
+        # Complex nested structure with interpolation
+        RESOURCE_CONFIG: |
+          {
+            "application": {
+              "name": "${workflow.APP_NAME}",
+              "version": "${get-config.api_version}",
+              "environment": {
+                "type": "${workflow.ENVIRONMENT}",
+                "region": "${workflow.REGION}",
+                "variables": {
+                  "APP_NAME": "${workflow.APP_NAME}",
+                  "VERSION": "${get-config.api_version}",
+                  "FEATURES": "${get-config.feature_flags}"
+                }
+              },
+              "resources": {
+                "compute": {
+                  "type": "container",
+                  "image": "registry.example.com/${workflow.APP_NAME}:${get-config.api_version}",
+                  "replicas": 3
+                },
+                "monitoring": {
+                  "enabled": true,
+                  "tier": "${get-config.monitoring_tier}",
+                  "labels": [
+                    "app:${workflow.APP_NAME}",
+                    "env:${workflow.ENVIRONMENT}",
+                    "region:${workflow.REGION}",
+                    "version:${get-config.api_version}"
+                  ]
+                }
+              }
+            }
+          }
+
+---
+# Example 5: Environment-Specific Resource Configuration
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: env-specific-resources
+  description: Configure resources differently per environment
+
+variables:
+  APP_NAME: api-gateway
+  ENVIRONMENT: production
+  # Environment-specific defaults
+  PROD_DB_SIZE: "db.r5.2xlarge"
+  PROD_CACHE_SIZE: "cache.r5.xlarge"
+  STAGING_DB_SIZE: "db.t3.medium"
+  STAGING_CACHE_SIZE: "cache.t3.small"
+
+spec:
+  steps:
+    - name: select-sizing
+      type: validation
+      setVariables:
+        DB_INSTANCE_TYPE: "${workflow.PROD_DB_SIZE}"
+        CACHE_INSTANCE_TYPE: "${workflow.PROD_CACHE_SIZE}"
+        REPLICAS: "3"
+      if: ${workflow.ENVIRONMENT} == production
+
+    - name: select-staging-sizing
+      type: validation
+      setVariables:
+        DB_INSTANCE_TYPE: "${workflow.STAGING_DB_SIZE}"
+        CACHE_INSTANCE_TYPE: "${workflow.STAGING_CACHE_SIZE}"
+        REPLICAS: "1"
+      if: ${workflow.ENVIRONMENT} == staging
+
+    - name: provision-resources
+      type: validation
+      env:
+        # Database configuration
+        DB_NAME: "${workflow.APP_NAME}-${workflow.ENVIRONMENT}"
+        DB_INSTANCE: "${workflow.DB_INSTANCE_TYPE}"
+
+        # Cache configuration
+        CACHE_NAME: "${workflow.APP_NAME}-cache-${workflow.ENVIRONMENT}"
+        CACHE_INSTANCE: "${workflow.CACHE_INSTANCE_TYPE}"
+
+        # Deployment configuration
+        REPLICAS: "${workflow.REPLICAS}"
+
+        # Tags common to all resources
+        TAGS: "app=${workflow.APP_NAME},env=${workflow.ENVIRONMENT}"

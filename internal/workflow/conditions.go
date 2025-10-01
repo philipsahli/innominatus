@@ -473,3 +473,55 @@ func (ctx *ExecutionContext) evaluateMatches(condition string) (bool, error) {
 
 	return false, fmt.Errorf("invalid matches expression: %s", condition)
 }
+
+// InterpolateResourceParams recursively interpolates variables in resource parameters
+// Supports string values containing ${step.output}, ${workflow.VAR}, $VAR references
+func (ctx *ExecutionContext) InterpolateResourceParams(params map[string]interface{}, env map[string]string) map[string]interface{} {
+	if params == nil {
+		return nil
+	}
+
+	result := make(map[string]interface{})
+	for key, value := range params {
+		result[key] = ctx.interpolateValue(value, env)
+	}
+	return result
+}
+
+// interpolateValue recursively interpolates variables in a value of any type
+func (ctx *ExecutionContext) interpolateValue(value interface{}, env map[string]string) interface{} {
+	switch v := value.(type) {
+	case string:
+		// Interpolate variables in string
+		return ctx.replaceVariables(v, env)
+
+	case map[string]interface{}:
+		// Recursively interpolate nested map
+		result := make(map[string]interface{})
+		for k, val := range v {
+			result[k] = ctx.interpolateValue(val, env)
+		}
+		return result
+
+	case []interface{}:
+		// Recursively interpolate array elements
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = ctx.interpolateValue(val, env)
+		}
+		return result
+
+	case map[interface{}]interface{}:
+		// Handle YAML-style map with interface{} keys
+		result := make(map[string]interface{})
+		for k, val := range v {
+			keyStr := fmt.Sprintf("%v", k)
+			result[keyStr] = ctx.interpolateValue(val, env)
+		}
+		return result
+
+	default:
+		// Return non-string values as-is (numbers, booleans, etc.)
+		return value
+	}
+}

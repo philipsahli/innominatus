@@ -8,6 +8,245 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestExecutionContext_InterpolateResourceParams(t *testing.T) {
+	ctx := NewExecutionContext()
+	ctx.SetVariable("ENVIRONMENT", "production")
+	ctx.SetVariable("REGION", "us-east-1")
+	ctx.SetStepOutputs("build", map[string]string{
+		"version":  "1.0.0",
+		"build_id": "12345",
+	})
+
+	tests := []struct {
+		name     string
+		params   map[string]interface{}
+		env      map[string]string
+		expected map[string]interface{}
+	}{
+		{
+			name: "simple string interpolation",
+			params: map[string]interface{}{
+				"name":    "myapp-${workflow.ENVIRONMENT}",
+				"version": "${build.version}",
+			},
+			env: map[string]string{},
+			expected: map[string]interface{}{
+				"name":    "myapp-production",
+				"version": "1.0.0",
+			},
+		},
+		{
+			name: "nested map interpolation",
+			params: map[string]interface{}{
+				"database": map[string]interface{}{
+					"host": "db-${workflow.ENVIRONMENT}.example.com",
+					"port": 5432,
+					"name": "app_${workflow.REGION}",
+				},
+			},
+			env: map[string]string{},
+			expected: map[string]interface{}{
+				"database": map[string]interface{}{
+					"host": "db-production.example.com",
+					"port": 5432,
+					"name": "app_us-east-1",
+				},
+			},
+		},
+		{
+			name: "array interpolation",
+			params: map[string]interface{}{
+				"tags": []interface{}{
+					"env:${workflow.ENVIRONMENT}",
+					"version:${build.version}",
+					"build:${build.build_id}",
+				},
+			},
+			env: map[string]string{},
+			expected: map[string]interface{}{
+				"tags": []interface{}{
+					"env:production",
+					"version:1.0.0",
+					"build:12345",
+				},
+			},
+		},
+		{
+			name: "mixed types interpolation",
+			params: map[string]interface{}{
+				"name":     "myapp",
+				"replicas": 3,
+				"enabled":  true,
+				"image":    "registry.example.com/myapp:${build.version}",
+				"metadata": map[string]interface{}{
+					"labels": map[string]interface{}{
+						"app":     "myapp",
+						"env":     "${workflow.ENVIRONMENT}",
+						"version": "${build.version}",
+					},
+				},
+			},
+			env: map[string]string{},
+			expected: map[string]interface{}{
+				"name":     "myapp",
+				"replicas": 3,
+				"enabled":  true,
+				"image":    "registry.example.com/myapp:1.0.0",
+				"metadata": map[string]interface{}{
+					"labels": map[string]interface{}{
+						"app":     "myapp",
+						"env":     "production",
+						"version": "1.0.0",
+					},
+				},
+			},
+		},
+		{
+			name: "step env override",
+			params: map[string]interface{}{
+				"environment": "${ENV}",
+				"custom":      "${CUSTOM_VAR}",
+			},
+			env: map[string]string{
+				"ENV":        "staging", // Override workflow variable
+				"CUSTOM_VAR": "custom_value",
+			},
+			expected: map[string]interface{}{
+				"environment": "staging",
+				"custom":      "custom_value",
+			},
+		},
+		{
+			name: "multiple variable references in one string",
+			params: map[string]interface{}{
+				"url": "https://api-${workflow.ENVIRONMENT}.example.com/v${build.version}",
+			},
+			env: map[string]string{},
+			expected: map[string]interface{}{
+				"url": "https://api-production.example.com/v1.0.0",
+			},
+		},
+		{
+			name: "no interpolation needed",
+			params: map[string]interface{}{
+				"static":  "value",
+				"number":  42,
+				"boolean": false,
+			},
+			env: map[string]string{},
+			expected: map[string]interface{}{
+				"static":  "value",
+				"number":  42,
+				"boolean": false,
+			},
+		},
+		{
+			name:     "nil params",
+			params:   nil,
+			env:      map[string]string{},
+			expected: nil,
+		},
+		{
+			name:   "empty params",
+			params: map[string]interface{}{},
+			env:    map[string]string{},
+			expected: map[string]interface{}{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ctx.InterpolateResourceParams(tt.params, tt.env)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExecutionContext_InterpolateResourceParams_Integration(t *testing.T) {
+	// Simulate a real workflow scenario
+	ctx := NewExecutionContext()
+
+	// Set workflow variables
+	ctx.SetWorkflowVariables(map[string]string{
+		"APP_NAME":    "myapp",
+		"ENVIRONMENT": "production",
+		"REGION":      "us-west-2",
+	})
+
+	// Simulate build step outputs
+	ctx.SetStepOutputs("build", map[string]string{
+		"version":      "2.5.0",
+		"commit_sha":   "abc123def",
+		"artifact_url": "https://artifacts.example.com/myapp-2.5.0.tar.gz",
+	})
+
+	// Simulate database provisioning outputs
+	ctx.SetStepOutputs("provision-db", map[string]string{
+		"db_host": "postgres-prod.example.com",
+		"db_port": "5432",
+		"db_name": "myapp_production",
+	})
+
+	// Resource params that need interpolation
+	params := map[string]interface{}{
+		"application": map[string]interface{}{
+			"name":    "${workflow.APP_NAME}",
+			"version": "${build.version}",
+			"image":   "registry.example.com/${workflow.APP_NAME}:${build.version}",
+			"environment": map[string]interface{}{
+				"DATABASE_URL": "postgresql://${provision-db.db_host}:${provision-db.db_port}/${provision-db.db_name}",
+				"APP_VERSION":  "${build.version}",
+				"COMMIT_SHA":   "${build.commit_sha}",
+				"REGION":       "${workflow.REGION}",
+			},
+			"tags": []interface{}{
+				"app:${workflow.APP_NAME}",
+				"env:${workflow.ENVIRONMENT}",
+				"version:${build.version}",
+			},
+		},
+		"replicas": 3,
+		"monitoring": map[string]interface{}{
+			"enabled": true,
+			"labels": map[string]interface{}{
+				"application": "${workflow.APP_NAME}",
+				"environment": "${workflow.ENVIRONMENT}",
+			},
+		},
+	}
+
+	result := ctx.InterpolateResourceParams(params, map[string]string{})
+
+	// Verify application settings
+	app := result["application"].(map[string]interface{})
+	assert.Equal(t, "myapp", app["name"])
+	assert.Equal(t, "2.5.0", app["version"])
+	assert.Equal(t, "registry.example.com/myapp:2.5.0", app["image"])
+
+	// Verify environment variables
+	env := app["environment"].(map[string]interface{})
+	assert.Equal(t, "postgresql://postgres-prod.example.com:5432/myapp_production", env["DATABASE_URL"])
+	assert.Equal(t, "2.5.0", env["APP_VERSION"])
+	assert.Equal(t, "abc123def", env["COMMIT_SHA"])
+	assert.Equal(t, "us-west-2", env["REGION"])
+
+	// Verify tags
+	tags := app["tags"].([]interface{})
+	assert.Equal(t, "app:myapp", tags[0])
+	assert.Equal(t, "env:production", tags[1])
+	assert.Equal(t, "version:2.5.0", tags[2])
+
+	// Verify non-interpolated values
+	assert.Equal(t, 3, result["replicas"])
+
+	// Verify monitoring
+	monitoring := result["monitoring"].(map[string]interface{})
+	assert.Equal(t, true, monitoring["enabled"])
+	labels := monitoring["labels"].(map[string]interface{})
+	assert.Equal(t, "myapp", labels["application"])
+	assert.Equal(t, "production", labels["environment"])
+}
+
 func TestExecutionContext_WhenConditions(t *testing.T) {
 	tests := []struct {
 		name           string
