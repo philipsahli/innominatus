@@ -6,10 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
@@ -21,6 +17,10 @@ import (
 	"innominatus/internal/teams"
 	"innominatus/internal/types"
 	"innominatus/internal/workflow"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -30,10 +30,10 @@ import (
 
 // LogBuffer captures command output for workflow step logging
 type LogBuffer struct {
-	buffer   strings.Builder
-	stepID   *int64
-	repo     *database.WorkflowRepository
-	mu       sync.Mutex
+	buffer strings.Builder
+	stepID *int64
+	repo   *database.WorkflowRepository
+	mu     sync.Mutex
 }
 
 // NewLogBuffer creates a new log buffer for a workflow step
@@ -88,11 +88,11 @@ func (lb *LogBuffer) GetLogs() string {
 
 // StepExecutionContext contains context for executing a workflow step
 type StepExecutionContext struct {
-	Step       types.Step
-	AppName    string
-	EnvType    string
-	StepID     *int64
-	LogBuffer  *LogBuffer
+	Step         types.Step
+	AppName      string
+	EnvType      string
+	StepID       *int64
+	LogBuffer    *LogBuffer
 	WorkflowRepo *database.WorkflowRepository
 }
 
@@ -109,25 +109,25 @@ type Server struct {
 	loginAttempts    map[string][]time.Time
 	loginMutex       sync.Mutex
 	// In-memory workflow tracking (when database is not available)
-	memoryWorkflows  map[int64]*MemoryWorkflowExecution
-	workflowCounter  int64
-	workflowMutex    sync.RWMutex
+	memoryWorkflows map[int64]*MemoryWorkflowExecution
+	workflowCounter int64
+	workflowMutex   sync.RWMutex
 	// Workflow scheduler for periodic execution
-	workflowTicker   *time.Ticker
-	stopScheduler    chan struct{}
+	workflowTicker *time.Ticker
+	stopScheduler  chan struct{}
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
 type MemoryWorkflowExecution struct {
-	ID           int64                    `json:"id"`
-	AppName      string                   `json:"app_name"`
-	WorkflowName string                   `json:"workflow_name"`
-	Status       string                   `json:"status"`
-	StartedAt    time.Time                `json:"started_at"`
-	CompletedAt  *time.Time               `json:"completed_at,omitempty"`
-	ErrorMessage *string                  `json:"error_message,omitempty"`
-	StepCount    int                      `json:"step_count"`
-	Steps        []*MemoryWorkflowStep    `json:"steps"`
+	ID           int64                 `json:"id"`
+	AppName      string                `json:"app_name"`
+	WorkflowName string                `json:"workflow_name"`
+	Status       string                `json:"status"`
+	StartedAt    time.Time             `json:"started_at"`
+	CompletedAt  *time.Time            `json:"completed_at,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
+	StepCount    int                   `json:"step_count"`
+	Steps        []*MemoryWorkflowStep `json:"steps"`
 }
 
 // MemoryWorkflowStep represents a workflow step stored in memory
@@ -465,7 +465,7 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleSpecDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Path[len("/api/specs/"):]
-	
+
 	switch r.Method {
 	case "GET":
 		s.handleGetSpec(w, r, name)
@@ -551,9 +551,9 @@ func (s *Server) HandleEnvironments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	environments := s.storage.ListEnvironments()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(environments); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
@@ -591,8 +591,8 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(response); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-	}
+				fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+			}
 			return
 		}
 	}
@@ -653,10 +653,10 @@ func (s *Server) addMockResourceStatus(resourceGraph *graph.Graph) {
 	for _, node := range postgresNodes {
 		resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
 			"connection_string": "postgresql://localhost:5432/" + node.Name,
-			"status":           "running",
-			"host":             "postgres.demo.local",
-			"port":             5432,
-			"database":         node.Name,
+			"status":            "running",
+			"host":              "postgres.demo.local",
+			"port":              5432,
+			"database":          node.Name,
 		})
 	}
 
@@ -816,7 +816,7 @@ func (s *Server) HandleTeamDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 	teams := s.teamManager.ListTeams()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(teams); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
@@ -828,23 +828,23 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	
+
 	if req.Name == "" {
 		http.Error(w, "Team name is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	team, err := s.teamManager.CreateTeam(req.Name, req.Description)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create team: %v", err), http.StatusConflict)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(team); err != nil {
@@ -858,7 +858,7 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request, teamID st
 		http.Error(w, "Team not found", http.StatusNotFound)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(team); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
@@ -875,7 +875,7 @@ func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request, teamID
 		}
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": fmt.Sprintf("Team '%s' deleted successfully", teamID),
@@ -1200,8 +1200,8 @@ func (s *Server) handleGetMemoryWorkflow(w http.ResponseWriter, r *http.Request)
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(workflow); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-	}
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -1220,7 +1220,7 @@ func (s *Server) saveWorkflowsToDisk() {
 	// Marshal workflow data
 	data := struct {
 		Workflows       map[int64]*MemoryWorkflowExecution `json:"workflows"`
-		WorkflowCounter int64                               `json:"workflow_counter"`
+		WorkflowCounter int64                              `json:"workflow_counter"`
 	}{
 		Workflows:       s.memoryWorkflows,
 		WorkflowCounter: s.workflowCounter,
@@ -1256,7 +1256,7 @@ func (s *Server) loadWorkflowsFromDisk() {
 
 	var workflowData struct {
 		Workflows       map[int64]*MemoryWorkflowExecution `json:"workflows"`
-		WorkflowCounter int64                               `json:"workflow_counter"`
+		WorkflowCounter int64                              `json:"workflow_counter"`
 	}
 
 	if err := json.Unmarshal(data, &workflowData); err != nil {
@@ -1295,12 +1295,12 @@ func (s *Server) HandleDemoStatus(w http.ResponseWriter, r *http.Request) {
 	components := []map[string]interface{}{}
 	for _, result := range healthResults {
 		component := map[string]interface{}{
-			"name":       result.Name,
-			"url":        getComponentURL(result.Name, result.Host),
-			"status":     result.Healthy,
+			"name":        result.Name,
+			"url":         getComponentURL(result.Name, result.Host),
+			"status":      result.Healthy,
 			"credentials": getComponentCredentials(result.Name, env),
-			"health":     result.Status,
-			"latency_ms": result.Latency.Milliseconds(),
+			"health":      result.Status,
+			"latency_ms":  result.Latency.Milliseconds(),
 		}
 		if result.Error != "" {
 			component["error"] = result.Error
@@ -1490,6 +1490,7 @@ func (s *Server) startWorkflowScheduler() {
 }
 
 // stopWorkflowScheduler stops the background workflow scheduler
+//
 //nolint:unused // Reserved for future graceful shutdown implementation
 func (s *Server) stopWorkflowScheduler() {
 	if s.workflowTicker != nil {
@@ -1642,9 +1643,9 @@ func (s *Server) handleAnalyzeWorkflowPreview(w http.ResponseWriter, r *http.Req
 	preview := map[string]interface{}{
 		"summary": analysis.Summary,
 		"executionPlan": map[string]interface{}{
-			"totalTime":    analysis.ExecutionPlan.TotalTime.String(),
-			"phases":       len(analysis.ExecutionPlan.Phases),
-			"maxParallel":  analysis.ExecutionPlan.MaxParallel,
+			"totalTime":   analysis.ExecutionPlan.TotalTime.String(),
+			"phases":      len(analysis.ExecutionPlan.Phases),
+			"maxParallel": analysis.ExecutionPlan.MaxParallel,
 		},
 		"resourceGraph": map[string]interface{}{
 			"nodes": len(analysis.ResourceGraph.Nodes),
@@ -1921,10 +1922,10 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := map[string]interface{}{
-		"message":      fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name),
-		"application":  spec.Metadata.Name,
-		"golden_path":  goldenPathName,
-		"workflow_id":  nil,
+		"message":     fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name),
+		"application": spec.Metadata.Name,
+		"golden_path": goldenPathName,
+		"workflow_id": nil,
 	}
 
 	if workflowExecution != nil {
@@ -1968,7 +1969,7 @@ func (s *Server) executeGoldenPathWorkflowWithResources(workflow *types.Workflow
 
 		// Execute the step
 		stepContext := &StepExecutionContext{
-			StepID:      &stepRecord.ID,
+			StepID:       &stepRecord.ID,
 			WorkflowRepo: s.workflowRepo,
 		}
 		err := s.runWorkflowStepWithTracking(step, spec.Metadata.Name, "default", stepContext)
@@ -2005,7 +2006,7 @@ func (s *Server) executeBasicGoldenPathWorkflow(workflow *types.Workflow, spec *
 
 		// For basic workflow, create minimal context without database tracking
 		stepContext := &StepExecutionContext{
-			StepID:      nil, // No database tracking for basic workflow
+			StepID:       nil, // No database tracking for basic workflow
 			WorkflowRepo: nil,
 		}
 		err := s.runWorkflowStepWithTracking(step, spec.Metadata.Name, "default", stepContext)
@@ -2384,7 +2385,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	// Load admin configuration
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
 		return fmt.Errorf("failed to load admin config: %w", err)
 	}
 
@@ -2419,7 +2420,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
 		return fmt.Errorf("failed to create repository: %w", err)
 	}
 	defer resp.Body.Close()
@@ -2428,7 +2429,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 
 	// If org doesn't exist (404), create under user account instead
 	if resp.StatusCode == 404 {
-		logBuffer.Write([]byte(fmt.Sprintf("Organization '%s' not found, creating repository under user account", owner)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Organization '%s' not found, creating repository under user account", owner)))
 		createURL = fmt.Sprintf("%s/api/v1/user/repos", adminConfig.Gitea.URL)
 		owner = adminConfig.Gitea.Username
 
@@ -2442,7 +2443,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 
 		resp, err = client.Do(req)
 		if err != nil {
-			logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
+			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
 			return fmt.Errorf("failed to create repository: %w", err)
 		}
 		defer resp.Body.Close()
@@ -2451,13 +2452,13 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	}
 
 	if resp.StatusCode == 409 {
-		logBuffer.Write([]byte("Repository already exists, continuing..."))
+		_, _ = logBuffer.Write([]byte("Repository already exists, continuing..."))
 	} else if resp.StatusCode != 201 {
 		errMsg := fmt.Sprintf("Failed to create repository, status %d: %s", resp.StatusCode, string(body))
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("failed to create repository, status %d: %s", resp.StatusCode, string(body))
 	} else {
-		logBuffer.Write([]byte("Repository created successfully"))
+		_, _ = logBuffer.Write([]byte("Repository created successfully"))
 	}
 
 	// Clone repository locally for manifest commits
@@ -2470,11 +2471,11 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	// Clone repository
 	err = s.executeCommand("git", []string{"clone", repoURL, repoDir}, "", logBuffer)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to clone repository: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to clone repository: %v", err)))
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Repository cloned to: %s", repoDir)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Repository cloned to: %s", repoDir)))
 	return nil
 }
 
@@ -2485,12 +2486,12 @@ func (s *Server) executeArgoCDStep(step types.Step, appName string, envType stri
 		appNameArgo = fmt.Sprintf("%s-%s", appName, envType)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Creating ArgoCD application: %s", appNameArgo)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating ArgoCD application: %s", appNameArgo)))
 
 	// Load admin configuration to get Gitea URL
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
 		return fmt.Errorf("failed to load admin config: %w", err)
 	}
 
@@ -2542,7 +2543,7 @@ spec:
 	manifestPath := fmt.Sprintf("/tmp/%s-argocd-app.yaml", appNameArgo)
 	err = os.WriteFile(manifestPath, []byte(manifest), 0644)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to write ArgoCD manifest: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write ArgoCD manifest: %v", err)))
 		return err
 	}
 
@@ -2553,7 +2554,7 @@ spec:
 func (s *Server) executeGitCommitStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
 	repoDir := fmt.Sprintf("/tmp/%s-%s-repo", appName, envType)
 
-	logBuffer.Write([]byte(fmt.Sprintf("Committing manifests to repository in %s", repoDir)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Committing manifests to repository in %s", repoDir)))
 
 	// Create manifests directory if it doesn't exist
 	manifestDir := fmt.Sprintf("%s/%s", repoDir, step.ManifestPath)
@@ -2563,7 +2564,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 
 	err := os.MkdirAll(manifestDir, 0755)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to create manifest directory: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create manifest directory: %v", err)))
 		return err
 	}
 
@@ -2573,7 +2574,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 
 	err = s.executeCommand("cp", []string{manifestPath, destPath}, "", logBuffer)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Warning: Failed to copy manifests: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Warning: Failed to copy manifests: %v", err)))
 	}
 
 	// Add files
@@ -2591,7 +2592,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 	err = s.executeCommand("git", []string{"commit", "-m", commitMessage}, repoDir, logBuffer)
 	if err != nil {
 		// Ignore error if nothing to commit
-		logBuffer.Write([]byte("No changes to commit or commit failed"))
+		_, _ = logBuffer.Write([]byte("No changes to commit or commit failed"))
 	}
 
 	// Push
@@ -2613,10 +2614,10 @@ func (s *Server) executeAnsibleStep(step types.Step, appName string, envType str
 
 // executePolicyStep executes a policy validation step
 func (s *Server) executePolicyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	logBuffer.Write([]byte(fmt.Sprintf("Executing policy validation for %s in %s environment", appName, envType)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Executing policy validation for %s in %s environment", appName, envType)))
 
 	// Simulate policy execution (would integrate with OPA, Gatekeeper, etc.)
-	logBuffer.Write([]byte("Policy validation simulated - would require integration with policy engine"))
+	_, _ = logBuffer.Write([]byte("Policy validation simulated - would require integration with policy engine"))
 	time.Sleep(1 * time.Second)
 
 	return nil
@@ -2646,7 +2647,7 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 			err := s.resourceManager.ProvisionResource(resource.ID, "golden-path-provisioner",
 				map[string]interface{}{
 					"provisioned_via": "golden_path_workflow",
-					"workflow_type": "deploy-app",
+					"workflow_type":   "deploy-app",
 				}, username)
 			if err != nil {
 				fmt.Printf("❌ Failed to provision resource %s: %v\n", resource.ResourceName, err)
@@ -2662,23 +2663,23 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 
 // executeDummyStep executes a dummy workflow step with logging for testing purposes
 func (s *Server) executeDummyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	logBuffer.Write([]byte("INFO: This is a dummy workflow for testing the logging system"))
-	logBuffer.Write([]byte(fmt.Sprintf("Executing dummy step '%s' for application: %s", step.Name, appName)))
-	logBuffer.Write([]byte(fmt.Sprintf("Environment: %s", envType)))
+	_, _ = logBuffer.Write([]byte("INFO: This is a dummy workflow for testing the logging system"))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Executing dummy step '%s' for application: %s", step.Name, appName)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Environment: %s", envType)))
 
 	// Simulate some processing time with multiple log entries
-	logBuffer.Write([]byte("Step 1: Initializing dummy process..."))
+	_, _ = logBuffer.Write([]byte("Step 1: Initializing dummy process..."))
 	time.Sleep(500 * time.Millisecond)
 
-	logBuffer.Write([]byte("Step 2: Processing dummy data..."))
-	logBuffer.Write([]byte("INFO: Dummy workflow is demonstrating log capture functionality"))
+	_, _ = logBuffer.Write([]byte("Step 2: Processing dummy data..."))
+	_, _ = logBuffer.Write([]byte("INFO: Dummy workflow is demonstrating log capture functionality"))
 	time.Sleep(500 * time.Millisecond)
 
-	logBuffer.Write([]byte("Step 3: Finalizing dummy process..."))
+	_, _ = logBuffer.Write([]byte("Step 3: Finalizing dummy process..."))
 	time.Sleep(300 * time.Millisecond)
 
-	logBuffer.Write([]byte("SUCCESS: Dummy workflow step completed successfully"))
-	logBuffer.Write([]byte("This log message confirms the enhanced logging system is working"))
+	_, _ = logBuffer.Write([]byte("SUCCESS: Dummy workflow step completed successfully"))
+	_, _ = logBuffer.Write([]byte("This log message confirms the enhanced logging system is working"))
 
 	return nil
 }
