@@ -89,4 +89,9 @@ type Step struct {
 	Outputs      []string          `yaml:"outputs,omitempty"`      // List of output variable names to capture
 	OutputFile   string            `yaml:"outputFile,omitempty"`   // File to read outputs from (JSON or key=value format)
 	SetVariables map[string]string `yaml:"setVariables,omitempty"` // Variables to set in workflow context
+	// New fields for terraform step type
+	Operation  string                 `yaml:"operation,omitempty"`  // Terraform operation (init, plan, apply, destroy, output)
+	WorkingDir string                 `yaml:"workingDir,omitempty"` // Working directory for terraform
+	Variables  map[string]interface{} `yaml:"variables,omitempty"`  // Terraform variables
+	Config     map[string]interface{} `yaml:"config,omitempty"`     // Generic config map for flexible step configuration
 }

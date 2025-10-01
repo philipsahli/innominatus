@@ -761,38 +761,46 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 	e.stepExecutors["terraform"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
 		fmt.Printf("      🏗️  Executing Terraform step: %s\n", step.Name)
 
-		// Parse configuration
-		config, ok := step.Config.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("terraform step config must be a map")
-		}
-
 		// Get operation (default: apply)
-		operation, ok := config["operation"].(string)
-		if !ok {
+		operation := step.Operation
+		if operation == "" {
 			operation = "apply"
 		}
 
-		// Get working directory
-		workingDir, ok := config["working_dir"].(string)
-		if !ok {
-			return fmt.Errorf("terraform step requires 'working_dir' in config")
+		// Get working directory (try both WorkingDir field and Config map)
+		workingDir := step.WorkingDir
+		if workingDir == "" && step.Config != nil {
+			if wd, ok := step.Config["working_dir"].(string); ok {
+				workingDir = wd
+			}
+		}
+		if workingDir == "" {
+			return fmt.Errorf("terraform step requires 'workingDir' or 'config.working_dir'")
 		}
 
-		// Get variables (optional)
+		// Get variables (from both Variables field and Config map)
 		variables := make(map[string]string)
-		if varsRaw, ok := config["variables"].(map[string]interface{}); ok {
-			for k, v := range varsRaw {
+		if step.Variables != nil {
+			for k, v := range step.Variables {
 				variables[k] = fmt.Sprintf("%v", v)
 			}
 		}
+		if step.Config != nil {
+			if varsRaw, ok := step.Config["variables"].(map[string]interface{}); ok {
+				for k, v := range varsRaw {
+					variables[k] = fmt.Sprintf("%v", v)
+				}
+			}
+		}
 
-		// Get outputs to capture (optional)
-		var outputNames []string
-		if outputsRaw, ok := config["outputs"].([]interface{}); ok {
-			for _, o := range outputsRaw {
-				if outputStr, ok := o.(string); ok {
-					outputNames = append(outputNames, outputStr)
+		// Get outputs to capture
+		outputNames := step.Outputs
+		if len(outputNames) == 0 && step.Config != nil {
+			if outputsRaw, ok := step.Config["outputs"].([]interface{}); ok {
+				for _, o := range outputsRaw {
+					if outputStr, ok := o.(string); ok {
+						outputNames = append(outputNames, outputStr)
+					}
 				}
 			}
 		}
