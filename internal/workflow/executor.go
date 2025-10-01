@@ -12,6 +12,16 @@ import (
 // StepExecutorFunc defines the signature for step execution functions
 type StepExecutorFunc func(ctx context.Context, step types.Step, appName string, execID int64) error
 
+// WorkflowRepositoryInterface defines the methods needed for workflow persistence
+type WorkflowRepositoryInterface interface {
+	CreateWorkflowExecution(appName, workflowName string, totalSteps int) (*database.WorkflowExecution, error)
+	CreateWorkflowStep(execID int64, stepNumber int, stepName, stepType string, config map[string]interface{}) (*database.WorkflowStepExecution, error)
+	UpdateWorkflowStepStatus(stepID int64, status string, errorMessage *string) error
+	UpdateWorkflowExecution(execID int64, status string, errorMessage *string) error
+	GetWorkflowExecution(id int64) (*database.WorkflowExecution, error)
+	ListWorkflowExecutions(appName string, limit, offset int) ([]*database.WorkflowExecutionSummary, error)
+}
+
 // ResourceManager interface defines the methods needed for resource management
 type ResourceManager interface {
 	GetResourcesByApplication(appName string) ([]*database.ResourceInstance, error)
@@ -21,7 +31,7 @@ type ResourceManager interface {
 
 // WorkflowExecutor handles workflow execution with database persistence
 type WorkflowExecutor struct {
-	repo             *database.WorkflowRepository
+	repo             WorkflowRepositoryInterface
 	resolver         *WorkflowResolver
 	resourceManager  ResourceManager
 	maxConcurrent    int
@@ -31,7 +41,7 @@ type WorkflowExecutor struct {
 }
 
 // NewWorkflowExecutor creates a new workflow executor with database support
-func NewWorkflowExecutor(repo *database.WorkflowRepository) *WorkflowExecutor {
+func NewWorkflowExecutor(repo WorkflowRepositoryInterface) *WorkflowExecutor {
 	executor := &WorkflowExecutor{
 		repo:             repo,
 		maxConcurrent:    5,
@@ -43,7 +53,7 @@ func NewWorkflowExecutor(repo *database.WorkflowRepository) *WorkflowExecutor {
 }
 
 // NewWorkflowExecutorWithResourceManager creates a new workflow executor with resource manager integration
-func NewWorkflowExecutorWithResourceManager(repo *database.WorkflowRepository, resourceManager ResourceManager) *WorkflowExecutor {
+func NewWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInterface, resourceManager ResourceManager) *WorkflowExecutor {
 	executor := &WorkflowExecutor{
 		repo:             repo,
 		resourceManager:  resourceManager,
@@ -56,7 +66,7 @@ func NewWorkflowExecutorWithResourceManager(repo *database.WorkflowRepository, r
 }
 
 // NewMultiTierWorkflowExecutor creates a new executor with resolver support
-func NewMultiTierWorkflowExecutor(repo *database.WorkflowRepository, resolver *WorkflowResolver) *WorkflowExecutor {
+func NewMultiTierWorkflowExecutor(repo WorkflowRepositoryInterface, resolver *WorkflowResolver) *WorkflowExecutor {
 	executor := &WorkflowExecutor{
 		repo:             repo,
 		resolver:         resolver,
@@ -69,7 +79,7 @@ func NewMultiTierWorkflowExecutor(repo *database.WorkflowRepository, resolver *W
 }
 
 // NewMultiTierWorkflowExecutorWithResourceManager creates a new executor with resolver and resource manager support
-func NewMultiTierWorkflowExecutorWithResourceManager(repo *database.WorkflowRepository, resolver *WorkflowResolver, resourceManager ResourceManager) *WorkflowExecutor {
+func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInterface, resolver *WorkflowResolver, resourceManager ResourceManager) *WorkflowExecutor {
 	executor := &WorkflowExecutor{
 		repo:             repo,
 		resolver:         resolver,
@@ -234,7 +244,7 @@ func (e *WorkflowExecutor) ListWorkflowExecutions(appName string, limit, offset 
 }
 
 // RunWorkflowWithDB executes a workflow with database persistence (convenience function)
-func RunWorkflowWithDB(repo *database.WorkflowRepository, appName string, workflow types.Workflow) error {
+func RunWorkflowWithDB(repo WorkflowRepositoryInterface, appName string, workflow types.Workflow) error {
 	executor := NewWorkflowExecutor(repo)
 	return executor.ExecuteWorkflow(appName, workflow)
 }
@@ -294,10 +304,41 @@ func (e *WorkflowExecutor) executePhaseWorkflows(ctx context.Context, appName st
 	return executionError
 }
 
-// executeResolvedWorkflow executes a single resolved workflow
+// executeResolvedWorkflow executes a single resolved workflow with support for parallel steps
 func (e *WorkflowExecutor) executeResolvedWorkflow(ctx context.Context, appName string, workflow ResolvedWorkflow, execID int64) error {
-	for i, step := range workflow.Steps {
-		fmt.Printf("    🔄 Step %d/%d: %s (%s)\n", i+1, len(workflow.Steps), step.Name, step.Type)
+	// Check if any steps are marked for parallel execution
+	hasParallelSteps := false
+	for _, step := range workflow.Steps {
+		if step.Parallel || step.ParallelGroup > 0 {
+			hasParallelSteps = true
+			break
+		}
+	}
+
+	// If no parallel steps, use sequential execution
+	if !hasParallelSteps {
+		return e.executeStepsSequentially(ctx, appName, workflow.Steps, execID)
+	}
+
+	// Group steps by parallel groups and dependencies
+	stepGroups := e.buildStepExecutionGroups(workflow.Steps)
+
+	// Execute step groups in order, steps within a group run in parallel
+	for groupIdx, group := range stepGroups {
+		fmt.Printf("    📦 Executing step group %d/%d (%d steps)\n", groupIdx+1, len(stepGroups), len(group))
+
+		if err := e.executeStepGroupParallel(ctx, appName, group, execID); err != nil {
+			return fmt.Errorf("step group %d failed: %w", groupIdx+1, err)
+		}
+	}
+
+	return nil
+}
+
+// executeStepsSequentially executes steps one by one (original behavior)
+func (e *WorkflowExecutor) executeStepsSequentially(ctx context.Context, appName string, steps []types.Step, execID int64) error {
+	for i, step := range steps {
+		fmt.Printf("    🔄 Step %d/%d: %s (%s)\n", i+1, len(steps), step.Name, step.Type)
 
 		// Create step execution record
 		stepConfig := map[string]interface{}{
@@ -336,6 +377,146 @@ func (e *WorkflowExecutor) executeResolvedWorkflow(ctx context.Context, appName 
 		duration := time.Since(stepStartTime)
 		fmt.Printf("    ✅ Step %s completed (took %v)\n", step.Name, duration.Round(time.Millisecond))
 	}
+
+	return nil
+}
+
+// buildStepExecutionGroups builds groups of steps that can execute in parallel
+func (e *WorkflowExecutor) buildStepExecutionGroups(steps []types.Step) [][]types.Step {
+	// Build a map of step names to their indices
+	stepIndexMap := make(map[string]int)
+	for i, step := range steps {
+		stepIndexMap[step.Name] = i
+	}
+
+	// Track which steps have been added to groups
+	addedSteps := make(map[int]bool)
+	groups := [][]types.Step{}
+
+	// Process steps by parallel group if specified
+	groupMap := make(map[int][]types.Step)
+	ungroupedSteps := []types.Step{}
+
+	for i, step := range steps {
+		if step.ParallelGroup > 0 {
+			groupMap[step.ParallelGroup] = append(groupMap[step.ParallelGroup], step)
+			addedSteps[i] = true
+		} else if !step.Parallel {
+			// Sequential steps get their own group
+			if len(ungroupedSteps) > 0 {
+				groups = append(groups, ungroupedSteps)
+				ungroupedSteps = []types.Step{}
+			}
+			groups = append(groups, []types.Step{step})
+			addedSteps[i] = true
+		} else {
+			ungroupedSteps = append(ungroupedSteps, step)
+			addedSteps[i] = true
+		}
+	}
+
+	// Add remaining ungrouped parallel steps
+	if len(ungroupedSteps) > 0 {
+		groups = append(groups, ungroupedSteps)
+	}
+
+	// Add explicitly grouped steps in group order
+	for groupID := 1; groupID <= len(groupMap); groupID++ {
+		if groupSteps, exists := groupMap[groupID]; exists {
+			groups = append(groups, groupSteps)
+		}
+	}
+
+	// If no groups were created, put all steps in one sequential group
+	if len(groups) == 0 {
+		groups = append(groups, steps)
+	}
+
+	return groups
+}
+
+// executeStepGroupParallel executes a group of steps in parallel
+func (e *WorkflowExecutor) executeStepGroupParallel(ctx context.Context, appName string, steps []types.Step, execID int64) error {
+	// If only one step, execute directly
+	if len(steps) == 1 {
+		return e.executeSingleStep(ctx, appName, steps[0], execID, 0)
+	}
+
+	// Create channels for error handling
+	var wg sync.WaitGroup
+	errorChan := make(chan error, len(steps))
+
+	// Execute all steps in parallel
+	for i, step := range steps {
+		wg.Add(1)
+		go func(idx int, s types.Step) {
+			defer wg.Done()
+
+			if err := e.executeSingleStep(ctx, appName, s, execID, idx); err != nil {
+				errorChan <- fmt.Errorf("step %s: %w", s.Name, err)
+			}
+		}(i, step)
+	}
+
+	// Wait for all steps to complete
+	wg.Wait()
+	close(errorChan)
+
+	// Check for errors
+	var errors []error
+	for err := range errorChan {
+		errors = append(errors, err)
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("parallel execution failed: %v", errors[0])
+	}
+
+	return nil
+}
+
+// executeSingleStep executes a single step with full database tracking
+func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string, step types.Step, execID int64, stepNumber int) error {
+	fmt.Printf("      🔄 %s (%s)\n", step.Name, step.Type)
+
+	// Create step execution record
+	stepConfig := map[string]interface{}{
+		"name":          step.Name,
+		"type":          step.Type,
+		"path":          step.Path,
+		"namespace":     step.Namespace,
+		"parallel":      step.Parallel,
+		"parallelGroup": step.ParallelGroup,
+	}
+
+	stepRecord, err := e.repo.CreateWorkflowStep(execID, stepNumber+1, step.Name, step.Type, stepConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create step execution: %w", err)
+	}
+
+	// Update step to running
+	err = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil)
+	if err != nil {
+		fmt.Printf("      ⚠️  Warning: failed to update step status: %v\n", err)
+	}
+
+	// Execute the step
+	stepStartTime := time.Now()
+	if err := e.executeStepWithExecutor(ctx, step, appName, execID); err != nil {
+		// Mark step as failed
+		errorMsg := err.Error()
+		_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
+		return err
+	}
+
+	// Mark step as completed
+	err = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusCompleted, nil)
+	if err != nil {
+		fmt.Printf("      ⚠️  Warning: failed to update step completion: %v\n", err)
+	}
+
+	duration := time.Since(stepStartTime)
+	fmt.Printf("      ✅ %s completed (took %v)\n", step.Name, duration.Round(time.Millisecond))
 
 	return nil
 }

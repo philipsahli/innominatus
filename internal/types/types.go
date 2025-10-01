@@ -75,4 +75,8 @@ type Step struct {
 	// New fields for sync waiting and timeout
 	Timeout     int   `yaml:"timeout,omitempty"`     // Timeout in seconds for sync waiting
 	WaitForSync *bool `yaml:"waitForSync,omitempty"` // Whether to wait for sync completion
+	// New fields for parallel execution
+	Parallel      bool     `yaml:"parallel,omitempty"`      // Whether this step can run in parallel
+	DependsOn     []string `yaml:"dependsOn,omitempty"`     // Steps this step depends on
+	ParallelGroup int      `yaml:"parallelGroup,omitempty"` // Group ID for parallel execution
 }

@@ -1,0 +1,133 @@
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: parallel-deployment-example
+  description: Example workflow demonstrating parallel step execution
+
+spec:
+  steps:
+    # Phase 1: Pre-deployment validation (runs in parallel)
+    - name: validate-syntax
+      type: validation
+      parallel: true
+      parallelGroup: 1
+
+    - name: security-scan
+      type: security
+      parallel: true
+      parallelGroup: 1
+
+    - name: policy-check
+      type: policy
+      parallel: true
+      parallelGroup: 1
+
+    # Phase 2: Infrastructure provisioning (runs sequentially after phase 1)
+    - name: provision-database
+      type: terraform
+      path: ./terraform/database
+      parallel: false
+
+    # Phase 3: Application deployment (runs in parallel after infrastructure)
+    - name: deploy-backend
+      type: kubernetes
+      namespace: myapp-backend
+      parallel: true
+      parallelGroup: 2
+
+    - name: deploy-frontend
+      type: kubernetes
+      namespace: myapp-frontend
+      parallel: true
+      parallelGroup: 2
+
+    - name: deploy-worker
+      type: kubernetes
+      namespace: myapp-worker
+      parallel: true
+      parallelGroup: 2
+
+    # Phase 4: Post-deployment checks (runs sequentially after deployment)
+    - name: health-check
+      type: validation
+      parallel: false
+
+    - name: setup-monitoring
+      type: monitoring
+      parallel: false
+
+---
+# Example 2: Simple parallel execution without explicit groups
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: simple-parallel-example
+  description: Simple parallel execution example
+
+spec:
+  steps:
+    # These three steps will run in parallel
+    - name: task-a
+      type: validation
+      parallel: true
+
+    - name: task-b
+      type: security
+      parallel: true
+
+    - name: task-c
+      type: policy
+      parallel: true
+
+    # This step will run after all parallel steps complete
+    - name: final-task
+      type: validation
+      parallel: false
+
+---
+# Example 3: Mixed sequential and parallel
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: mixed-execution-example
+  description: Mix of sequential and parallel steps
+
+spec:
+  steps:
+    # Step 1: Sequential (runs first)
+    - name: initialize
+      type: terraform
+      path: ./terraform/init
+      parallel: false
+
+    # Steps 2-4: Parallel (run together after step 1)
+    - name: setup-database
+      type: resource-provisioning
+      parallel: true
+
+    - name: setup-cache
+      type: resource-provisioning
+      parallel: true
+
+    - name: setup-storage
+      type: resource-provisioning
+      parallel: true
+
+    # Step 5: Sequential (runs after parallel group)
+    - name: configure
+      type: validation
+      parallel: false
+
+    # Steps 6-7: Parallel (run together after step 5)
+    - name: deploy-services
+      type: kubernetes
+      parallel: true
+
+    - name: setup-monitoring
+      type: monitoring
+      parallel: true
+
+    # Step 8: Sequential (runs last)
+    - name: verify
+      type: validation
+      parallel: false
