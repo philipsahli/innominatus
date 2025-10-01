@@ -1,0 +1,121 @@
+site_name: innominatus Documentation
+site_description: Score-based Platform Orchestration for Internal Developer Platforms
+site_author: innominatus Contributors
+site_url: https://docs.innominatus.dev
+
+repo_name: innominatus
+repo_url: https://github.com/innominatus/innominatus
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - tags
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+
+  - Getting Started:
+    - Quick Start: getting-started/quick-start.md
+    - Installation: getting-started/installation.md
+    - First Workflow: getting-started/first-workflow.md
+    - Core Concepts: getting-started/concepts.md
+
+  - User Guide:
+    - Workflows: guides/workflows.md
+    - Golden Paths: guides/golden-paths.md
+    - Score Specifications: guides/score-specs.md
+    - Resources: guides/resources.md
+    - Variables & Context: guides/variables.md
+
+  - Features:
+    - Conditional Execution: features/conditional-execution.md
+    - Parallel Execution: features/parallel-execution.md
+    - Variable Interpolation: features/context-variables.md
+    - Health & Monitoring: features/health-monitoring.md
+
+  - CLI Reference:
+    - Overview: cli/overview.md
+    - Commands: cli/commands.md
+    - Output Formatting: cli/output-formatting.md
+    - Golden Path Commands: cli/golden-paths.md
+
+  - API Reference:
+    - REST API: api/rest-api.md
+    - Swagger/OpenAPI: api/swagger.md
+    - Authentication: api/authentication.md
+
+  - Examples:
+    - Basic Workflow: examples/basic-workflow.md
+    - Database Provisioning: examples/database.md
+    - Multi-Region Deployment: examples/multi-region.md
+    - GitOps Integration: examples/gitops.md
+
+  - Enterprise:
+    - Platform Integration: enterprise/platform-integration.md
+    - Deployment Options: enterprise/deployment.md
+    - Security: enterprise/security.md
+    - Scalability: enterprise/scalability.md
+
+  - Development:
+    - Contributing: development/contributing.md
+    - Architecture: development/architecture.md
+    - Testing: development/testing.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/innominatus/innominatus
