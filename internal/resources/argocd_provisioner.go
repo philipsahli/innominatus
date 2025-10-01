@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/database"
+	"innominatus/internal/security"
 	"io"
 	"net/http"
 	"time"
@@ -286,8 +287,13 @@ func (ap *ArgoCDProvisioner) authenticateArgoCD(argoCDURL, username, password st
 		return "", fmt.Errorf("failed to marshal login data: %w", err)
 	}
 
+	// Validate URL to prevent SSRF attacks
+	if err := security.ValidateArgoCDURL(argoCDURL); err != nil {
+		return "", fmt.Errorf("invalid ArgoCD URL: %w", err)
+	}
+
 	loginURL := fmt.Sprintf("%s/api/v1/session", argoCDURL)
-	resp, err := http.Post(loginURL, "application/json", bytes.NewReader(loginJSON))
+	resp, err := http.Post(loginURL, "application/json", bytes.NewReader(loginJSON)) // #nosec G107 - URL validated above
 	if err != nil {
 		return "", fmt.Errorf("failed to authenticate: %w", err)
 	}

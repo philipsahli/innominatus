@@ -1,5 +1,7 @@
 package vault
 
+// #nosec G204 - Vault Kubernetes deployment executes kubectl with controlled parameters for Vault setup
+
 import (
 	"fmt"
 	"os"

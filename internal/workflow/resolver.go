@@ -238,7 +238,8 @@ func (r *WorkflowResolver) loadPlatformWorkflows() ([]PlatformWorkflow, error) {
 		}
 
 		filePath := filepath.Join(platformDir, file.Name())
-		data, err := os.ReadFile(filePath)
+		// Note: filePath constructed from controlled platformDir and validated file listing
+		data, err := os.ReadFile(filepath.Clean(filePath)) // #nosec G304 - path from controlled workflow directory
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", filePath, err)
 		}
@@ -273,7 +274,8 @@ func (r *WorkflowResolver) loadProductWorkflows(product string) ([]ProductWorkfl
 		}
 
 		filePath := filepath.Join(productDir, file.Name())
-		data, err := os.ReadFile(filePath)
+		// Note: filePath constructed from controlled productDir and validated file listing
+		data, err := os.ReadFile(filepath.Clean(filePath)) // #nosec G304 - path from controlled workflow directory
 		if err != nil {
 			return nil, fmt.Errorf("failed to read %s: %w", filePath, err)
 		}

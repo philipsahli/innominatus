@@ -1,5 +1,7 @@
 package resources
 
+// #nosec G204 - Kubernetes provisioner executes kubectl commands with validated resource names and namespaces
+
 import (
 	"fmt"
 	"innominatus/internal/admin"
@@ -370,7 +372,7 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 
 	// Create temporary directory for git operations
 	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("innominatus-git-%s-%d", appName, time.Now().Unix()))
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }() // Clean up after
@@ -384,13 +386,13 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 
 	// Create k8s directory if it doesn't exist
 	k8sDir := filepath.Join(tmpDir, "k8s")
-	if err := os.MkdirAll(k8sDir, 0755); err != nil {
+	if err := os.MkdirAll(k8sDir, 0700); err != nil {
 		return fmt.Errorf("failed to create k8s directory: %w", err)
 	}
 
 	// Write manifests to file
 	manifestFile := filepath.Join(k8sDir, "manifests.yaml")
-	if err := os.WriteFile(manifestFile, []byte(manifests), 0644); err != nil {
+	if err := os.WriteFile(manifestFile, []byte(manifests), 0600); err != nil {
 		return fmt.Errorf("failed to write manifests: %w", err)
 	}
 

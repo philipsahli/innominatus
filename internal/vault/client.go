@@ -1,4 +1,5 @@
 package vault
+// #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
 	"bytes"

@@ -3,9 +3,10 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"innominatus/internal/security"
+	"innominatus/internal/types"
 	"os"
 	"path/filepath"
-	"innominatus/internal/types"
 	"sync"
 	"time"
 )
@@ -65,7 +66,7 @@ func NewStorage() *Storage {
 	}
 
 	// Create data directory if it doesn't exist
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		fmt.Printf("Warning: Failed to create data directory: %v\n", err)
 	}
 
@@ -283,7 +284,7 @@ func (s *Storage) saveToDisk() error {
 	}
 
 	filePath := filepath.Join(s.dataDir, "storage.json")
-	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
+	if err := os.WriteFile(filePath, jsonData, 0600); err != nil {
 		return fmt.Errorf("failed to write storage file: %w", err)
 	}
 
@@ -294,13 +295,18 @@ func (s *Storage) saveToDisk() error {
 func (s *Storage) loadFromDisk() error {
 	filePath := filepath.Join(s.dataDir, "storage.json")
 
+	// Validate path to prevent path traversal
+	if err := security.ValidateWorkflowPath(filePath); err != nil {
+		return fmt.Errorf("invalid storage path: %w", err)
+	}
+
 	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		// File doesn't exist, start with empty storage
 		return nil
 	}
 
-	data, err := os.ReadFile(filePath)
+	data, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return fmt.Errorf("failed to read storage file: %w", err)
 	}

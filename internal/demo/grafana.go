@@ -48,7 +48,7 @@ func (g *GrafanaManager) WaitForGrafana(maxRetries int) error {
 			fmt.Printf("   Retry %d/%d...\\n", i+1, maxRetries)
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode == 200 {
 			fmt.Printf("✅ Grafana is ready\\n")

@@ -149,7 +149,9 @@ func (e *WorkflowExecutor) ExecuteMultiTierWorkflows(ctx context.Context, app *A
 		if err := e.executePhaseWorkflows(ctx, app.Name, phase, workflows, execution.ID); err != nil {
 			// Mark execution as failed
 			errorMsg := err.Error()
-			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &errorMsg)
+			if updateErr := e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &errorMsg); updateErr != nil {
+				fmt.Printf("Warning: failed to update workflow status to failed: %v\n", updateErr)
+			}
 			return fmt.Errorf("failed executing %s workflows: %w", phase, err)
 		}
 
@@ -807,7 +809,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 
 		// Create workspace directory for this app/env
 		workspaceDir := fmt.Sprintf("workspaces/%s/terraform", appName)
-		if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+		if err := os.MkdirAll(workspaceDir, 0700); err != nil {
 			return fmt.Errorf("failed to create terraform workspace: %w", err)
 		}
 
@@ -870,7 +872,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 		}
 
 		// Create output directory
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
+		if err := os.MkdirAll(outputDir, 0700); err != nil {
 			return fmt.Errorf("failed to create output directory: %w", err)
 		}
 
@@ -908,7 +910,7 @@ func (e *WorkflowExecutor) copyTerraformFiles(src, dest string) error {
 		destPath := filepath.Join(dest, relPath)
 
 		if info.IsDir() {
-			return os.MkdirAll(destPath, 0755)
+			return os.MkdirAll(destPath, 0700)
 		}
 
 		// Copy file
@@ -917,14 +919,15 @@ func (e *WorkflowExecutor) copyTerraformFiles(src, dest string) error {
 }
 
 // copyFile copies a single file
+// Note: src and dest paths are expected to be within controlled workspace directories
 func (e *WorkflowExecutor) copyFile(src, dest string) error {
-	sourceFile, err := os.Open(src)
+	sourceFile, err := os.Open(filepath.Clean(src)) // #nosec G304 - paths controlled by workflow executor
 	if err != nil {
 		return err
 	}
 	defer func() { _ = sourceFile.Close() }()
 
-	destFile, err := os.Create(dest)
+	destFile, err := os.Create(filepath.Clean(dest)) // #nosec G304 - paths controlled by workflow executor
 	if err != nil {
 		return err
 	}
@@ -1108,7 +1111,7 @@ output "bucket_arn" {
 
 	// Write main.tf
 	mainTfPath := filepath.Join(outputDir, "main.tf")
-	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0644); err != nil {
+	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0600); err != nil {
 		return fmt.Errorf("failed to write main.tf: %w", err)
 	}
 

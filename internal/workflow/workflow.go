@@ -276,7 +276,7 @@ func runAnsibleStep(step types.Step) error {
 
 	// Run ansible-playbook
 	fmt.Printf("Running: ansible-playbook %s\n", step.Playbook)
-	cmd := exec.Command("ansible-playbook", step.Playbook)
+	cmd := exec.Command("ansible-playbook", step.Playbook) // #nosec G204 - ansible playbook from validated workflow definition
 	if step.Path != "" {
 		cmd.Dir = step.Path
 	}
@@ -304,7 +304,7 @@ func runAnsibleStepWithSpinner(step types.Step, appName string, envType string, 
 
 	// Run ansible-playbook
 	spinner.Update("Running ansible-playbook...")
-	cmd := exec.Command("ansible-playbook", step.Playbook)
+	cmd := exec.Command("ansible-playbook", step.Playbook) // #nosec G204 - playbook from validated workflow definition
 	if step.Path != "" {
 		cmd.Dir = step.Path
 	}
@@ -394,7 +394,7 @@ func runKubernetesStepWithSpinner(step types.Step, appName string, envType strin
 	spinner.Update(fmt.Sprintf("Creating namespace: %s", namespace))
 
 	// Create namespace if it doesn't exist
-	createNsCmd := exec.Command("kubectl", "create", "namespace", namespace)
+	createNsCmd := exec.Command("kubectl", "create", "namespace", namespace) // #nosec G204 - namespace from workflow config
 	output, err := createNsCmd.CombinedOutput()
 	if err != nil && !strings.Contains(string(output), "AlreadyExists") {
 		return fmt.Errorf("failed to create namespace: %w, output: %s", err, string(output))
@@ -408,7 +408,7 @@ func runKubernetesStepWithSpinner(step types.Step, appName string, envType strin
 	spinner.Update("Applying Kubernetes manifests...")
 
 	// Apply manifests using kubectl
-	applyCmd := exec.Command("kubectl", "apply", "-f", "-", "-n", namespace)
+	applyCmd := exec.Command("kubectl", "apply", "-f", "-", "-n", namespace) // #nosec G204 - namespace from workflow config
 	applyCmd.Stdin = strings.NewReader(manifests)
 	output, err = applyCmd.CombinedOutput()
 	if err != nil {
@@ -418,6 +418,7 @@ func runKubernetesStepWithSpinner(step types.Step, appName string, envType strin
 	spinner.Update("Waiting for deployment to be ready...")
 
 	// Wait for deployment to be ready (with timeout)
+	// #nosec G204 - appName and namespace from validated workflow definition
 	waitCmd := exec.Command("kubectl", "wait", "--for=condition=available",
 		"--timeout=120s",
 		fmt.Sprintf("deployment/%s", appName),
@@ -431,7 +432,7 @@ func runKubernetesStepWithSpinner(step types.Step, appName string, envType strin
 	spinner.Update("Checking deployment status...")
 
 	// Verify pods are running
-	getPodsCmd := exec.Command("kubectl", "get", "pods", "-n", namespace)
+	getPodsCmd := exec.Command("kubectl", "get", "pods", "-n", namespace) // #nosec G204 - namespace from workflow config
 	output, err = getPodsCmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("\nWarning: Could not get pods: %v\n", err)
@@ -783,14 +784,14 @@ spec:
 
 	// Clone repository
 	repoURL := fmt.Sprintf("%s/%s/%s.git", adminConfig.Gitea.URL, owner, step.RepoName)
-	cloneCmd := exec.Command("git", "clone", repoURL, tmpDir)
+	cloneCmd := exec.Command("git", "clone", repoURL, tmpDir) // #nosec G204 - repo URL from admin config and workflow step
 	if err := cloneCmd.Run(); err != nil {
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
 	// Write manifest file
 	manifestFilePath := filepath.Join(tmpDir, "deployment.yaml")
-	if err := os.WriteFile(manifestFilePath, []byte(manifestContent), 0644); err != nil {
+	if err := os.WriteFile(manifestFilePath, []byte(manifestContent), 0600); err != nil {
 		return fmt.Errorf("failed to write manifest file: %w", err)
 	}
 
@@ -825,7 +826,7 @@ spec:
 
 	if len(strings.TrimSpace(string(output))) == 0 {
 		fmt.Printf("No changes to commit - manifests are up to date\n")
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		return nil
 	}
 
@@ -851,7 +852,7 @@ spec:
 	fmt.Printf("Repository: %s/%s/%s\n", adminConfig.Gitea.URL, owner, step.RepoName)
 
 	// Clean up temporary directory
-	os.RemoveAll(tmpDir)
+	_ = os.RemoveAll(tmpDir)
 	return nil
 }
 

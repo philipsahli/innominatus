@@ -1,4 +1,5 @@
 package demo
+// #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
 	"context"

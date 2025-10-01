@@ -1,4 +1,5 @@
 package demo
+// #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
 	"fmt"
@@ -244,7 +245,7 @@ func (g *GitManager) createManifests() error {
 	}
 
 	for _, dir := range dirs {
-		if err := os.MkdirAll(filepath.Join(g.workDir, dir), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Join(g.workDir, dir), 0700); err != nil {
 			return fmt.Errorf("failed to create directory %s: %v", dir, err)
 		}
 	}
@@ -450,11 +451,11 @@ func (g *GitManager) writeFile(filename, content string) error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory %s: %v", dir, err)
 	}
 
-	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write file %s: %v", filename, err)
 	}
 

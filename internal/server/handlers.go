@@ -14,6 +14,7 @@ import (
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
 	"innominatus/internal/resources"
+	"innominatus/internal/security"
 	"innominatus/internal/teams"
 	"innominatus/internal/types"
 	"innominatus/internal/workflow"
@@ -1212,7 +1213,7 @@ func (s *Server) handleGetMemoryWorkflow(w http.ResponseWriter, r *http.Request)
 // saveWorkflowsToDisk saves workflow executions to disk
 func (s *Server) saveWorkflowsToDisk() {
 	// Create data directory if it doesn't exist
-	if err := os.MkdirAll("data", 0755); err != nil {
+	if err := os.MkdirAll("data", 0750); err != nil {
 		fmt.Printf("Warning: Failed to create data directory: %v\n", err)
 		return
 	}
@@ -1233,7 +1234,7 @@ func (s *Server) saveWorkflowsToDisk() {
 	}
 
 	// Write to file
-	if err := os.WriteFile("data/workflows.json", jsonData, 0644); err != nil {
+	if err := os.WriteFile("data/workflows.json", jsonData, 0600); err != nil {
 		fmt.Printf("Warning: Failed to write workflow file: %v\n", err)
 	}
 }
@@ -1527,7 +1528,13 @@ func (s *Server) triggerDummyWorkflow() {
 
 // loadWorkflowFromFile loads a workflow definition from a YAML file
 func (s *Server) loadWorkflowFromFile(filePath string) (*types.Workflow, error) {
-	data, err := os.ReadFile(filePath)
+	// Validate file path to prevent path traversal
+	cleanPath, err := security.SafeFilePath(filePath, "./workflows", "./data")
+	if err != nil {
+		return nil, fmt.Errorf("invalid workflow path: %w", err)
+	}
+
+	data, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflow file: %w", err)
 	}
@@ -1841,7 +1848,15 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 
 	// Load golden path workflow
 	workflowFile := fmt.Sprintf("./workflows/%s.yaml", goldenPathName)
-	workflowData, err := os.ReadFile(workflowFile)
+
+	// Validate workflow path to prevent path traversal
+	cleanPath, err := security.SafeFilePath(workflowFile, "./workflows")
+	if err != nil {
+		http.Error(w, "Invalid workflow path", http.StatusBadRequest)
+		return
+	}
+
+	workflowData, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Golden path '%s' not found", goldenPathName), http.StatusNotFound)
 		return
@@ -2168,7 +2183,7 @@ func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, e
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0750); err != nil {
 		errMsg := fmt.Sprintf("Failed to create output directory: %v", err)
 		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -2268,7 +2283,7 @@ output "bucket_arn" {
 
 	// Write main.tf
 	mainTfPath := filepath.Join(outputDir, "main.tf")
-	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0644); err != nil {
+	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0600); err != nil {
 		errMsg := fmt.Sprintf("Failed to write main.tf: %v", err)
 		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("failed to write main.tf: %w", err)
@@ -2291,7 +2306,7 @@ func (s *Server) executeTerraformStep(step types.Step, appName string, envType s
 
 	// Create workspace directory if it doesn't exist
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		err = os.MkdirAll(workDir, 0755)
+		err = os.MkdirAll(workDir, 0750)
 		if err != nil {
 			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create workspace directory: %v", err)))
 			return err
@@ -2364,7 +2379,7 @@ spec:
         - containerPort: 80
 `, appName, namespace, appName, appName)
 
-	err = os.WriteFile(manifestPath, []byte(manifest), 0644)
+	err = os.WriteFile(manifestPath, []byte(manifest), 0600)
 	if err != nil {
 		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write manifest file: %v", err)))
 		return err
@@ -2541,7 +2556,7 @@ spec:
 `, appNameArgo, repoURL, targetPath, namespace)
 
 	manifestPath := fmt.Sprintf("/tmp/%s-argocd-app.yaml", appNameArgo)
-	err = os.WriteFile(manifestPath, []byte(manifest), 0644)
+	err = os.WriteFile(manifestPath, []byte(manifest), 0600)
 	if err != nil {
 		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write ArgoCD manifest: %v", err)))
 		return err
@@ -2562,7 +2577,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 		manifestDir = fmt.Sprintf("%s/manifests", repoDir)
 	}
 
-	err := os.MkdirAll(manifestDir, 0755)
+	err := os.MkdirAll(manifestDir, 0750)
 	if err != nil {
 		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create manifest directory: %v", err)))
 		return err

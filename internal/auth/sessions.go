@@ -36,7 +36,7 @@ type SessionManager struct {
 func NewSessionManager() *SessionManager {
 	// Create data directory if it doesn't exist
 	dataDir := "data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		fmt.Printf("Warning: Could not create data directory: %v\n", err)
 	}
 
@@ -317,7 +317,7 @@ func (sm *SessionManager) saveSessions() {
 		return
 	}
 
-	if err := os.WriteFile(sm.sessionFile, data, 0644); err != nil {
+	if err := os.WriteFile(sm.sessionFile, data, 0600); err != nil {
 		fmt.Printf("Warning: Could not save sessions to disk: %v\n", err)
 	}
 }

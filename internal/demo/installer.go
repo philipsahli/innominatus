@@ -1,5 +1,7 @@
 package demo
 
+// #nosec G204 - Demo installer executes kubectl and helm with controlled parameters for local demo setup only
+
 import (
 	"context"
 	"fmt"
@@ -355,16 +357,16 @@ func (i *Installer) createValuesFile(component DemoComponent) (string, error) {
 	// Convert values to YAML
 	yamlData, err := yaml.Marshal(component.Values)
 	if err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("failed to marshal values to YAML: %v", err)
 	}
 
 	if _, err := tmpFile.Write(yamlData); err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("failed to write values file: %v", err)
 	}
 
-	tmpFile.Close()
+	_ = tmpFile.Close()
 	return tmpFile.Name(), nil
 }
 

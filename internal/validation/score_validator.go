@@ -3,8 +3,10 @@ package validation
 import (
 	"fmt"
 	"innominatus/internal/errors"
+	"innominatus/internal/security"
 	"innominatus/internal/types"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -21,7 +23,16 @@ type ScoreValidator struct {
 
 // NewScoreValidator creates a new Score validator
 func NewScoreValidator(filePath string) (*ScoreValidator, error) {
-	content, err := os.ReadFile(filePath)
+	// Validate file path to prevent path traversal
+	cleanPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+	if err := security.ValidateFilePath(cleanPath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+
+	content, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		return nil, err
 	}
