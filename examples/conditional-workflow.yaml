@@ -1,0 +1,361 @@
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: conditional-deployment
+  description: Comprehensive example of conditional step execution
+
+spec:
+  steps:
+    # Step 1: Always runs
+    - name: validate-spec
+      type: validation
+      when: always
+
+    # Step 2: Only runs if validation succeeds
+    - name: security-scan
+      type: security
+      when: on_success
+
+    # Step 3: Conditional environment-based deployment
+    - name: deploy-to-dev
+      type: kubernetes
+      namespace: development
+      if: $ENVIRONMENT == development
+      env:
+        ENVIRONMENT: development
+
+    - name: deploy-to-staging
+      type: kubernetes
+      namespace: staging
+      if: $ENVIRONMENT == staging
+      env:
+        ENVIRONMENT: staging
+
+    - name: deploy-to-production
+      type: kubernetes
+      namespace: production
+      if: $ENVIRONMENT == production
+      when: on_success
+      env:
+        ENVIRONMENT: production
+
+    # Step 4: Run tests unless explicitly skipped
+    - name: integration-tests
+      type: validation
+      unless: $SKIP_TESTS == true
+      env:
+        SKIP_TESTS: "false"
+
+    # Step 5: Cleanup only on failure
+    - name: cleanup-on-failure
+      type: terraform
+      when: on_failure
+      path: ./terraform/cleanup
+
+---
+# Example 2: Feature flag deployment
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: feature-flag-deployment
+  description: Deploy features based on feature flags
+
+spec:
+  steps:
+    - name: core-deployment
+      type: kubernetes
+      namespace: production
+      when: always
+
+    - name: deploy-feature-a
+      type: kubernetes
+      namespace: production
+      if: $FEATURE_A_ENABLED == true
+      env:
+        FEATURE_A_ENABLED: "true"
+
+    - name: deploy-feature-b
+      type: kubernetes
+      namespace: production
+      if: $FEATURE_B_ENABLED == true
+      env:
+        FEATURE_B_ENABLED: "false"
+
+    - name: deploy-experimental-features
+      type: kubernetes
+      namespace: production
+      if: $EXPERIMENTAL_FEATURES
+      env:
+        EXPERIMENTAL_FEATURES: "true"
+
+---
+# Example 3: Version-based canary deployment
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: canary-deployment
+  description: Deploy canary for major versions, full for patches
+
+spec:
+  steps:
+    - name: build-application
+      type: validation
+
+    - name: canary-deployment
+      type: kubernetes
+      namespace: production-canary
+      if: $VERSION matches ^v[0-9]+\.0\.0$
+      when: on_success
+      env:
+        VERSION: v2.0.0
+
+    - name: full-deployment
+      type: kubernetes
+      namespace: production
+      unless: $VERSION matches ^v[0-9]+\.0\.0$
+      when: on_success
+      env:
+        VERSION: v2.0.1
+
+    - name: rollback-on-failure
+      type: kubernetes
+      when: on_failure
+      namespace: production
+
+---
+# Example 4: Multi-stage with dependencies
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: multi-stage-deployment
+  description: Complex workflow with step dependencies
+
+spec:
+  steps:
+    # Stage 1: Build
+    - name: build-backend
+      type: validation
+
+    - name: build-frontend
+      type: validation
+
+    # Stage 2: Test (depends on build)
+    - name: test-backend
+      type: validation
+      if: build-backend.success
+      unless: $SKIP_TESTS
+
+    - name: test-frontend
+      type: validation
+      if: build-frontend.success
+      unless: $SKIP_TESTS
+
+    # Stage 3: Deploy (depends on tests)
+    - name: deploy-backend
+      type: kubernetes
+      namespace: production
+      when: on_success
+      if: test-backend.success
+
+    - name: deploy-frontend
+      type: kubernetes
+      namespace: production
+      when: on_success
+      if: test-frontend.success
+
+    # Stage 4: Post-deployment
+    - name: smoke-tests
+      type: validation
+      when: on_success
+
+    - name: notify-success
+      type: monitoring
+      when: on_success
+      if: smoke-tests.success
+
+    - name: notify-failure
+      type: monitoring
+      when: on_failure
+
+---
+# Example 5: Maintenance mode check
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: maintenance-aware-deployment
+  description: Skip deployment during maintenance
+
+spec:
+  steps:
+    - name: check-maintenance
+      type: validation
+
+    - name: deploy-application
+      type: kubernetes
+      namespace: production
+      unless: $MAINTENANCE_MODE == true
+      env:
+        MAINTENANCE_MODE: "false"
+
+    - name: update-maintenance-page
+      type: kubernetes
+      if: $MAINTENANCE_MODE == true
+      env:
+        MAINTENANCE_MODE: "false"
+
+---
+# Example 6: String operations
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: string-condition-examples
+  description: Examples of string operation conditions
+
+spec:
+  steps:
+    # Contains check
+    - name: deploy-if-branch-contains-hotfix
+      type: kubernetes
+      if: $BRANCH_NAME contains hotfix
+      env:
+        BRANCH_NAME: feature/hotfix-123
+
+    # Starts with check
+    - name: deploy-feature-branches
+      type: kubernetes
+      namespace: feature
+      if: $BRANCH_NAME startsWith feature/
+      env:
+        BRANCH_NAME: feature/new-ui
+
+    # Ends with check
+    - name: process-yaml-files
+      type: validation
+      if: $CONFIG_FILE endsWith .yaml
+      env:
+        CONFIG_FILE: config.yaml
+
+    # Regex match
+    - name: deploy-release-candidates
+      type: kubernetes
+      if: $VERSION matches ^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$
+      env:
+        VERSION: v2.1.0-rc1
+
+---
+# Example 7: Numeric comparisons
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: numeric-condition-examples
+  description: Examples of numeric comparison conditions
+
+spec:
+  steps:
+    # Scale based on replica count
+    - name: deploy-small-cluster
+      type: kubernetes
+      if: $REPLICAS < 5
+      env:
+        REPLICAS: "3"
+
+    - name: deploy-large-cluster
+      type: kubernetes
+      if: $REPLICAS >= 5
+      env:
+        REPLICAS: "10"
+
+    # Resource limits
+    - name: deploy-low-resources
+      type: kubernetes
+      if: $CPU_LIMIT <= 2
+      env:
+        CPU_LIMIT: "1"
+
+    - name: deploy-high-resources
+      type: kubernetes
+      if: $CPU_LIMIT > 2
+      env:
+        CPU_LIMIT: "4"
+
+---
+# Example 8: Combined conditions
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: combined-conditions
+  description: Multiple conditions per step
+
+spec:
+  steps:
+    - name: validate
+      type: validation
+
+    - name: deploy-production
+      type: kubernetes
+      namespace: production
+      when: on_success                      # All previous steps succeeded
+      if: $ENVIRONMENT == production        # Production environment
+      unless: $MAINTENANCE_MODE == true     # Not in maintenance
+      env:
+        ENVIRONMENT: production
+        MAINTENANCE_MODE: "false"
+
+    - name: notify-deployment
+      type: monitoring
+      when: on_success
+      if: deploy-production.success
+
+---
+# Example 9: Skip logic patterns
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: skip-patterns
+  description: Common skip patterns
+
+spec:
+  steps:
+    # Run unless explicitly disabled
+    - name: run-benchmarks
+      type: validation
+      unless: $SKIP_BENCHMARKS
+      env:
+        SKIP_BENCHMARKS: ""
+
+    # Run only if enabled
+    - name: send-metrics
+      type: monitoring
+      if: $ENABLE_METRICS
+      env:
+        ENABLE_METRICS: "true"
+
+    # Run in specific environments
+    - name: deploy-debug-tools
+      type: kubernetes
+      unless: $ENVIRONMENT == production
+      env:
+        ENVIRONMENT: development
+
+---
+# Example 10: Manual approval gate (future)
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: manual-approval
+  description: Manual approval gates
+
+spec:
+  steps:
+    - name: deploy-to-staging
+      type: kubernetes
+      namespace: staging
+
+    - name: manual-approval-gate
+      type: validation
+      when: manual  # Currently skipped, will support interactive approval
+
+    - name: deploy-to-production
+      type: kubernetes
+      namespace: production
+      if: manual-approval-gate.success

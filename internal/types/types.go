@@ -79,4 +79,9 @@ type Step struct {
 	Parallel      bool     `yaml:"parallel,omitempty"`      // Whether this step can run in parallel
 	DependsOn     []string `yaml:"dependsOn,omitempty"`     // Steps this step depends on
 	ParallelGroup int      `yaml:"parallelGroup,omitempty"` // Group ID for parallel execution
+	// New fields for conditional execution
+	When   string            `yaml:"when,omitempty"`   // Condition expression (e.g., "always", "on_success", "on_failure")
+	If     string            `yaml:"if,omitempty"`     // Condition that must be true to run
+	Unless string            `yaml:"unless,omitempty"` // Condition that must be false to run
+	Env    map[string]string `yaml:"env,omitempty"`    // Environment variables for condition evaluation
 }

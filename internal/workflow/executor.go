@@ -37,6 +37,7 @@ type WorkflowExecutor struct {
 	maxConcurrent    int
 	executionTimeout time.Duration
 	stepExecutors    map[string]StepExecutorFunc
+	execContext      *ExecutionContext
 	mu               sync.RWMutex
 }
 
@@ -47,6 +48,7 @@ func NewWorkflowExecutor(repo WorkflowRepositoryInterface) *WorkflowExecutor {
 		maxConcurrent:    5,
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
+		execContext:      NewExecutionContext(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -60,6 +62,7 @@ func NewWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInterface, re
 		maxConcurrent:    5,
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
+		execContext:      NewExecutionContext(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -73,6 +76,7 @@ func NewMultiTierWorkflowExecutor(repo WorkflowRepositoryInterface, resolver *Wo
 		maxConcurrent:    5,
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
+		execContext:      NewExecutionContext(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -87,6 +91,7 @@ func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInte
 		maxConcurrent:    5,
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
+		execContext:      NewExecutionContext(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -477,6 +482,37 @@ func (e *WorkflowExecutor) executeStepGroupParallel(ctx context.Context, appName
 
 // executeSingleStep executes a single step with full database tracking
 func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string, step types.Step, execID int64, stepNumber int) error {
+	// Check if step should be executed based on conditions
+	shouldExecute, skipReason := e.execContext.ShouldExecuteStep(step)
+	if !shouldExecute {
+		fmt.Printf("      ⏭️  %s (%s) - SKIPPED: %s\n", step.Name, step.Type, skipReason)
+
+		// Create step execution record as skipped
+		stepConfig := map[string]interface{}{
+			"name":          step.Name,
+			"type":          step.Type,
+			"path":          step.Path,
+			"namespace":     step.Namespace,
+			"parallel":      step.Parallel,
+			"parallelGroup": step.ParallelGroup,
+			"skip_reason":   skipReason,
+		}
+
+		stepRecord, err := e.repo.CreateWorkflowStep(execID, stepNumber+1, step.Name, step.Type, stepConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create step execution: %w", err)
+		}
+
+		// Mark step as skipped
+		skippedMsg := fmt.Sprintf("skipped: %s", skipReason)
+		_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, "skipped", &skippedMsg)
+
+		// Record in execution context
+		e.execContext.SetStepStatus(step.Name, "skipped")
+
+		return nil
+	}
+
 	fmt.Printf("      🔄 %s (%s)\n", step.Name, step.Type)
 
 	// Create step execution record
@@ -506,6 +542,10 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 		// Mark step as failed
 		errorMsg := err.Error()
 		_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
+
+		// Record failure in execution context
+		e.execContext.SetStepStatus(step.Name, "failed")
+
 		return err
 	}
 
@@ -517,6 +557,9 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 
 	duration := time.Since(stepStartTime)
 	fmt.Printf("      ✅ %s completed (took %v)\n", step.Name, duration.Round(time.Millisecond))
+
+	// Record success in execution context
+	e.execContext.SetStepStatus(step.Name, "success")
 
 	return nil
 }
