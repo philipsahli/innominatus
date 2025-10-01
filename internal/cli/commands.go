@@ -29,58 +29,59 @@ import (
 )
 
 func (c *Client) ListCommand(showDetails bool) error {
+	formatter := NewOutputFormatter()
 	specs, err := c.ListSpecs()
 	if err != nil {
 		return err
 	}
 
 	if len(specs) == 0 {
-		fmt.Println("No applications deployed")
+		formatter.PrintEmptyState("No applications deployed")
 		return nil
 	}
 
-	fmt.Printf("Deployed Applications (%d):\n", len(specs))
-	fmt.Println("═══════════════════════════════════════════════════════════════")
+	formatter.PrintHeader(fmt.Sprintf("Deployed Applications (%d):", len(specs)))
 
 	// Fetch workflows if details are requested
 	var allWorkflows []interface{}
 	if showDetails {
-		fmt.Printf("🔍 Fetching workflow data for detailed view...\n")
+		formatter.PrintInfo(fmt.Sprintf("%s Fetching workflow data for detailed view...", SymbolSearch))
 		workflows, err := c.ListWorkflows("")
 		if err != nil {
-			fmt.Printf("Warning: Could not fetch workflow data: %v\n", err)
+			formatter.PrintWarning(fmt.Sprintf("Could not fetch workflow data: %v", err))
 		} else {
 			allWorkflows = workflows
-			fmt.Printf("✓ Found %d workflow executions\n", len(allWorkflows))
+			formatter.PrintSuccess(fmt.Sprintf("Found %d workflow executions", len(allWorkflows)))
 		}
 	}
 
 	for name, spec := range specs {
-		fmt.Printf("\n📦 Application: %s\n", name)
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolApp, fmt.Sprintf("Application: %s", name))
 
 		// Show metadata
 		if spec.Metadata != nil {
 			if apiVersion, ok := spec.Metadata["APIVersion"].(string); ok {
-				fmt.Printf("   API Version: %s\n", apiVersion)
+				formatter.PrintKeyValue(1, "API Version", apiVersion)
 			}
 		}
 
 		// Show containers
 		if len(spec.Containers) > 0 {
-			fmt.Printf("   🐳 Containers (%d):\n", len(spec.Containers))
+			formatter.PrintSection(1, SymbolContainer, fmt.Sprintf("Containers (%d):", len(spec.Containers)))
 			for containerName, container := range spec.Containers {
 				if containerMap, ok := container.(map[string]interface{}); ok {
 					image := "unknown"
 					if img, ok := containerMap["Image"].(string); ok {
 						image = img
 					}
-					fmt.Printf("      • %s: %s\n", containerName, image)
+					formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s: %s", containerName, image))
 
 					// Show container variables
 					if variables, ok := containerMap["Variables"].(map[string]interface{}); ok && len(variables) > 0 {
 						fmt.Printf("        Variables:\n")
 						for key, value := range variables {
-							fmt.Printf("          %s: %v\n", key, value)
+							formatter.PrintKeyValue(3, key, value)
 						}
 					}
 				}
@@ -89,59 +90,59 @@ func (c *Client) ListCommand(showDetails bool) error {
 
 		// Show resources with detailed information
 		if len(spec.Resources) > 0 {
-			fmt.Printf("   🔧 Resources (%d):\n", len(spec.Resources))
+			formatter.PrintSection(1, SymbolResource, fmt.Sprintf("Resources (%d):", len(spec.Resources)))
 			for resourceName, resource := range spec.Resources {
 				if resourceMap, ok := resource.(map[string]interface{}); ok {
 					resourceType := "unknown"
 					if rType, ok := resourceMap["Type"].(string); ok {
 						resourceType = rType
 					}
-					fmt.Printf("      • %s (%s)\n", resourceName, resourceType)
+					formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s (%s)", resourceName, resourceType))
 
 					// Show resource parameters
 					if params, ok := resourceMap["Params"].(map[string]interface{}); ok && len(params) > 0 {
 						fmt.Printf("        Parameters:\n")
 						for key, value := range params {
-							fmt.Printf("          %s: %v\n", key, value)
+							formatter.PrintKeyValue(3, key, value)
 						}
 					}
 				}
 			}
 		} else {
-			fmt.Printf("   🔧 Resources: None\n")
+			formatter.PrintSection(1, SymbolResource, "Resources: None")
 		}
 
 		// Show environment information
 		if spec.Environment != nil {
-			fmt.Printf("   🌍 Environment:\n")
+			formatter.PrintSection(1, SymbolEnv, "Environment:")
 			if envType, ok := spec.Environment["type"].(string); ok {
-				fmt.Printf("      Type: %s\n", envType)
+				formatter.PrintKeyValue(2, "Type", envType)
 			}
 			if ttl, ok := spec.Environment["ttl"].(string); ok {
-				fmt.Printf("      TTL: %s\n", ttl)
+				formatter.PrintKeyValue(2, "TTL", ttl)
 			}
 		}
 
 		// Show dependency graph
 		if len(spec.Graph) > 0 {
-			fmt.Printf("   🔗 Dependencies:\n")
+			formatter.PrintSection(1, SymbolLink, "Dependencies:")
 			for container, dependencies := range spec.Graph {
 				for _, resource := range dependencies {
-					fmt.Printf("      %s → %s\n", container, resource)
+					formatter.PrintItem(2, "", fmt.Sprintf("%s %s %s", container, SymbolArrow, resource))
 				}
 			}
 		}
 
 		// Show detailed information if requested
 		if showDetails {
-			fmt.Printf("   📋 Details enabled - showing additional information:\n")
+			formatter.PrintInfo("   📋 Details enabled - showing additional information:")
 			c.showDetailedInfo(name, spec, allWorkflows)
 		}
 
-		fmt.Println("   ───────────────────────────────────────────")
+		formatter.PrintDivider(1)
 	}
 
-	fmt.Printf("\nTotal: %d application(s) deployed\n", len(specs))
+	formatter.PrintCount("application(s) deployed", len(specs))
 	return nil
 }
 
@@ -221,23 +222,25 @@ func (c *Client) ValidateCommand(filename string, explain bool, format string) e
 		return fmt.Errorf("validation failed: at least one container is required")
 	}
 
-	fmt.Printf("✓ Score spec is valid\n")
-	fmt.Printf("  Application: %s\n", spec.Metadata.Name)
-	fmt.Printf("  API Version: %s\n", spec.APIVersion)
-	fmt.Printf("  Containers: %d\n", len(spec.Containers))
-	fmt.Printf("  Resources: %d\n", len(spec.Resources))
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess("Score spec is valid")
+	formatter.PrintKeyValue(1, "Application", spec.Metadata.Name)
+	formatter.PrintKeyValue(1, "API Version", spec.APIVersion)
+	formatter.PrintKeyValue(1, "Containers", len(spec.Containers))
+	formatter.PrintKeyValue(1, "Resources", len(spec.Resources))
 
 	if spec.Environment != nil {
-		fmt.Printf("  Environment: %s (TTL: %s)\n", spec.Environment.Type, spec.Environment.TTL)
+		formatter.PrintKeyValue(1, "Environment", fmt.Sprintf("%s (TTL: %s)", spec.Environment.Type, spec.Environment.TTL))
 	}
 
 	// Show dependency analysis
 	graph := graph.BuildGraph(&spec)
 	if len(graph) > 0 {
-		fmt.Printf("\nDependencies detected:\n")
+		formatter.PrintEmpty()
+		formatter.PrintSubHeader("Dependencies detected:")
 		for container, dependencies := range graph {
 			for _, resource := range dependencies {
-				fmt.Printf("  %s -> %s\n", container, resource)
+				formatter.PrintItem(1, "", fmt.Sprintf("%s %s %s", container, SymbolArrow, resource))
 			}
 		}
 	}
@@ -286,48 +289,51 @@ func (c *Client) ValidateWithExplanation(filename string, format string) error {
 }
 
 func (c *Client) EnvironmentsCommand() error {
+	formatter := NewOutputFormatter()
 	environments, err := c.ListEnvironments()
 	if err != nil {
 		return err
 	}
 
 	if len(environments) == 0 {
-		fmt.Println("No active environments")
+		formatter.PrintEmptyState("No active environments")
 		return nil
 	}
 
-	fmt.Println("Active Environments:")
+	formatter.PrintHeader("Active Environments:")
 	for name, env := range environments {
-		fmt.Printf("  %s (%s)\n", name, env.Type)
-		fmt.Printf("    TTL: %s\n", env.TTL)
-		fmt.Printf("    Status: %s\n", env.Status)
-		fmt.Printf("    Created: %s\n", env.CreatedAt.Format(time.RFC3339))
-		fmt.Printf("    Resources: %d\n", len(env.Resources))
+		formatter.PrintSection(1, SymbolEnv, fmt.Sprintf("%s (%s)", name, env.Type))
+		formatter.PrintKeyValue(2, "TTL", env.TTL)
+		formatter.PrintKeyValue(2, "Status", env.Status)
+		formatter.PrintKeyValue(2, "Created", formatter.FormatTime(env.CreatedAt))
+		formatter.PrintKeyValue(2, "Resources", len(env.Resources))
 	}
 
 	return nil
 }
 
 func (c *Client) DeleteCommand(name string) error {
+	formatter := NewOutputFormatter()
 	// Complete application deletion (infrastructure + database records)
 	err := c.DeleteApplication(name)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("✓ Successfully deleted application '%s' and all its resources\n", name)
+	formatter.PrintSuccess(fmt.Sprintf("Successfully deleted application '%s' and all its resources", name))
 	return nil
 }
 
 func (c *Client) DeprovisionCommand(name string) error {
+	formatter := NewOutputFormatter()
 	// Infrastructure teardown with audit trail preserved
 	err := c.DeprovisionApplication(name)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("✓ Successfully deprovisioned infrastructure for application '%s'\n", name)
-	fmt.Printf("📋 Application metadata and audit trail preserved in database\n")
+	formatter.PrintSuccess(fmt.Sprintf("Successfully deprovisioned infrastructure for application '%s'", name))
+	formatter.PrintInfo("Application metadata and audit trail preserved in database")
 	return nil
 }
 
@@ -407,30 +413,33 @@ func (c *Client) addUserCommand(args []string) error {
 		return err
 	}
 
-	fmt.Printf("✓ User '%s' added successfully (%s, %s)\n", *username, *team, *role)
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("User '%s' added successfully (%s, %s)", *username, *team, *role))
 	return nil
 }
 
 func (c *Client) listUsersCommand() error {
+	formatter := NewOutputFormatter()
 	store, err := users.LoadUsers()
 	if err != nil {
 		return fmt.Errorf("failed to load users: %w", err)
 	}
 
 	if len(store.Users) == 0 {
-		fmt.Println("No users found")
+		formatter.PrintEmptyState("No users found")
 		return nil
 	}
 
-	fmt.Println("Users:")
+	formatter.PrintHeader("Users:")
 	for _, user := range store.Users {
-		fmt.Printf("  %s (%s, %s)\n", user.Username, user.Team, user.Role)
+		formatter.PrintItem(1, "", fmt.Sprintf("%s (%s, %s)", user.Username, user.Team, user.Role))
 	}
 
 	return nil
 }
 
 func (c *Client) deleteUserCommand(username string) error {
+	formatter := NewOutputFormatter()
 	store, err := users.LoadUsers()
 	if err != nil {
 		return fmt.Errorf("failed to load users: %w", err)
@@ -441,12 +450,13 @@ func (c *Client) deleteUserCommand(username string) error {
 		return err
 	}
 
-	fmt.Printf("✓ User '%s' deleted successfully\n", username)
+	formatter.PrintSuccess(fmt.Sprintf("User '%s' deleted successfully", username))
 	return nil
 }
 
 // ListGoldenPathsCommand lists all available golden paths
 func (c *Client) ListGoldenPathsCommand() error {
+	formatter := NewOutputFormatter()
 	config, err := goldenpaths.LoadGoldenPaths()
 	if err != nil {
 		return fmt.Errorf("failed to load golden paths: %w", err)
@@ -454,14 +464,14 @@ func (c *Client) ListGoldenPathsCommand() error {
 
 	paths := config.ListPaths()
 	if len(paths) == 0 {
-		fmt.Println("No golden paths configured")
+		formatter.PrintEmptyState("No golden paths configured")
 		return nil
 	}
 
-	fmt.Println("Available Golden Paths:")
+	formatter.PrintHeader("Available Golden Paths:")
 	for _, pathName := range paths {
 		workflowFile := config.GoldenPaths[pathName]
-		fmt.Printf("  %s → %s\n", pathName, workflowFile)
+		formatter.PrintItem(1, SymbolWorkflow, fmt.Sprintf("%s %s %s", pathName, SymbolArrow, workflowFile))
 	}
 
 	return nil
@@ -469,6 +479,8 @@ func (c *Client) ListGoldenPathsCommand() error {
 
 // RunGoldenPathCommand executes a golden path workflow
 func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
+	formatter := NewOutputFormatter()
+
 	// Load golden paths configuration
 	config, err := goldenpaths.LoadGoldenPaths()
 	if err != nil {
@@ -486,11 +498,11 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	fmt.Printf("Running golden path '%s' with workflow: %s\n", pathName, workflowFile)
+	formatter.PrintInfo(fmt.Sprintf("Running golden path '%s' with workflow: %s", pathName, workflowFile))
 
 	// Load and parse the Score spec if provided
 	if scoreFile != "" {
-		fmt.Printf("Using Score spec: %s\n", scoreFile)
+		formatter.PrintInfo(fmt.Sprintf("Using Score spec: %s", scoreFile))
 		scoreData, err := ioutil.ReadFile(scoreFile)
 		if err != nil {
 			return fmt.Errorf("failed to read Score spec %s: %w", scoreFile, err)
@@ -502,7 +514,7 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
 			return fmt.Errorf("failed to parse Score spec: %w", err)
 		}
 
-		fmt.Printf("✓ Loaded Score spec for application: %s\n", spec.Metadata.Name)
+		formatter.PrintSuccess(fmt.Sprintf("Loaded Score spec for application: %s", spec.Metadata.Name))
 	}
 
 	// Execute the workflow using the existing RunWorkflow function
@@ -511,18 +523,20 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
 		return fmt.Errorf("failed to execute golden path workflow: %w", err)
 	}
 
-	fmt.Printf("✓ Golden path '%s' completed successfully\n", pathName)
+	formatter.PrintSuccess(fmt.Sprintf("Golden path '%s' completed successfully", pathName))
 	return nil
 }
 
 // runWorkflow executes a workflow via the server API with real resource provisioning
 func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
+	formatter := NewOutputFormatter()
+
 	// Extract workflow name from file path
 	workflowName := filepath.Base(workflowFile)
 	workflowName = strings.TrimSuffix(workflowName, ".yaml")
 	workflowName = strings.TrimSuffix(workflowName, ".yml")
 
-	fmt.Printf("Executing golden path workflow: %s\n", workflowName)
+	formatter.PrintInfo(fmt.Sprintf("Executing golden path workflow: %s", workflowName))
 
 	// Load the Score specification if provided
 	var scoreData []byte
@@ -532,7 +546,7 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read Score file: %w", err)
 		}
-		fmt.Printf("✓ Loaded Score specification: %s\n", scoreFile)
+		formatter.PrintSuccess(fmt.Sprintf("Loaded Score specification: %s", scoreFile))
 	}
 
 	// Ensure we have authentication
@@ -584,26 +598,26 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 
 	// Display execution results
 	if message, ok := response["message"].(string); ok {
-		fmt.Printf("✓ %s\n", message)
+		formatter.PrintSuccess(message)
 	}
 
 	if appName, ok := response["app_name"].(string); ok {
-		fmt.Printf("✓ Application: %s\n", appName)
+		formatter.PrintKeyValue(1, "Application", appName)
 	}
 
 	if workflowID, ok := response["workflow_id"].(float64); ok {
-		fmt.Printf("✓ Workflow ID: %.0f\n", workflowID)
+		formatter.PrintKeyValue(1, "Workflow ID", fmt.Sprintf("%.0f", workflowID))
 	}
 
 	if resourcesCreated, ok := response["resources_created"].(float64); ok && resourcesCreated > 0 {
-		fmt.Printf("✓ Resources created: %.0f\n", resourcesCreated)
+		formatter.PrintKeyValue(1, "Resources created", fmt.Sprintf("%.0f", resourcesCreated))
 	}
 
 	if resourcesProvisioned, ok := response["resources_provisioned"].(float64); ok && resourcesProvisioned > 0 {
-		fmt.Printf("✓ Resources provisioned: %.0f\n", resourcesProvisioned)
+		formatter.PrintKeyValue(1, "Resources provisioned", fmt.Sprintf("%.0f", resourcesProvisioned))
 	}
 
-	fmt.Println("✓ Golden path workflow execution completed with resource provisioning")
+	formatter.PrintSuccess("Golden path workflow execution completed with resource provisioning")
 	return nil
 }
 
