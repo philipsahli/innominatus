@@ -20,7 +20,8 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
-  FileText
+  FileText,
+  BookOpen
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import {
@@ -87,6 +88,11 @@ const navigation: NavItem[] = [
     href: "/graph",
     label: "Resource Graph",
     icon: Network,
+  },
+  {
+    href: "/docs",
+    label: "Documentation",
+    icon: BookOpen,
   },
   {
     href: "/demo",
