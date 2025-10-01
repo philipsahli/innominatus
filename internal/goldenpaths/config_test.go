@@ -12,25 +12,6 @@ import (
 
 // Helper functions for test setup
 
-// createTempGoldenPathsFile creates a temporary goldenpaths.yaml file with given content
-func createTempGoldenPathsFile(t *testing.T, content string) string {
-	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "goldenpaths.yaml")
-	err := os.WriteFile(configFile, []byte(content), 0644)
-	require.NoError(t, err, "Failed to create temp goldenpaths.yaml")
-	return configFile
-}
-
-// createTempWorkflowFile creates a temporary workflow file
-func createTempWorkflowFile(t *testing.T, dir, name string) string {
-	workflowFile := filepath.Join(dir, name)
-	err := os.MkdirAll(filepath.Dir(workflowFile), 0755)
-	require.NoError(t, err)
-	err = os.WriteFile(workflowFile, []byte("apiVersion: workflow.dev/v1\nkind: Workflow"), 0644)
-	require.NoError(t, err)
-	return workflowFile
-}
-
 // changeToTempDir changes working directory to temp dir and restores it after test
 func changeToTempDir(t *testing.T) string {
 	originalDir, err := os.Getwd()
@@ -41,7 +22,7 @@ func changeToTempDir(t *testing.T) string {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		os.Chdir(originalDir)
+		_ = os.Chdir(originalDir)
 	})
 
 	return tmpDir
@@ -70,9 +51,9 @@ func TestLoadGoldenPaths(t *testing.T) {
       sync_policy: auto
       replicas: "3"
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
-				os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
-				os.WriteFile(filepath.Join(tmpDir, "workflows/deploy-app.yaml"), []byte("workflow"), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
+				_ = os.WriteFile(filepath.Join(tmpDir, "workflows/deploy-app.yaml"), []byte("workflow"), 0644)
 			},
 			expectError: false,
 			validate: func(t *testing.T, config *GoldenPathsConfig) {
@@ -97,7 +78,7 @@ func TestLoadGoldenPaths(t *testing.T) {
   simple-path: ./workflows/simple.yaml
   another-path: ./workflows/another.yaml
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
 			},
 			expectError: false,
 			validate: func(t *testing.T, config *GoldenPathsConfig) {
@@ -125,7 +106,7 @@ func TestLoadGoldenPaths(t *testing.T) {
     tags: [test]
   simple-path: ./workflows/simple.yaml
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
 			},
 			expectError: false,
 			validate: func(t *testing.T, config *GoldenPathsConfig) {
@@ -155,7 +136,7 @@ func TestLoadGoldenPaths(t *testing.T) {
   invalid syntax: [unclosed bracket
     description: missing closing
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
 			},
 			expectError: true,
 			errorMsg:    "failed to parse goldenpaths.yaml",
@@ -165,7 +146,7 @@ func TestLoadGoldenPaths(t *testing.T) {
 			setupFunc: func(t *testing.T, tmpDir string) {
 				content := `goldenpaths: {}
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
 			},
 			expectError: false,
 			validate: func(t *testing.T, config *GoldenPathsConfig) {
@@ -181,7 +162,7 @@ func TestLoadGoldenPaths(t *testing.T) {
     description: Missing workflow field
     category: deployment
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
 			},
 			expectError: true,
 			errorMsg:    "workflow file is required",
@@ -198,7 +179,7 @@ func TestLoadGoldenPaths(t *testing.T) {
     category: ` + category + `
     tags: [auto-generated, test]
 `
-				os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "goldenpaths.yaml"), []byte(content), 0644)
 			},
 			expectError: false,
 			validate: func(t *testing.T, config *GoldenPathsConfig) {
@@ -487,7 +468,7 @@ func TestGoldenPathsConfig_ValidatePaths(t *testing.T) {
 		{
 			name: "all workflow files exist",
 			setupFunc: func(t *testing.T, tmpDir string) *GoldenPathsConfig {
-				os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
+				_ = os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
 				os.WriteFile(filepath.Join(tmpDir, "workflows/deploy.yaml"), []byte("workflow"), 0644)
 				os.WriteFile(filepath.Join(tmpDir, "workflows/undeploy.yaml"), []byte("workflow"), 0644)
 
@@ -503,7 +484,7 @@ func TestGoldenPathsConfig_ValidatePaths(t *testing.T) {
 		{
 			name: "one workflow file missing",
 			setupFunc: func(t *testing.T, tmpDir string) *GoldenPathsConfig {
-				os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
+				_ = os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
 				os.WriteFile(filepath.Join(tmpDir, "workflows/exists.yaml"), []byte("workflow"), 0644)
 
 				return &GoldenPathsConfig{

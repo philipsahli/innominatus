@@ -137,9 +137,9 @@ func (sv *ScoreValidator) validateFieldFormats() []*errors.RichError {
 			lineNum := sv.findFieldLine("name")
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Invalid name format: %s", sv.spec.Metadata.Name)).
 				WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Name must be lowercase alphanumeric with hyphens")
-			err.WithSuggestion("Must start and end with alphanumeric character")
-			err.WithSuggestion("Example: my-app, web-service, api-v1")
+			_ = err.WithSuggestion("Name must be lowercase alphanumeric with hyphens")
+			_ = err.WithSuggestion("Must start and end with alphanumeric character")
+			_ = err.WithSuggestion("Example: my-app, web-service, api-v1")
 			errs = append(errs, err)
 		}
 	}

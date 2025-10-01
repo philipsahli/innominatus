@@ -21,7 +21,7 @@ func TestHTTPHelper_GET(t *testing.T) {
 
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"message": "success"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "success"})
 		}))
 		defer server.Close()
 
@@ -39,7 +39,7 @@ func TestHTTPHelper_GET(t *testing.T) {
 			assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"authenticated": "true"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"authenticated": "true"})
 		}))
 		defer server.Close()
 
@@ -112,7 +112,7 @@ func TestHTTPHelper_POST(t *testing.T) {
 			assert.Equal(t, "test-value", reqBody["test-key"])
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"created": "true"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"created": "true"})
 		}))
 		defer server.Close()
 
@@ -200,7 +200,7 @@ func TestHTTPHelper_doRequestWithStatus(t *testing.T) {
 	t.Run("successful request with expected status", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(map[string]string{"created": "true"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"created": "true"})
 		}))
 		defer server.Close()
 

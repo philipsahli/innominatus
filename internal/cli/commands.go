@@ -15,7 +15,7 @@ import (
 	"innominatus/internal/users"
 	"innominatus/internal/validation"
 	"innominatus/internal/workflow"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -196,7 +196,7 @@ func (c *Client) StatusCommand(name string) error {
 }
 
 func (c *Client) ValidateCommand(filename string, explain bool, format string) error {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", filename, err)
 	}
@@ -521,7 +521,7 @@ func (c *Client) ListGoldenPathsCommand() error {
 	}
 
 	formatter.PrintEmpty()
-	formatter.PrintInfo(fmt.Sprintf("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]"))
+	formatter.PrintInfo("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]")
 
 	return nil
 }
@@ -571,7 +571,7 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 	// Load and parse the Score spec if provided
 	if scoreFile != "" {
 		formatter.PrintInfo(fmt.Sprintf("Using Score spec: %s", scoreFile))
-		scoreData, err := ioutil.ReadFile(scoreFile)
+		scoreData, err := os.ReadFile(scoreFile)
 		if err != nil {
 			return fmt.Errorf("failed to read Score spec %s: %w", scoreFile, err)
 		}
@@ -611,7 +611,7 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	var scoreData []byte
 	var err error
 	if scoreFile != "" {
-		scoreData, err = ioutil.ReadFile(scoreFile)
+		scoreData, err = os.ReadFile(scoreFile)
 		if err != nil {
 			return fmt.Errorf("failed to read Score file: %w", err)
 		}
@@ -649,7 +649,7 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
@@ -1351,7 +1351,7 @@ func (c *Client) ListResourcesCommand(appName string) error {
 // AnalyzeCommand analyzes a Score specification for workflow dependencies and execution plan
 func (c *Client) AnalyzeCommand(filename string) error {
 	// Read the Score specification file
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", filename, err)
 	}

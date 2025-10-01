@@ -17,10 +17,7 @@ type GoldenPathsValidator struct {
 // NewGoldenPathsValidator creates a new golden paths validator
 func NewGoldenPathsValidator(configPath string) (*GoldenPathsValidator, error) {
 	// Use default path if not provided
-	_ = configPath // Parameter kept for interface compatibility
-	if configPath == "" {
-		configPath = "goldenpaths.yaml"
-	}
+	_ = configPath // Parameter kept for interface compatibility but not used
 
 	config, err := goldenpaths.LoadGoldenPaths()
 	if err != nil {

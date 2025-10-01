@@ -989,7 +989,7 @@ func (s *Server) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(metricsData))
+	_, _ = w.Write([]byte(metricsData))
 }
 
 // Memory workflow tracking methods
@@ -2144,7 +2144,7 @@ func (s *Server) executeCommand(command string, args []string, workDir string, l
 
 // executeTerraformGenerateStep generates Terraform code from Score resources
 func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	logBuffer.Write([]byte(fmt.Sprintf("Generating Terraform code for: %s", step.Name)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Generating Terraform code for: %s", step.Name)))
 
 	// Get output directory from step (supports variable substitution)
 	outputDir := step.OutputDir
@@ -2162,14 +2162,14 @@ func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, e
 
 	if resourceType == "" {
 		errMsg := "terraform-generate requires 'resource' field (e.g., 's3', 'postgres')"
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("terraform-generate requires 'resource' field (e.g., 's3', 'postgres')")
 	}
 
 	// Create output directory
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		errMsg := fmt.Sprintf("Failed to create output directory: %v", err)
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
