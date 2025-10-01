@@ -7,10 +7,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ExecutionContext holds the context for evaluating conditions and sharing variables
 type ExecutionContext struct {
+	mu                  sync.RWMutex                 // Protects all maps for concurrent access
 	PreviousStepStatus  map[string]string            // Map of step name -> status ("success", "failed", "skipped")
 	PreviousStepOutputs map[string]map[string]string // Map of step name -> map of output variables
 	ResourceOutputs     map[string]map[string]string // Map of resource name -> map of attributes (for ${resources.name.attr})
@@ -51,11 +53,15 @@ func (ctx *ExecutionContext) GetVariable(key string) (string, bool) {
 
 // SetStepStatus records the status of a completed step
 func (ctx *ExecutionContext) SetStepStatus(stepName, status string) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	ctx.PreviousStepStatus[stepName] = status
 }
 
 // SetStepOutputs records multiple outputs from a completed step
 func (ctx *ExecutionContext) SetStepOutputs(stepName string, outputs map[string]string) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	if ctx.PreviousStepOutputs[stepName] == nil {
 		ctx.PreviousStepOutputs[stepName] = make(map[string]string)
 	}
@@ -66,6 +72,8 @@ func (ctx *ExecutionContext) SetStepOutputs(stepName string, outputs map[string]
 
 // SetStepOutput records a single output from a completed step
 func (ctx *ExecutionContext) SetStepOutput(stepName, key, value string) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	if ctx.PreviousStepOutputs[stepName] == nil {
 		ctx.PreviousStepOutputs[stepName] = make(map[string]string)
 	}
@@ -74,6 +82,8 @@ func (ctx *ExecutionContext) SetStepOutput(stepName, key, value string) {
 
 // GetStepOutput retrieves an output value from a previous step
 func (ctx *ExecutionContext) GetStepOutput(stepName, key string) (string, bool) {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	if outputs, exists := ctx.PreviousStepOutputs[stepName]; exists {
 		value, found := outputs[key]
 		return value, found
@@ -83,12 +93,16 @@ func (ctx *ExecutionContext) GetStepOutput(stepName, key string) (string, bool) 
 
 // GetAllStepOutputs retrieves all outputs from a previous step
 func (ctx *ExecutionContext) GetAllStepOutputs(stepName string) (map[string]string, bool) {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	outputs, exists := ctx.PreviousStepOutputs[stepName]
 	return outputs, exists
 }
 
 // SetResourceOutputs records outputs for a provisioned resource
 func (ctx *ExecutionContext) SetResourceOutputs(resourceName string, outputs map[string]string) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	if ctx.ResourceOutputs[resourceName] == nil {
 		ctx.ResourceOutputs[resourceName] = make(map[string]string)
 	}
@@ -99,6 +113,8 @@ func (ctx *ExecutionContext) SetResourceOutputs(resourceName string, outputs map
 
 // SetResourceOutput records a single output attribute for a resource
 func (ctx *ExecutionContext) SetResourceOutput(resourceName, key, value string) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	if ctx.ResourceOutputs[resourceName] == nil {
 		ctx.ResourceOutputs[resourceName] = make(map[string]string)
 	}
@@ -107,6 +123,8 @@ func (ctx *ExecutionContext) SetResourceOutput(resourceName, key, value string) 
 
 // GetResourceOutput retrieves an output attribute from a provisioned resource
 func (ctx *ExecutionContext) GetResourceOutput(resourceName, key string) (string, bool) {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	if outputs, exists := ctx.ResourceOutputs[resourceName]; exists {
 		value, found := outputs[key]
 		return value, found
@@ -116,6 +134,8 @@ func (ctx *ExecutionContext) GetResourceOutput(resourceName, key string) (string
 
 // GetAllResourceOutputs retrieves all outputs from a provisioned resource
 func (ctx *ExecutionContext) GetAllResourceOutputs(resourceName string) (map[string]string, bool) {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	outputs, exists := ctx.ResourceOutputs[resourceName]
 	return outputs, exists
 }
@@ -183,20 +203,26 @@ func (ctx *ExecutionContext) evaluateWhen(when string) (bool, string) {
 
 	case "on_success", "success":
 		// Run only if all previous steps succeeded
+		ctx.mu.RLock()
 		for stepName, status := range ctx.PreviousStepStatus {
 			if status == "failed" {
+				ctx.mu.RUnlock()
 				return false, fmt.Sprintf("when=on_success but step '%s' failed", stepName)
 			}
 		}
+		ctx.mu.RUnlock()
 		return true, ""
 
 	case "on_failure", "failure":
 		// Run only if any previous step failed
+		ctx.mu.RLock()
 		for _, status := range ctx.PreviousStepStatus {
 			if status == "failed" {
+				ctx.mu.RUnlock()
 				return true, ""
 			}
 		}
+		ctx.mu.RUnlock()
 		return false, "when=on_failure but no steps have failed"
 
 	case "manual":
@@ -261,7 +287,9 @@ func (ctx *ExecutionContext) evaluateCondition(condition string, env map[string]
 			stepName := strings.TrimSpace(parts[0])
 			statusCheck := strings.ToLower(strings.TrimSpace(parts[1]))
 
+			ctx.mu.RLock()
 			status, exists := ctx.PreviousStepStatus[stepName]
+			ctx.mu.RUnlock()
 			if !exists {
 				return false, fmt.Errorf("step '%s' not found in context", stepName)
 			}
