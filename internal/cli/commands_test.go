@@ -313,8 +313,8 @@ func TestListGoldenPathsCommand(t *testing.T) {
 func TestRunGoldenPathCommand(t *testing.T) {
 	client := NewClient("http://localhost:8081")
 
-	// Test run golden path without spec file
-	err := client.RunGoldenPathCommand("test-path", "")
+	// Test run golden path without spec file and no parameters
+	err := client.RunGoldenPathCommand("test-path", "", map[string]string{})
 	assert.Error(t, err) // Should error because path doesn't exist
 
 	// Create temporary spec file for testing
@@ -323,8 +323,12 @@ func TestRunGoldenPathCommand(t *testing.T) {
 	err = ioutil.WriteFile(specFile, []byte("test: content"), 0644)
 	require.NoError(t, err)
 
-	// Test run golden path with spec file
-	err = client.RunGoldenPathCommand("test-path", specFile)
+	// Test run golden path with spec file and parameters
+	params := map[string]string{
+		"ttl": "4h",
+		"environment_type": "staging",
+	}
+	err = client.RunGoldenPathCommand("test-path", specFile, params)
 	assert.Error(t, err) // Should error because path doesn't exist
 }
 

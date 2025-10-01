@@ -292,8 +292,16 @@ func TestHandleHealth(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, "ok", response["status"])
+	// New health endpoint returns structured response
+	assert.Contains(t, []interface{}{"healthy", "degraded", "unhealthy"}, response["status"])
 	assert.Contains(t, response, "timestamp")
+	assert.Contains(t, response, "uptime_seconds")
+	assert.Contains(t, response, "checks")
+
+	// Verify checks map exists and has server check
+	checks, ok := response["checks"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Contains(t, checks, "server")
 }
 
 func TestHandleLogin(t *testing.T) {
