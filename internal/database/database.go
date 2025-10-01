@@ -92,6 +92,11 @@ func (d *Database) GetDB() *sql.DB {
 	return d.db
 }
 
+// DB returns the underlying sql.DB instance (alias for GetDB)
+func (d *Database) DB() *sql.DB {
+	return d.db
+}
+
 // Ping tests the database connection
 func (d *Database) Ping() error {
 	if d == nil || d.db == nil {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"innominatus/internal/database"
 	"innominatus/internal/demo"
 	"innominatus/internal/graph"
+	"innominatus/internal/health"
+	"innominatus/internal/metrics"
 	"innominatus/internal/resources"
 	"innominatus/internal/teams"
 	"innominatus/internal/types"
@@ -101,6 +104,7 @@ type Server struct {
 	resourceManager  *resources.Manager
 	teamManager      *teams.TeamManager
 	sessionManager   *auth.SessionManager
+	healthChecker    *health.HealthChecker
 	loginAttempts    map[string][]time.Time
 	loginMutex       sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -138,11 +142,16 @@ type MemoryWorkflowStep struct {
 }
 
 func NewServer() *Server {
+	healthChecker := health.NewHealthChecker()
+	// Register basic health checks
+	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
+
 	server := &Server{
 		storage:          NewStorage(),
 		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
 		teamManager:      teams.NewTeamManager(),
 		sessionManager:   auth.NewSessionManager(),
+		healthChecker:    healthChecker,
 		loginAttempts:    make(map[string][]time.Time),
 		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
 		workflowCounter:  0,
@@ -160,6 +169,11 @@ func NewServerWithDB(db *database.Database) *Server {
 	resourceManager := resources.NewManager(resourceRepo)
 	workflowExecutor := workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
 
+	healthChecker := health.NewHealthChecker()
+	// Register health checks
+	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
+	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
+
 	server := &Server{
 		storage:          NewStorage(),
 		db:               db,
@@ -169,6 +183,7 @@ func NewServerWithDB(db *database.Database) *Server {
 		resourceManager:  resourceManager,
 		teamManager:      teams.NewTeamManager(),
 		sessionManager:   auth.NewSessionManager(),
+		healthChecker:    healthChecker,
 		loginAttempts:    make(map[string][]time.Time),
 		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
 		workflowCounter:  0,
@@ -930,32 +945,50 @@ func getClientIP(r *http.Request) string {
 }
 
 // HandleHealth handles GET /health - Returns server health status
+// HandleHealth returns the health status of the service and its dependencies
 func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
 
-	response := map[string]interface{}{
-		"status":    "ok",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"database":  "connected",
-	}
+	healthResponse := s.healthChecker.CheckAll(ctx)
 
-	// Check database connectivity if available
-	if s.db != nil {
-		if err := s.db.Ping(); err != nil {
-			response["database"] = "disconnected"
-			response["database_error"] = err.Error()
-		}
-	} else {
-		response["database"] = "not_configured"
+	// Set HTTP status code based on health status
+	statusCode := http.StatusOK
+	if healthResponse.Status == health.StatusUnhealthy {
+		statusCode = http.StatusServiceUnavailable
+	} else if healthResponse.Status == health.StatusDegraded {
+		statusCode = http.StatusOK // Still return 200 for degraded
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(healthResponse)
+}
+
+// HandleReady returns the readiness status for Kubernetes readiness probes
+func (s *Server) HandleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	readinessResponse := s.healthChecker.IsReady(ctx)
+
+	statusCode := http.StatusOK
+	if !readinessResponse.Ready {
+		statusCode = http.StatusServiceUnavailable
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(readinessResponse)
+}
+
+// HandleMetrics returns Prometheus-format metrics
+func (s *Server) HandleMetrics(w http.ResponseWriter, r *http.Request) {
+	metricsData := metrics.GetGlobal().Export()
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(metricsData))
 }
 
 // Memory workflow tracking methods

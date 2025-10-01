@@ -125,6 +125,11 @@ func main() {
 	http.HandleFunc("/swagger", srv.LoggingMiddleware(srv.HandleSwagger))
 	http.HandleFunc("/swagger.yaml", srv.LoggingMiddleware(srv.HandleSwaggerYAML))
 
+	// Health check endpoints (no authentication needed - for monitoring systems)
+	http.HandleFunc("/health", srv.HandleHealth)
+	http.HandleFunc("/ready", srv.HandleReady)
+	http.HandleFunc("/metrics", srv.HandleMetrics)
+
 	// Web UI (static files) - no authentication needed for static assets
 	fs := http.FileServer(http.Dir("./web-ui/out/"))
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +166,11 @@ func main() {
 	fmt.Println("Web interface:")
 	fmt.Printf("  Dashboard: http://localhost%s/\n", addr)
 	fmt.Printf("  API Docs:  http://localhost%s/swagger\n", addr)
+	fmt.Println("")
+	fmt.Println("Health & Monitoring:")
+	fmt.Printf("  Health:    http://localhost%s/health\n", addr)
+	fmt.Printf("  Readiness: http://localhost%s/ready\n", addr)
+	fmt.Printf("  Metrics:   http://localhost%s/metrics\n", addr)
 	fmt.Println("")
 	fmt.Println("Database configuration (set via environment variables):")
 	fmt.Println("  DB_HOST (default: localhost)")

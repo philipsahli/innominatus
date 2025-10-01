@@ -99,6 +99,15 @@ cd web-ui && npm run build
 # API Docs: http://localhost:8081/swagger
 ```
 
+**Health & Monitoring Endpoints:**
+```
+http://localhost:8081/health   - Liveness probe (Kubernetes health checks)
+http://localhost:8081/ready    - Readiness probe (service ready for traffic)
+http://localhost:8081/metrics  - Prometheus metrics (performance monitoring)
+```
+
+See [docs/HEALTH_MONITORING.md](docs/HEALTH_MONITORING.md) for detailed monitoring documentation.
+
 **Note:** When server source code is modified, you must rebuild and restart the server for changes to take effect:
 ```bash
 # Stop the running server (Ctrl+C)
