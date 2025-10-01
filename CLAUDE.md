@@ -395,6 +395,96 @@ go run . score-spec-with-workflow.yaml
 cd web-ui && npm run dev
 ```
 
+### Release Process
+
+innominatus uses **GoReleaser** for automated multi-platform releases and Docker container builds.
+
+#### Creating a Release
+
+1. **Ensure all changes are committed:**
+```bash
+git add .
+git commit -m "feat: your changes"
+git push origin main
+```
+
+2. **Create and push a version tag:**
+```bash
+# Create a semantic version tag
+git tag v0.1.0
+
+# Push the tag to trigger the release workflow
+git push origin v0.1.0
+```
+
+3. **GitHub Actions automatically:**
+   - Runs tests to ensure code quality
+   - Builds binaries for all platforms (Linux, macOS, Windows - AMD64 & ARM64)
+   - Creates multi-arch Docker images (AMD64 & ARM64)
+   - Pushes images to GitHub Container Registry (ghcr.io)
+   - Creates GitHub Release with:
+     - Binary archives for all platforms
+     - Docker pull instructions
+     - Auto-generated changelog
+     - SHA256 checksums
+
+#### Release Artifacts
+
+**Binary Downloads:**
+- `innominatus_v0.1.0_linux_amd64.tar.gz` - Linux x86_64
+- `innominatus_v0.1.0_linux_arm64.tar.gz` - Linux ARM64
+- `innominatus_v0.1.0_darwin_amd64.tar.gz` - macOS Intel
+- `innominatus_v0.1.0_darwin_arm64.tar.gz` - macOS Apple Silicon
+- `innominatus_v0.1.0_windows_amd64.zip` - Windows 64-bit
+
+**Docker Images:**
+```bash
+# Pull latest version
+docker pull ghcr.io/philipsahli/innominatus:latest
+
+# Pull specific version
+docker pull ghcr.io/philipsahli/innominatus:v0.1.0
+
+# Run container
+docker run -p 8081:8081 ghcr.io/philipsahli/innominatus:v0.1.0
+```
+
+#### Testing Releases Locally
+
+```bash
+# Validate GoReleaser configuration
+goreleaser check
+
+# Build snapshot (for testing, no tag required)
+goreleaser build --snapshot --clean --single-target
+
+# Test binaries
+./dist/innominatus_darwin_arm64_v8.0/innominatus --help
+./dist/innominatus-ctl_darwin_arm64_v8.0/innominatus-ctl --help
+```
+
+#### Docker Image Contents
+
+The Docker image is a multi-stage build that includes:
+- **innominatus** server binary
+- **innominatus-ctl** CLI binary (for debugging)
+- **Next.js web-ui** (standalone build)
+- Configuration files (admin-config.yaml, goldenpaths.yaml)
+- Workflow templates (workflows/)
+- Documentation (docs/)
+
+**Image Size:** ~50MB (using distroless base)
+
+#### Versioning Strategy
+
+innominatus follows [Semantic Versioning](https://semver.org/):
+- **MAJOR.MINOR.PATCH** (e.g., v1.2.3)
+- **v0.x.x** - Pre-release versions (current)
+- **v1.0.0** - First stable release
+- **v1.1.0** - Minor version with new features
+- **v1.1.1** - Patch version with bug fixes
+
 ---
 
 *Created: 2025-09-13*
+*Updated: 2025-10-01* - Added release process and GoReleaser documentation

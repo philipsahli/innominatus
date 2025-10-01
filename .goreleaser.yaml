@@ -1,0 +1,150 @@
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    - go mod download
+
+builds:
+  # Server binary
+  - id: innominatus
+    main: ./cmd/server/main.go
+    binary: innominatus
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  # CLI binary
+  - id: innominatus-ctl
+    main: ./cmd/cli/main.go
+    binary: innominatus-ctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: innominatus
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - admin-config.yaml
+      - goldenpaths.yaml
+      - workflows/**
+      - docs/**
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - 'typo'
+      - 'README'
+
+docker_manifests:
+  # Create multi-arch images
+  - name_template: "ghcr.io/philipsahli/innominatus:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/philipsahli/innominatus:{{ .Version }}-amd64"
+      - "ghcr.io/philipsahli/innominatus:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/philipsahli/innominatus:latest"
+    image_templates:
+      - "ghcr.io/philipsahli/innominatus:latest-amd64"
+      - "ghcr.io/philipsahli/innominatus:latest-arm64"
+
+dockers:
+  # AMD64 image
+  - image_templates:
+      - "ghcr.io/philipsahli/innominatus:{{ .Version }}-amd64"
+      - "ghcr.io/philipsahli/innominatus:latest-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: amd64
+
+  # ARM64 image
+  - image_templates:
+      - "ghcr.io/philipsahli/innominatus:{{ .Version }}-arm64"
+      - "ghcr.io/philipsahli/innominatus:latest-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+    goarch: arm64
+
+release:
+  github:
+    owner: philipsahli
+    name: idp-o
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## innominatus {{ .Version }}
+
+    Score-based platform orchestration component
+
+    ### Installation
+
+    **Docker:**
+    ```bash
+    docker pull ghcr.io/philipsahli/innominatus:{{ .Version }}
+    docker run -p 8081:8081 ghcr.io/philipsahli/innominatus:{{ .Version }}
+    ```
+
+    **Binary:**
+    Download the appropriate archive for your platform below.
+
+  footer: |
+    ---
+    **Full Changelog**: https://github.com/philipsahli/idp-o/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+announce:
+  skip: true

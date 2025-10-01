@@ -1,0 +1,77 @@
+# Git files
+.git
+.github
+.gitignore
+
+# Documentation
+*.md
+!README.md
+docs/
+GAP_ANALYSIS*.md
+ORPHANED_FILES.md
+TFE-WORKFLOW-README.md
+
+# Build artifacts
+innominatus
+innominatus-ctl
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test files and scripts
+*_test.go
+test-*.sh
+test-*.yaml
+workflow-demo.go
+
+# Web-UI node modules and build artifacts
+web-ui/node_modules
+web-ui/.next
+web-ui/out
+web-ui/.turbo
+web-ui/coverage
+
+# Database and runtime data
+data/
+database/
+*.db
+*.sqlite
+*.log
+
+# Workspaces (development only)
+workspaces/
+
+# Terraform state files
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# Ansible temporary files
+ansible/*.retry
+ansible/.ansible
+
+# Example and demo files
+examples/
+example-*.yaml
+score-spec*.yaml
+
+# Config override files
+users.yaml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
