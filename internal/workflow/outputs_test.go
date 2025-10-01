@@ -147,7 +147,7 @@ func TestOutputParser_ParseOutputFile(t *testing.T) {
 	// Create temporary directory for test files
 	tmpDir, err := os.MkdirTemp("", "output-test-*")
 	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	t.Run("JSON file", func(t *testing.T) {
 		jsonFile := filepath.Join(tmpDir, "output.json")

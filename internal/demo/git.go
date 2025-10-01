@@ -35,7 +35,7 @@ func (g *GitManager) SeedRepository() error {
 
 	// Wait for Gitea to be ready
 	if err := g.waitForGitea(); err != nil {
-		return fmt.Errorf("Gitea not ready: %v", err)
+		return fmt.Errorf("gitea not ready: %v", err)
 	}
 
 	// Create temporary working directory
@@ -87,7 +87,7 @@ func (g *GitManager) waitForGitea() error {
 		fmt.Printf("   Retry %d/%d...\n", i+1, maxRetries)
 	}
 
-	return fmt.Errorf("Gitea did not become ready within timeout")
+	return fmt.Errorf("gitea did not become ready within timeout")
 }
 
 // checkRepositoryExists checks if the repository already exists

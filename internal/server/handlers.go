@@ -963,7 +963,7 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(healthResponse)
+	_ = json.NewEncoder(w).Encode(healthResponse)
 }
 
 // HandleReady returns the readiness status for Kubernetes readiness probes
@@ -980,7 +980,7 @@ func (s *Server) HandleReady(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(readinessResponse)
+	_ = json.NewEncoder(w).Encode(readinessResponse)
 }
 
 // HandleMetrics returns Prometheus-format metrics
@@ -1563,7 +1563,7 @@ func (s *Server) handleAnalyzeWorkflow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// Parse Score specification
 	var spec types.ScoreSpec
@@ -1616,7 +1616,7 @@ func (s *Server) handleAnalyzeWorkflowPreview(w http.ResponseWriter, r *http.Req
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// Check for empty body
 	if len(body) == 0 {
@@ -2066,7 +2066,7 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 	}
 
 	// Log step start
-	if _, err := logBuffer.Write([]byte(fmt.Sprintf("Starting step: %s (type: %s)", step.Name, step.Type))); err != nil {
+	if _, err := fmt.Fprintf(logBuffer, "Starting step: %s (type: %s)", step.Name, step.Type); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
 	}
 
@@ -2101,7 +2101,7 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 		return s.executeDummyStep(step, appName, envType, logBuffer)
 	default:
 		fmt.Printf("   ❓ Executing unknown step type: %s\n", step.Type)
-		if _, err := logBuffer.Write([]byte(fmt.Sprintf("Warning: Unknown step type '%s', skipping execution", step.Type))); err != nil {
+		if _, err := fmt.Fprintf(logBuffer, "Warning: Unknown step type '%s', skipping execution", step.Type); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
 		}
 		return nil
@@ -2144,7 +2144,7 @@ func (s *Server) executeCommand(command string, args []string, workDir string, l
 
 // executeTerraformGenerateStep generates Terraform code from Score resources
 func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Generating Terraform code for: %s", step.Name)))
+	_, _ = fmt.Fprintf(logBuffer, "Generating Terraform code for: %s", step.Name)
 
 	// Get output directory from step (supports variable substitution)
 	outputDir := step.OutputDir
@@ -2186,14 +2186,14 @@ func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, e
 		return fmt.Errorf("PostgreSQL Terraform generation not yet implemented")
 	default:
 		errMsg := fmt.Sprintf("Unsupported resource type for terraform generation: %s", resourceType)
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("unsupported resource type for terraform generation: %s", resourceType)
 	}
 }
 
 // generateS3BucketTerraform generates Terraform code for Minio S3 bucket
 func (s *Server) generateS3BucketTerraform(outputDir, appName string, step types.Step, logBuffer *LogBuffer) error {
-	logBuffer.Write([]byte("Generating Minio S3 bucket Terraform configuration"))
+	_, _ = logBuffer.Write([]byte("Generating Minio S3 bucket Terraform configuration"))
 
 	// Get variables from step
 	variables := step.Variables
@@ -2269,13 +2269,13 @@ output "bucket_arn" {
 	mainTfPath := filepath.Join(outputDir, "main.tf")
 	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0644); err != nil {
 		errMsg := fmt.Sprintf("Failed to write main.tf: %v", err)
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("failed to write main.tf: %w", err)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Generated Terraform configuration: %s", mainTfPath)))
-	logBuffer.Write([]byte(fmt.Sprintf("Bucket name: %s", bucketName)))
-	logBuffer.Write([]byte(fmt.Sprintf("Minio endpoint: %s", minioEndpoint)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Generated Terraform configuration: %s", mainTfPath)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Bucket name: %s", bucketName)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Minio endpoint: %s", minioEndpoint)))
 
 	return nil
 }

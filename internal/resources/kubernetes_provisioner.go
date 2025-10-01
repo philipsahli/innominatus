@@ -373,7 +373,7 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir) // Clean up after
+	defer func() { _ = os.RemoveAll(tmpDir) }() // Clean up after
 
 	// Git clone the repository
 	repoURL := fmt.Sprintf("%s/%s/%s.git", adminConfig.Gitea.URL, adminConfig.Gitea.OrgName, appName)

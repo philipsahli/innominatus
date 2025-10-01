@@ -140,7 +140,7 @@ func (ap *ArgoCDProvisioner) Provision(resource *database.ResourceInstance, conf
 	if err != nil {
 		return fmt.Errorf("failed to create application: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -190,7 +190,7 @@ func (ap *ArgoCDProvisioner) Deprovision(resource *database.ResourceInstance) er
 	if err != nil {
 		return fmt.Errorf("failed to delete application: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 404 {
 		body, _ := io.ReadAll(resp.Body)
@@ -240,7 +240,7 @@ func (ap *ArgoCDProvisioner) GetStatus(resource *database.ResourceInstance) (map
 		status["error"] = fmt.Sprintf("failed to get application: %v", err)
 		return status, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
 		status["state"] = "not_found"
@@ -291,7 +291,7 @@ func (ap *ArgoCDProvisioner) authenticateArgoCD(argoCDURL, username, password st
 	if err != nil {
 		return "", fmt.Errorf("failed to authenticate: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)

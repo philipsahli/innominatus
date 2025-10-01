@@ -215,7 +215,7 @@ func (l *Logger) log(level LogLevel, message string, fields map[string]interface
 	b.WriteString("\n")
 
 	// Write to output
-	fmt.Fprint(l.output, b.String())
+	_, _ = fmt.Fprint(l.output, b.String())
 }
 
 // Debug logs a debug message

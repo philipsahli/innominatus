@@ -637,7 +637,7 @@ func runArgoCDAppStepWithSpinner(step types.Step, appName string, envType string
 	if err != nil {
 		return fmt.Errorf("failed to create ArgoCD application: %w", err)
 	}
-	defer createResp.Body.Close()
+	defer func() { _ = createResp.Body.Close() }()
 
 	if createResp.StatusCode != 200 && createResp.StatusCode != 201 {
 		body, _ := io.ReadAll(createResp.Body)
@@ -779,7 +779,7 @@ spec:
 
 	// Create temporary directory for git operations
 	tmpDir := fmt.Sprintf("/tmp/score-repo-%s", step.RepoName)
-	os.RemoveAll(tmpDir) // Clean up any existing directory
+	_ = os.RemoveAll(tmpDir) // Clean up any existing directory
 
 	// Clone repository
 	repoURL := fmt.Sprintf("%s/%s/%s.git", adminConfig.Gitea.URL, owner, step.RepoName)

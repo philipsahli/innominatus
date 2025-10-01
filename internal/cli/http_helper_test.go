@@ -240,7 +240,7 @@ func TestHTTPHelper_PUT(t *testing.T) {
 			assert.Equal(t, "updated-value", reqBody["key"])
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"updated": "true"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"updated": "true"})
 		}))
 		defer server.Close()
 

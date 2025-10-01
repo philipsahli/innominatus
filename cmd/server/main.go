@@ -69,7 +69,7 @@ func main() {
 			if err != nil {
 				fmt.Printf("Warning: Failed to initialize database schema: %v\n", err)
 				fmt.Println("Starting server without database features...")
-				db.Close()
+				_ = db.Close()
 				srv = server.NewServer()
 			} else {
 				fmt.Println("Database connected successfully")

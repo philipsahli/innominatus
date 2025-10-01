@@ -58,7 +58,7 @@ func (g *GrafanaManager) WaitForGrafana(maxRetries int) error {
 		fmt.Printf("   Retry %d/%d...\\n", i+1, maxRetries)
 	}
 
-	return fmt.Errorf("Grafana did not become ready within timeout")
+	return fmt.Errorf("grafana did not become ready within timeout")
 }
 
 // InstallClusterHealthDashboard installs a cluster health dashboard

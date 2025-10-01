@@ -56,7 +56,7 @@ func (a *AuthService) GetUserInfo(ctx context.Context, token *oauth2.Token) (*Us
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var user User
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {

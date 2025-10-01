@@ -133,7 +133,7 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(valuesFile)
+	defer func() { _ = os.Remove(valuesFile) }()
 
 	// Install or upgrade with Helm
 	chartRef := fmt.Sprintf("%s/%s", repoName, component.Chart)
@@ -297,12 +297,12 @@ func (i *Installer) DeployManifest(namespace, name, yamlContent string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(yamlContent); err != nil {
 		return fmt.Errorf("failed to write manifest: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Apply manifest
 	cmd := exec.Command("kubectl", "--context", i.kubeContext, "apply", "-f", tmpFile.Name(), "-n", namespace)

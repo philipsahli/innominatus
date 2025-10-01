@@ -119,8 +119,8 @@ func (sv *ScoreValidator) validateRequiredFields() []*errors.RichError {
 		lineNum := sv.findFieldLine("containers")
 		err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "At least one container is required").
 			WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-		err = err.WithSuggestion("Add at least one container definition")
-		err = err.WithSuggestion("Example: containers:\n  web:\n    image: nginx:latest")
+		_ = err.WithSuggestion("Add at least one container definition")
+		_ = err.WithSuggestion("Example: containers:\n  web:\n    image: nginx:latest")
 		errs = append(errs, err)
 	}
 
@@ -195,8 +195,8 @@ func (sv *ScoreValidator) validateWorkflows() []*errors.RichError {
 		if len(workflow.Steps) == 0 {
 			lineNum := sv.findFieldLineInSection("workflows", workflowName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Workflow '%s' has no steps", workflowName)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Add at least one step to the workflow")
-			err.WithSuggestion("Example: steps:\n  - name: deploy\n    type: kubernetes")
+			_ = err.WithSuggestion("Add at least one step to the workflow")
+			_ = err.WithSuggestion("Example: steps:\n  - name: deploy\n    type: kubernetes")
 			errs = append(errs, err)
 		}
 
@@ -227,7 +227,7 @@ func (sv *ScoreValidator) validateContainers() []*errors.RichError {
 		if container.Image == "" {
 			lineNum := sv.findFieldLineInSection("containers", containerName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Container '%s' missing image", containerName)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Add an image to the container definition")
+			_ = err.WithSuggestion("Add an image to the container definition")
 			errs = append(errs, err)
 		}
 	}
@@ -245,7 +245,7 @@ func (sv *ScoreValidator) checkBestPractices() []*errors.RichError {
 			lineNum := sv.findFieldLineInSection("containers", containerName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Container '%s' uses 'latest' tag", containerName)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
 			err.Severity = errors.SeverityWarning
-			err.WithSuggestion("Use specific version tags instead of 'latest' for reproducibility")
+			_ = err.WithSuggestion("Use specific version tags instead of 'latest' for reproducibility")
 			errs = append(errs, err)
 		}
 	}

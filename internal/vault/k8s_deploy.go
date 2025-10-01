@@ -75,12 +75,12 @@ func (k *K8sDeployer) deployManifest(namespace, manifestType, yamlContent string
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(yamlContent); err != nil {
 		return fmt.Errorf("failed to write manifest: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Apply manifest using kubectl
 	cmd := exec.Command("kubectl", "--context", k.kubeContext, "apply", "-f", tmpFile.Name())
@@ -126,12 +126,12 @@ metadata:
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(serviceAccountYAML); err != nil {
 		return fmt.Errorf("failed to write ServiceAccount manifest: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Apply ServiceAccount using kubectl
 	cmd := exec.Command("kubectl", "--context", k.kubeContext, "apply", "-f", tmpFile.Name())

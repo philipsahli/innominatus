@@ -29,7 +29,7 @@ func TestListCommand(t *testing.T) {
 		case "/api/specs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{
+			_, _ = fmt.Fprintf(w, `{
 				"test-app": {
 					"metadata": {
 						"APIVersion": "score.dev/v1b1"
@@ -55,7 +55,7 @@ func TestListCommand(t *testing.T) {
 		case "/api/workflows":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `[
+			_, _ = fmt.Fprintf(w, `[
 				{
 					"id": 1,
 					"app_name": "test-app",
@@ -86,7 +86,7 @@ func TestListCommand(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Restore stdout and read output
-	w.Close()
+	_ = w.Close()
 	os.Stdout = originalStdout
 	if _, err := buf.ReadFrom(r); err != nil {
 		t.Fatalf("failed to read output: %v", err)
@@ -102,7 +102,7 @@ func TestListCommandEmptyResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{}`)
+		_, _ = fmt.Fprintf(w, `{}`)
 	}))
 	defer server.Close()
 
@@ -118,7 +118,7 @@ func TestListCommandEmptyResponse(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Restore stdout and read output
-	w.Close()
+	_ = w.Close()
 	os.Stdout = originalStdout
 	if _, err := buf.ReadFrom(r); err != nil {
 		t.Fatalf("failed to read output: %v", err)
