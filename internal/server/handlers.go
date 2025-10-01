@@ -2334,7 +2334,7 @@ func (s *Server) executeKubernetesStep(step types.Step, appName string, envType 
 	err := s.executeCommand("kubectl", []string{"create", "namespace", namespace}, "", logBuffer)
 	if err != nil {
 		// Namespace might already exist, which is fine
-		logBuffer.Write([]byte("Namespace may already exist, continuing..."))
+		_, _ = logBuffer.Write([]byte("Namespace may already exist, continuing..."))
 	}
 
 	// Generate and apply kubernetes manifests (simplified for now)
@@ -2365,7 +2365,7 @@ spec:
 
 	err = os.WriteFile(manifestPath, []byte(manifest), 0644)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to write manifest file: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write manifest file: %v", err)))
 		return err
 	}
 
@@ -2379,7 +2379,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 		repoName = fmt.Sprintf("%s-%s", appName, envType)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Creating Gitea repository: %s", repoName)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating Gitea repository: %s", repoName)))
 
 	// Load admin configuration
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
