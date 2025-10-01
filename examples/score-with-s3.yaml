@@ -1,0 +1,31 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: app-with-storage
+
+containers:
+  main:
+    image: myapp:latest
+    variables:
+      # S3 bucket configuration (populated by Terraform outputs)
+      S3_BUCKET: my-app-storage
+      S3_ENDPOINT: http://minio.minio-system.svc.cluster.local:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_REGION: us-east-1
+      # Example: Using S3 URL from Terraform output
+      S3_URL: s3://my-app-storage
+
+# Note: In a full implementation, resources would be defined here
+# and automatically provisioned via Terraform
+#
+# resources:
+#   data-store:
+#     type: minio-s3-bucket
+#     properties:
+#       bucket_name: ${metadata.name}-storage
+#
+# The workflow would then:
+# 1. Detect the minio-s3-bucket resource
+# 2. Generate Terraform configuration
+# 3. Provision bucket via terraform/minio-bucket module
+# 4. Inject outputs into container environment variables

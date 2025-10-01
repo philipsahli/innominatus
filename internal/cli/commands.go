@@ -809,7 +809,7 @@ func (c *Client) DemoNukeCommand() error {
 	}
 
 	// Delete namespaces
-	namespaces := []string{"demo", "monitoring", "vault", "argocd", "gitea", "ingress-nginx", "kubernetes-dashboard"}
+	namespaces := []string{"demo", "monitoring", "vault", "argocd", "gitea", "minio-system", "ingress-nginx", "kubernetes-dashboard"}
 	for _, namespace := range namespaces {
 		cheatSheet.PrintProgress(fmt.Sprintf("Deleting namespace %s...", namespace))
 		if err := installer.DeleteNamespace(namespace); err != nil {

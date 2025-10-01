@@ -209,11 +209,29 @@ curl -X POST http://localhost:8081/api/specs \
 
 innominatus supports multi-step workflows with:
 
-- **Terraform:** Infrastructure provisioning (`terraform init`, `apply`, `output`)
+- **Terraform:** Infrastructure provisioning (`terraform init`, `plan`, `apply`, `destroy`, `output`)
+  - Executes in isolated workspaces per application/environment
+  - Supports variable injection and output capture
+  - Example: Minio S3 bucket provisioning using `aminueza/minio` provider
 - **Ansible:** Configuration management (`ansible-playbook`)
 - **Kubernetes:** Application deployment (namespace creation, manifest generation, `kubectl apply`)
 
 Each workflow step runs in app and environment-specific workspaces for multi-tenant isolation.
+
+**Terraform Step Example:**
+```yaml
+- name: provision-object-storage
+  type: terraform
+  config:
+    operation: apply
+    working_dir: ./terraform/minio-bucket
+    variables:
+      bucket_name: my-app-storage
+      minio_endpoint: http://minio.minio-system.svc.cluster.local:9000
+    outputs:
+      - minio_url
+      - bucket_name
+```
 
 ### Golden Paths
 
@@ -267,6 +285,7 @@ innominatus includes a complete demo environment feature that sets up a developm
 - **Gitea**: Git repository hosting (http://gitea.localtest.me) - `admin/admin`
 - **ArgoCD**: GitOps continuous deployment (http://argocd.localtest.me) - `admin/argocd123`
 - **Vault**: Secret management (http://vault.localtest.me) - Root token: `root`
+- **Minio**: S3-compatible object storage (http://minio.localtest.me, Console: http://minio-console.localtest.me) - `minioadmin/minioadmin`
 - **Grafana**: Monitoring dashboards (http://grafana.localtest.me) - `admin/admin`
 - **Prometheus**: Metrics collection (http://prometheus.localtest.me)
 - **Kubernetes Dashboard**: Cluster management UI (http://k8s.localtest.me) - Token: `kubectl -n kubernetes-dashboard create token admin-user`

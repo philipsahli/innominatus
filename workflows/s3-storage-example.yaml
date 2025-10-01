@@ -1,0 +1,47 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: s3-storage-example
+  description: Example workflow demonstrating S3 object storage provisioning with Minio
+spec:
+  steps:
+    - name: provision-object-storage
+      type: terraform
+      config:
+        operation: apply
+        working_dir: ./terraform/minio-bucket
+        variables:
+          bucket_name: ${metadata.name}-storage
+          minio_endpoint: http://minio.minio-system.svc.cluster.local:9000
+          minio_user: minioadmin
+          minio_password: minioadmin
+        outputs:
+          - minio_url
+          - bucket_name
+          - endpoint
+          - bucket_arn
+
+    - name: verify-bucket-creation
+      type: validation
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+          echo "🔍 Verifying S3 bucket creation"
+
+          # Install mc (minio client) if not available
+          if ! command -v mc &> /dev/null; then
+              echo "Installing minio client (mc)..."
+              curl -O https://dl.min.io/client/mc/release/darwin-amd64/mc
+              chmod +x mc
+              sudo mv mc /usr/local/bin/
+          fi
+
+          # Configure minio client
+          mc alias set demo http://minio.minio-system.svc.cluster.local:9000 minioadmin minioadmin
+
+          # List buckets
+          echo "Available buckets:"
+          mc ls demo/
+
+          echo "✅ Bucket verification completed"

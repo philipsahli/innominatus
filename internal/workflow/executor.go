@@ -2,9 +2,14 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"innominatus/internal/database"
 	"innominatus/internal/types"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -751,4 +756,232 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 		fmt.Printf("      ✅ Validation completed\n")
 		return nil
 	}
+
+	// Terraform executor
+	e.stepExecutors["terraform"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+		fmt.Printf("      🏗️  Executing Terraform step: %s\n", step.Name)
+
+		// Parse configuration
+		config, ok := step.Config.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("terraform step config must be a map")
+		}
+
+		// Get operation (default: apply)
+		operation, ok := config["operation"].(string)
+		if !ok {
+			operation = "apply"
+		}
+
+		// Get working directory
+		workingDir, ok := config["working_dir"].(string)
+		if !ok {
+			return fmt.Errorf("terraform step requires 'working_dir' in config")
+		}
+
+		// Get variables (optional)
+		variables := make(map[string]string)
+		if varsRaw, ok := config["variables"].(map[string]interface{}); ok {
+			for k, v := range varsRaw {
+				variables[k] = fmt.Sprintf("%v", v)
+			}
+		}
+
+		// Get outputs to capture (optional)
+		var outputNames []string
+		if outputsRaw, ok := config["outputs"].([]interface{}); ok {
+			for _, o := range outputsRaw {
+				if outputStr, ok := o.(string); ok {
+					outputNames = append(outputNames, outputStr)
+				}
+			}
+		}
+
+		// Create workspace directory for this app/env
+		workspaceDir := fmt.Sprintf("workspaces/%s/terraform", appName)
+		if err := os.MkdirAll(workspaceDir, 0755); err != nil {
+			return fmt.Errorf("failed to create terraform workspace: %w", err)
+		}
+
+		// Copy terraform files to workspace
+		fmt.Printf("      📁 Preparing Terraform workspace: %s\n", workspaceDir)
+		if err := e.copyTerraformFiles(workingDir, workspaceDir); err != nil {
+			return fmt.Errorf("failed to copy terraform files: %w", err)
+		}
+
+		// Execute terraform operation
+		switch operation {
+		case "init":
+			return e.terraformInit(ctx, workspaceDir)
+		case "plan":
+			return e.terraformPlan(ctx, workspaceDir, variables)
+		case "apply":
+			if err := e.terraformInit(ctx, workspaceDir); err != nil {
+				return err
+			}
+			if err := e.terraformApply(ctx, workspaceDir, variables); err != nil {
+				return err
+			}
+			// Capture outputs if specified
+			if len(outputNames) > 0 {
+				return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, appName)
+			}
+			return nil
+		case "destroy":
+			if err := e.terraformInit(ctx, workspaceDir); err != nil {
+				return err
+			}
+			return e.terraformDestroy(ctx, workspaceDir, variables)
+		case "output":
+			return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, appName)
+		default:
+			return fmt.Errorf("unsupported terraform operation: %s", operation)
+		}
+	}
+}
+
+// Terraform helper functions
+
+// copyTerraformFiles copies terraform files from source to destination
+func (e *WorkflowExecutor) copyTerraformFiles(src, dest string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Calculate relative path
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		// Destination path
+		destPath := filepath.Join(dest, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		// Copy file
+		return e.copyFile(path, destPath)
+	})
+}
+
+// copyFile copies a single file
+func (e *WorkflowExecutor) copyFile(src, dest string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
+}
+
+// terraformInit initializes terraform in the workspace
+func (e *WorkflowExecutor) terraformInit(ctx context.Context, workspaceDir string) error {
+	fmt.Printf("      🔧 Terraform init\n")
+	cmd := exec.CommandContext(ctx, "terraform", "init", "-no-color")
+	cmd.Dir = workspaceDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("terraform init failed: %w\nOutput: %s", err, string(output))
+	}
+	return nil
+}
+
+// terraformPlan runs terraform plan
+func (e *WorkflowExecutor) terraformPlan(ctx context.Context, workspaceDir string, variables map[string]string) error {
+	fmt.Printf("      📋 Terraform plan\n")
+	args := []string{"plan", "-no-color"}
+	for k, v := range variables {
+		args = append(args, "-var", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	cmd := exec.CommandContext(ctx, "terraform", args...)
+	cmd.Dir = workspaceDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("terraform plan failed: %w\nOutput: %s", err, string(output))
+	}
+	fmt.Printf("%s\n", string(output))
+	return nil
+}
+
+// terraformApply runs terraform apply
+func (e *WorkflowExecutor) terraformApply(ctx context.Context, workspaceDir string, variables map[string]string) error {
+	fmt.Printf("      ✅ Terraform apply\n")
+	args := []string{"apply", "-auto-approve", "-no-color"}
+	for k, v := range variables {
+		args = append(args, "-var", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	cmd := exec.CommandContext(ctx, "terraform", args...)
+	cmd.Dir = workspaceDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("terraform apply failed: %w\nOutput: %s", err, string(output))
+	}
+	fmt.Printf("      🎉 Terraform apply completed successfully\n")
+	return nil
+}
+
+// terraformDestroy runs terraform destroy
+func (e *WorkflowExecutor) terraformDestroy(ctx context.Context, workspaceDir string, variables map[string]string) error {
+	fmt.Printf("      🗑️  Terraform destroy\n")
+	args := []string{"destroy", "-auto-approve", "-no-color"}
+	for k, v := range variables {
+		args = append(args, "-var", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	cmd := exec.CommandContext(ctx, "terraform", args...)
+	cmd.Dir = workspaceDir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("terraform destroy failed: %w\nOutput: %s", err, string(output))
+	}
+	fmt.Printf("      ✅ Terraform destroy completed successfully\n")
+	return nil
+}
+
+// terraformCaptureOutputs captures terraform outputs and stores them
+func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspaceDir string, outputNames []string, appName string) error {
+	fmt.Printf("      📤 Capturing Terraform outputs\n")
+
+	// Run terraform output -json
+	cmd := exec.CommandContext(ctx, "terraform", "output", "-json")
+	cmd.Dir = workspaceDir
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("terraform output failed: %w", err)
+	}
+
+	// Parse JSON output
+	var outputs map[string]interface{}
+	if err := json.Unmarshal(output, &outputs); err != nil {
+		return fmt.Errorf("failed to parse terraform outputs: %w", err)
+	}
+
+	// Extract specified outputs
+	for _, outputName := range outputNames {
+		if outputValue, ok := outputs[outputName]; ok {
+			if outputMap, ok := outputValue.(map[string]interface{}); ok {
+				if value, ok := outputMap["value"]; ok {
+					fmt.Printf("      📊 Output '%s': %v\n", outputName, value)
+					// TODO: Store outputs in workflow context or database for use in subsequent steps
+				}
+			}
+		} else {
+			fmt.Printf("      ⚠️  Output '%s' not found in terraform outputs\n", outputName)
+		}
+	}
+
+	return nil
 }

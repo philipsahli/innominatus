@@ -272,6 +272,48 @@ func NewDemoEnvironment() *DemoEnvironment {
 				Port:       3000,
 			},
 			{
+				Name:        "minio",
+				Namespace:   "minio-system",
+				Chart:       "minio",
+				Repo:        "https://charts.min.io/",
+				Version:     "5.0.14",
+				IngressHost: "minio.localtest.me",
+				Credentials: map[string]string{
+					"username": "minioadmin",
+					"password": "minioadmin",
+					"console":  "http://minio-console.localtest.me",
+				},
+				Values: map[string]interface{}{
+					"mode": "standalone",
+					"rootUser": "minioadmin",
+					"rootPassword": "minioadmin",
+					"replicas": 1,
+					"persistence": map[string]interface{}{
+						"enabled": true,
+						"size":    "10Gi",
+					},
+					"ingress": map[string]interface{}{
+						"enabled":          true,
+						"ingressClassName": "nginx",
+						"hosts": []string{"minio.localtest.me"},
+						"path": "/",
+					},
+					"consoleIngress": map[string]interface{}{
+						"enabled":          true,
+						"ingressClassName": "nginx",
+						"hosts": []string{"minio-console.localtest.me"},
+						"path": "/",
+					},
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"memory": "512Mi",
+						},
+					},
+				},
+				HealthPath: "/minio/health/live",
+				Port:       9000,
+			},
+			{
 				Name:        "demo-app",
 				Namespace:   "demo",
 				Chart:       "", // Will be deployed via kubectl

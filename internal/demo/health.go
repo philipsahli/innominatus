@@ -101,6 +101,8 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkKubernetesDashboard(resp, status)
 	case "vault-secrets-operator":
 		status = h.checkVaultSecretsOperator(component, status)
+	case "minio":
+		status = h.checkMinio(resp, status)
 	default:
 		status = h.checkGeneric(resp, status)
 	}
@@ -299,6 +301,17 @@ func (h *HealthChecker) checkVaultSecretsOperator(component DemoComponent, statu
 		status.Status = fmt.Sprintf("Unhealthy (%d/%d pods running)", runningCount, totalCount)
 	}
 
+	return status
+}
+
+// checkMinio performs Minio-specific health check
+func (h *HealthChecker) checkMinio(resp *http.Response, status HealthStatus) HealthStatus {
+	if resp.StatusCode == 200 {
+		status.Healthy = true
+		status.Status = "Live"
+	} else {
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
 	return status
 }
 
