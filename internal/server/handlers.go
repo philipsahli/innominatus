@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
@@ -1325,6 +1326,10 @@ func getComponentURL(name, host string) string {
 	if name == "kubernetes-dashboard" {
 		protocol = "https"
 	}
+	// Minio uses a separate console URL
+	if name == "minio" {
+		return "http://minio-console.localtest.me"
+	}
 	return fmt.Sprintf("%s://%s", protocol, host)
 }
 
@@ -2032,6 +2037,17 @@ func substituteVariables(step *types.Step, appName string, envType string) {
 	step.TargetPath = replacer.Replace(step.TargetPath)
 	step.Owner = replacer.Replace(step.Owner)
 	step.SyncPolicy = replacer.Replace(step.SyncPolicy)
+	step.OutputDir = replacer.Replace(step.OutputDir)
+	step.WorkingDir = replacer.Replace(step.WorkingDir)
+
+	// Substitute in variables map
+	if step.Variables != nil {
+		for key, value := range step.Variables {
+			if strValue, ok := value.(string); ok {
+				step.Variables[key] = replacer.Replace(strValue)
+			}
+		}
+	}
 }
 
 // runWorkflowStepWithTracking executes a single workflow step with real command execution and output capture
@@ -2056,6 +2072,9 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 
 	// Execute the step based on its type
 	switch step.Type {
+	case "terraform-generate":
+		fmt.Printf("   📝 Executing Terraform Generate step: %s\n", step.Name)
+		return s.executeTerraformGenerateStep(step, appName, envType, logBuffer)
 	case "terraform":
 		fmt.Printf("   🏗️  Executing Terraform step: %s\n", step.Name)
 		return s.executeTerraformStep(step, appName, envType, logBuffer)
@@ -2123,9 +2142,151 @@ func (s *Server) executeCommand(command string, args []string, workDir string, l
 	return nil
 }
 
+// executeTerraformGenerateStep generates Terraform code from Score resources
+func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
+	logBuffer.Write([]byte(fmt.Sprintf("Generating Terraform code for: %s", step.Name)))
+
+	// Get output directory from step (supports variable substitution)
+	outputDir := step.OutputDir
+	if outputDir == "" {
+		outputDir = fmt.Sprintf("workspaces/%s/terraform", appName)
+	}
+
+	// Get resource type to generate
+	resourceType := step.Resource
+	if resourceType == "" && step.Config != nil {
+		if rt, ok := step.Config["resource"].(string); ok {
+			resourceType = rt
+		}
+	}
+
+	if resourceType == "" {
+		errMsg := "terraform-generate requires 'resource' field (e.g., 's3', 'postgres')"
+		logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("terraform-generate requires 'resource' field (e.g., 's3', 'postgres')")
+	}
+
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		errMsg := fmt.Sprintf("Failed to create output directory: %v", err)
+		logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	logBuffer.Write([]byte(fmt.Sprintf("Output directory: %s", outputDir)))
+	logBuffer.Write([]byte(fmt.Sprintf("Resource type: %s", resourceType)))
+
+	// Generate Terraform code based on resource type
+	switch resourceType {
+	case "s3", "minio-s3-bucket":
+		return s.generateS3BucketTerraform(outputDir, appName, step, logBuffer)
+	case "postgres", "postgresql":
+		errMsg := "PostgreSQL Terraform generation not yet implemented"
+		logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("PostgreSQL Terraform generation not yet implemented")
+	default:
+		errMsg := fmt.Sprintf("Unsupported resource type for terraform generation: %s", resourceType)
+		logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("unsupported resource type for terraform generation: %s", resourceType)
+	}
+}
+
+// generateS3BucketTerraform generates Terraform code for Minio S3 bucket
+func (s *Server) generateS3BucketTerraform(outputDir, appName string, step types.Step, logBuffer *LogBuffer) error {
+	logBuffer.Write([]byte("Generating Minio S3 bucket Terraform configuration"))
+
+	// Get variables from step
+	variables := step.Variables
+	if variables == nil {
+		variables = make(map[string]interface{})
+	}
+
+	// Extract Minio configuration
+	bucketName, _ := variables["bucket_name"].(string)
+	if bucketName == "" {
+		bucketName = fmt.Sprintf("%s-storage", appName)
+	}
+
+	minioEndpoint, _ := variables["minio_endpoint"].(string)
+	if minioEndpoint == "" {
+		minioEndpoint = "http://minio.minio-system.svc.cluster.local:9000"
+	}
+
+	minioUser, _ := variables["minio_user"].(string)
+	if minioUser == "" {
+		minioUser = "minioadmin"
+	}
+
+	minioPassword, _ := variables["minio_password"].(string)
+	if minioPassword == "" {
+		minioPassword = "minioadmin"
+	}
+
+	// Strip protocol from endpoint for Minio provider (it expects just host:port)
+	minioServer := strings.TrimPrefix(minioEndpoint, "http://")
+	minioServer = strings.TrimPrefix(minioServer, "https://")
+
+	// Generate main.tf
+	mainTf := fmt.Sprintf(`terraform {
+  required_providers {
+    minio = {
+      source  = "aminueza/minio"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "minio" {
+  minio_server   = "%s"
+  minio_user     = "%s"
+  minio_password = "%s"
+  minio_ssl      = false
+}
+
+resource "minio_s3_bucket" "bucket" {
+  bucket = "%s"
+  acl    = "private"
+}
+
+output "bucket_name" {
+  value = minio_s3_bucket.bucket.bucket
+}
+
+output "minio_url" {
+  value = "%s"
+}
+
+output "endpoint" {
+  value = "%s/${minio_s3_bucket.bucket.bucket}"
+}
+
+output "bucket_arn" {
+  value = "arn:aws:s3:::${minio_s3_bucket.bucket.bucket}"
+}
+`, minioServer, minioUser, minioPassword, bucketName, minioEndpoint, minioEndpoint)
+
+	// Write main.tf
+	mainTfPath := filepath.Join(outputDir, "main.tf")
+	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0644); err != nil {
+		errMsg := fmt.Sprintf("Failed to write main.tf: %v", err)
+		logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("failed to write main.tf: %w", err)
+	}
+
+	logBuffer.Write([]byte(fmt.Sprintf("Generated Terraform configuration: %s", mainTfPath)))
+	logBuffer.Write([]byte(fmt.Sprintf("Bucket name: %s", bucketName)))
+	logBuffer.Write([]byte(fmt.Sprintf("Minio endpoint: %s", minioEndpoint)))
+
+	return nil
+}
+
 // executeTerraformStep executes a terraform workflow step
 func (s *Server) executeTerraformStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	workDir := fmt.Sprintf("./terraform/%s-%s", appName, envType)
+	// Use workingDir from step config if provided, otherwise use default
+	workDir := step.WorkingDir
+	if workDir == "" {
+		workDir = fmt.Sprintf("./terraform/%s-%s", appName, envType)
+	}
 
 	// Create workspace directory if it doesn't exist
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
