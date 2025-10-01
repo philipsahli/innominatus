@@ -11,6 +11,28 @@ spec:
       description: "Application repository for ${metadata.name}"
       owner: "platform-team"
 
+    - name: generate-s3-terraform
+      type: terraform-generate
+      if: "resources.s3-bucket != null"
+      resource: s3
+      outputDir: workspaces/${metadata.name}/terraform
+      variables:
+        bucket_name: ${metadata.name}-storage
+        minio_endpoint: http://minio.minio-system.svc.cluster.local:9000
+        minio_user: minioadmin
+        minio_password: minioadmin
+
+    - name: provision-s3-bucket
+      type: terraform
+      if: "resources.s3-bucket != null"
+      operation: apply
+      workingDir: workspaces/${metadata.name}/terraform
+      outputs:
+        - minio_url
+        - bucket_name
+        - endpoint
+        - bucket_arn
+
     - name: provision-infrastructure
       type: terraform
       path: "./terraform/infra"
@@ -59,4 +81,19 @@ spec:
           echo "Service status:"
           kubectl get svc -n ${NAMESPACE}
 
+          # Verify S3 environment variables if S3 bucket was provisioned
+          echo ""
+          echo "Checking for S3 configuration..."
+          POD_NAME=$(kubectl get pods -n ${NAMESPACE} -l app=${metadata.name} -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$POD_NAME" ]; then
+              echo "Verifying environment variables in pod: $POD_NAME"
+              if kubectl exec -n ${NAMESPACE} $POD_NAME -- env | grep -q S3_BUCKET_ENDPOINT; then
+                  echo "✅ S3 configuration found in pod:"
+                  kubectl exec -n ${NAMESPACE} $POD_NAME -- env | grep S3_ | sed 's/^/  /'
+              else
+                  echo "ℹ️  No S3 configuration found (not required)"
+              fi
+          fi
+
+          echo ""
           echo "✅ Deployment verification completed"

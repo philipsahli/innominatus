@@ -846,6 +846,47 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			return fmt.Errorf("unsupported terraform operation: %s", operation)
 		}
 	}
+
+	// Terraform-generate executor - generates Terraform code from Score resources
+	e.stepExecutors["terraform-generate"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+		fmt.Printf("      📝 Generating Terraform code for: %s\n", step.Name)
+
+		// Get output directory (default: workspaces/{app}/terraform)
+		outputDir := step.OutputDir
+		if outputDir == "" {
+			outputDir = fmt.Sprintf("workspaces/%s/terraform", appName)
+		}
+
+		// Get resource type to generate (from step.Resource field or Config)
+		resourceType := step.Resource
+		if resourceType == "" && step.Config != nil {
+			if rt, ok := step.Config["resource"].(string); ok {
+				resourceType = rt
+			}
+		}
+
+		if resourceType == "" {
+			return fmt.Errorf("terraform-generate requires 'resource' field (e.g., 's3', 'postgres')")
+		}
+
+		// Create output directory
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+
+		fmt.Printf("      📁 Output directory: %s\n", outputDir)
+		fmt.Printf("      🔧 Resource type: %s\n", resourceType)
+
+		// Generate Terraform code based on resource type
+		switch resourceType {
+		case "s3", "minio-s3-bucket":
+			return e.generateS3BucketTerraform(outputDir, appName, step)
+		case "postgres", "postgresql":
+			return e.generatePostgresTerraform(outputDir, appName, step)
+		default:
+			return fmt.Errorf("unsupported resource type for terraform generation: %s", resourceType)
+		}
+	}
 }
 
 // Terraform helper functions
@@ -992,4 +1033,93 @@ func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspac
 	}
 
 	return nil
+}
+
+// Terraform code generation functions
+
+// generateS3BucketTerraform generates Terraform code for S3 bucket provisioning
+func (e *WorkflowExecutor) generateS3BucketTerraform(outputDir, appName string, step types.Step) error {
+	bucketName := fmt.Sprintf("%s-storage", appName)
+	minioEndpoint := "http://minio.minio-system.svc.cluster.local:9000"
+	minioUser := "minioadmin"
+	minioPassword := "minioadmin"
+
+	// Override from step variables if provided
+	if step.Variables != nil {
+		if bn, ok := step.Variables["bucket_name"].(string); ok {
+			bucketName = bn
+		}
+		if ep, ok := step.Variables["minio_endpoint"].(string); ok {
+			minioEndpoint = ep
+		}
+		if usr, ok := step.Variables["minio_user"].(string); ok {
+			minioUser = usr
+		}
+		if pwd, ok := step.Variables["minio_password"].(string); ok {
+			minioPassword = pwd
+		}
+	}
+
+	// Generate main.tf
+	mainTf := fmt.Sprintf(`# Generated Terraform configuration for %s
+# Generated at: %s
+
+terraform {
+  required_providers {
+    minio = {
+      source  = "aminueza/minio"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "minio" {
+  minio_server   = "%s"
+  minio_user     = "%s"
+  minio_password = "%s"
+  minio_ssl      = false
+}
+
+resource "minio_s3_bucket" "app_bucket" {
+  bucket = "%s"
+  acl    = "private"
+}
+
+output "minio_url" {
+  value       = "s3://${minio_s3_bucket.app_bucket.bucket}"
+  description = "S3 URL for the created bucket"
+}
+
+output "bucket_name" {
+  value       = minio_s3_bucket.app_bucket.bucket
+  description = "Name of the created bucket"
+}
+
+output "endpoint" {
+  value       = "%s"
+  description = "Minio endpoint URL"
+}
+
+output "bucket_arn" {
+  value       = "arn:aws:s3:::${minio_s3_bucket.app_bucket.bucket}"
+  description = "ARN-style identifier for the bucket"
+}
+`, appName, time.Now().Format(time.RFC3339), minioEndpoint, minioUser, minioPassword, bucketName, minioEndpoint)
+
+	// Write main.tf
+	mainTfPath := filepath.Join(outputDir, "main.tf")
+	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0644); err != nil {
+		return fmt.Errorf("failed to write main.tf: %w", err)
+	}
+
+	fmt.Printf("      ✅ Generated: %s\n", mainTfPath)
+	fmt.Printf("      📦 Bucket name: %s\n", bucketName)
+
+	return nil
+}
+
+// generatePostgresTerraform generates Terraform code for PostgreSQL provisioning
+func (e *WorkflowExecutor) generatePostgresTerraform(outputDir, appName string, step types.Step) error {
+	// Placeholder for future implementation
+	return fmt.Errorf("PostgreSQL Terraform generation not yet implemented")
 }
