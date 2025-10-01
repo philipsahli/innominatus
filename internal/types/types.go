@@ -29,7 +29,8 @@ type Environment struct {
 }
 
 type Workflow struct {
-	Steps []Step `yaml:"steps"`
+	Steps     []Step            `yaml:"steps"`
+	Variables map[string]string `yaml:"variables,omitempty"` // Workflow-level variables
 }
 
 // WorkflowSpec represents a complete workflow document with metadata
@@ -84,4 +85,8 @@ type Step struct {
 	If     string            `yaml:"if,omitempty"`     // Condition that must be true to run
 	Unless string            `yaml:"unless,omitempty"` // Condition that must be false to run
 	Env    map[string]string `yaml:"env,omitempty"`    // Environment variables for condition evaluation
+	// New fields for output capture and passing
+	Outputs      []string          `yaml:"outputs,omitempty"`      // List of output variable names to capture
+	OutputFile   string            `yaml:"outputFile,omitempty"`   // File to read outputs from (JSON or key=value format)
+	SetVariables map[string]string `yaml:"setVariables,omitempty"` // Variables to set in workflow context
 }

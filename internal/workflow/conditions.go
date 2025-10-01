@@ -9,22 +9,42 @@ import (
 	"strings"
 )
 
-// ExecutionContext holds the context for evaluating conditions
+// ExecutionContext holds the context for evaluating conditions and sharing variables
 type ExecutionContext struct {
-	PreviousStepStatus map[string]string // Map of step name -> status ("success", "failed", "skipped")
-	PreviousStepOutputs map[string]string // Map of step name -> output
-	Environment        map[string]string // Environment variables
-	WorkflowStatus     string            // Overall workflow status
+	PreviousStepStatus  map[string]string            // Map of step name -> status ("success", "failed", "skipped")
+	PreviousStepOutputs map[string]map[string]string // Map of step name -> map of output variables
+	Environment         map[string]string            // Environment variables
+	WorkflowVariables   map[string]string            // Workflow-level variables
+	WorkflowStatus      string                       // Overall workflow status
 }
 
 // NewExecutionContext creates a new execution context
 func NewExecutionContext() *ExecutionContext {
 	return &ExecutionContext{
 		PreviousStepStatus:  make(map[string]string),
-		PreviousStepOutputs: make(map[string]string),
+		PreviousStepOutputs: make(map[string]map[string]string),
 		Environment:         make(map[string]string),
+		WorkflowVariables:   make(map[string]string),
 		WorkflowStatus:      "running",
 	}
+}
+
+// SetWorkflowVariables initializes workflow-level variables
+func (ctx *ExecutionContext) SetWorkflowVariables(variables map[string]string) {
+	for k, v := range variables {
+		ctx.WorkflowVariables[k] = v
+	}
+}
+
+// SetVariable sets a single workflow variable
+func (ctx *ExecutionContext) SetVariable(key, value string) {
+	ctx.WorkflowVariables[key] = value
+}
+
+// GetVariable gets a workflow variable
+func (ctx *ExecutionContext) GetVariable(key string) (string, bool) {
+	value, exists := ctx.WorkflowVariables[key]
+	return value, exists
 }
 
 // SetStepStatus records the status of a completed step
@@ -32,18 +52,55 @@ func (ctx *ExecutionContext) SetStepStatus(stepName, status string) {
 	ctx.PreviousStepStatus[stepName] = status
 }
 
-// SetStepOutput records the output of a completed step
-func (ctx *ExecutionContext) SetStepOutput(stepName, output string) {
-	ctx.PreviousStepOutputs[stepName] = output
+// SetStepOutputs records multiple outputs from a completed step
+func (ctx *ExecutionContext) SetStepOutputs(stepName string, outputs map[string]string) {
+	if ctx.PreviousStepOutputs[stepName] == nil {
+		ctx.PreviousStepOutputs[stepName] = make(map[string]string)
+	}
+	for k, v := range outputs {
+		ctx.PreviousStepOutputs[stepName][k] = v
+	}
+}
+
+// SetStepOutput records a single output from a completed step
+func (ctx *ExecutionContext) SetStepOutput(stepName, key, value string) {
+	if ctx.PreviousStepOutputs[stepName] == nil {
+		ctx.PreviousStepOutputs[stepName] = make(map[string]string)
+	}
+	ctx.PreviousStepOutputs[stepName][key] = value
+}
+
+// GetStepOutput retrieves an output value from a previous step
+func (ctx *ExecutionContext) GetStepOutput(stepName, key string) (string, bool) {
+	if outputs, exists := ctx.PreviousStepOutputs[stepName]; exists {
+		value, found := outputs[key]
+		return value, found
+	}
+	return "", false
+}
+
+// GetAllStepOutputs retrieves all outputs from a previous step
+func (ctx *ExecutionContext) GetAllStepOutputs(stepName string) (map[string]string, bool) {
+	outputs, exists := ctx.PreviousStepOutputs[stepName]
+	return outputs, exists
 }
 
 // ShouldExecuteStep determines if a step should be executed based on its conditions
 func (ctx *ExecutionContext) ShouldExecuteStep(step types.Step) (bool, string) {
-	// Merge step environment variables with context environment
+	// Merge all variable sources (priority: step env > workflow vars > context env)
 	mergedEnv := make(map[string]string)
+
+	// Start with context environment
 	for k, v := range ctx.Environment {
 		mergedEnv[k] = v
 	}
+
+	// Add workflow variables
+	for k, v := range ctx.WorkflowVariables {
+		mergedEnv[k] = v
+	}
+
+	// Add step environment (highest priority)
 	for k, v := range step.Env {
 		mergedEnv[k] = v
 	}
@@ -197,12 +254,39 @@ func (ctx *ExecutionContext) evaluateCondition(condition string, env map[string]
 }
 
 // replaceVariables replaces ${VAR} and $VAR with their values
+// Supports: $VAR, ${VAR}, ${step.output}, ${workflow.VAR}
 func (ctx *ExecutionContext) replaceVariables(str string, env map[string]string) string {
-	// Replace ${VAR} style
+	// Replace ${VAR} style (including step.output and workflow.VAR)
 	re := regexp.MustCompile(`\$\{([^}]+)\}`)
 	str = re.ReplaceAllStringFunc(str, func(match string) string {
 		varName := match[2 : len(match)-1] // Remove ${ and }
+
+		// Check for step output reference: ${step.output}
+		if strings.Contains(varName, ".") {
+			parts := strings.SplitN(varName, ".", 2)
+			if len(parts) == 2 {
+				stepName := parts[0]
+				outputKey := parts[1]
+
+				// Check if it's a workflow variable reference
+				if stepName == "workflow" {
+					if val, exists := ctx.WorkflowVariables[outputKey]; exists {
+						return val
+					}
+				} else {
+					// Check step outputs
+					if val, found := ctx.GetStepOutput(stepName, outputKey); found {
+						return val
+					}
+				}
+			}
+		}
+
+		// Check env variables (step, workflow, context, system)
 		if val, exists := env[varName]; exists {
+			return val
+		}
+		if val, exists := ctx.WorkflowVariables[varName]; exists {
 			return val
 		}
 		// Check system environment
@@ -212,11 +296,36 @@ func (ctx *ExecutionContext) replaceVariables(str string, env map[string]string)
 		return match // Return original if not found
 	})
 
-	// Replace $VAR style (word boundaries)
-	re = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+	// Replace $VAR style (word boundaries only, not dot notation)
+	re = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?`)
 	str = re.ReplaceAllStringFunc(str, func(match string) string {
+		// Check if this is a step.output reference
+		if strings.Contains(match, ".") {
+			parts := strings.Split(match[1:], ".") // Remove $
+			if len(parts) == 2 {
+				stepName := parts[0]
+				outputKey := parts[1]
+
+				// Check if it's a workflow variable reference
+				if stepName == "workflow" {
+					if val, exists := ctx.WorkflowVariables[outputKey]; exists {
+						return val
+					}
+				} else {
+					// Check step outputs
+					if val, found := ctx.GetStepOutput(stepName, outputKey); found {
+						return val
+					}
+				}
+			}
+			return match
+		}
+
 		varName := match[1:] // Remove $
 		if val, exists := env[varName]; exists {
+			return val
+		}
+		if val, exists := ctx.WorkflowVariables[varName]; exists {
 			return val
 		}
 		// Check system environment
