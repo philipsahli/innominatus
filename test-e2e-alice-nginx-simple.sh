@@ -80,8 +80,7 @@ echo ""
 echo "Step 2: Cleaning up any existing deployment"
 echo "───────────────────────────────────────────────────────────────"
 kubectl delete namespace "$NAMESPACE" --ignore-not-found=true > /dev/null 2>&1 || true
-kubectl delete namespace "$APP_NAME" --ignore-not-found=true > /dev/null 2>&1 || true
-kubectl delete application "$APP_NAME-argocd" -n argocd --ignore-not-found=true > /dev/null 2>&1 || true
+kubectl delete application "$APP_NAME-default" -n argocd --ignore-not-found=true > /dev/null 2>&1 || true
 sleep 5
 print_success "Cleanup completed"
 
@@ -182,7 +181,7 @@ fi
 echo ""
 echo "Step 10: Verifying ArgoCD Application"
 echo "───────────────────────────────────────────────────────────────"
-ARGOCD_APP_NAME="${APP_NAME}-argocd"
+ARGOCD_APP_NAME="${APP_NAME}-default"
 if kubectl get application "$ARGOCD_APP_NAME" -n argocd 2>/dev/null; then
     print_success "ArgoCD Application exists: $ARGOCD_APP_NAME"
 
