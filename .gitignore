@@ -12,6 +12,7 @@
 *.out
 coverage.txt
 coverage-report.txt
+coverage/
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
