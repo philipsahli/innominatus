@@ -157,8 +157,8 @@ func (sv *ScoreValidator) validateResources() []*errors.RichError {
 			lineNum := sv.findFieldLineInSection("resources", resourceName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Resource '%s' missing type", resourceName)).
 				WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Add a type to the resource definition")
-			err.WithSuggestion("Example: type: postgres")
+			_ = err.WithSuggestion("Add a type to the resource definition")
+			_ = err.WithSuggestion("Example: type: postgres")
 			errs = append(errs, err)
 		}
 
@@ -180,7 +180,7 @@ func (sv *ScoreValidator) validateResourceType(name string, resource types.Resou
 			lineNum := sv.findFieldLineInSection("resources", name)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Database resource '%s' should have parameters", name)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
 			err.Severity = errors.SeverityWarning
-			err.WithSuggestion("Consider adding database version, size, or other configuration")
+			_ = err.WithSuggestion("Consider adding database version, size, or other configuration")
 			return err
 		}
 	}

@@ -469,8 +469,8 @@ func TestGoldenPathsConfig_ValidatePaths(t *testing.T) {
 			name: "all workflow files exist",
 			setupFunc: func(t *testing.T, tmpDir string) *GoldenPathsConfig {
 				_ = os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
-				os.WriteFile(filepath.Join(tmpDir, "workflows/deploy.yaml"), []byte("workflow"), 0644)
-				os.WriteFile(filepath.Join(tmpDir, "workflows/undeploy.yaml"), []byte("workflow"), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "workflows/deploy.yaml"), []byte("workflow"), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "workflows/undeploy.yaml"), []byte("workflow"), 0644)
 
 				return &GoldenPathsConfig{
 					paths: map[string]*GoldenPathMetadata{
@@ -485,7 +485,7 @@ func TestGoldenPathsConfig_ValidatePaths(t *testing.T) {
 			name: "one workflow file missing",
 			setupFunc: func(t *testing.T, tmpDir string) *GoldenPathsConfig {
 				_ = os.MkdirAll(filepath.Join(tmpDir, "workflows"), 0755)
-				os.WriteFile(filepath.Join(tmpDir, "workflows/exists.yaml"), []byte("workflow"), 0644)
+				_ = os.WriteFile(filepath.Join(tmpDir, "workflows/exists.yaml"), []byte("workflow"), 0644)
 
 				return &GoldenPathsConfig{
 					paths: map[string]*GoldenPathMetadata{

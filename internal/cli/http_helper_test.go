@@ -129,7 +129,7 @@ func TestHTTPHelper_POST(t *testing.T) {
 	t.Run("POST request with nil body", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		}))
 		defer server.Close()
 
@@ -181,7 +181,7 @@ func TestHTTPHelper_doYAMLRequest(t *testing.T) {
 			assert.Equal(t, "application/x-yaml", r.Header.Get("Content-Type"))
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"processed": "true"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"processed": "true"})
 		}))
 		defer server.Close()
 
@@ -216,7 +216,7 @@ func TestHTTPHelper_doRequestWithStatus(t *testing.T) {
 	t.Run("request with unexpected status code", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		}))
 		defer server.Close()
 

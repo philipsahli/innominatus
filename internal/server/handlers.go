@@ -2173,8 +2173,8 @@ func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, e
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Output directory: %s", outputDir)))
-	logBuffer.Write([]byte(fmt.Sprintf("Resource type: %s", resourceType)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Output directory: %s", outputDir)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Resource type: %s", resourceType)))
 
 	// Generate Terraform code based on resource type
 	switch resourceType {
@@ -2182,7 +2182,7 @@ func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, e
 		return s.generateS3BucketTerraform(outputDir, appName, step, logBuffer)
 	case "postgres", "postgresql":
 		errMsg := "PostgreSQL Terraform generation not yet implemented"
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("PostgreSQL Terraform generation not yet implemented")
 	default:
 		errMsg := fmt.Sprintf("Unsupported resource type for terraform generation: %s", resourceType)
