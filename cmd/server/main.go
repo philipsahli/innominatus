@@ -142,7 +142,8 @@ func main() {
 	addr := ":" + *port
 	fmt.Printf("Starting Score Orchestrator server on http://localhost%s\n", addr)
 	fmt.Println("API endpoints:")
-	fmt.Println("  POST /api/specs          - Deploy new Score spec")
+	fmt.Println("  POST /api/specs          - Deploy Score spec with embedded workflows (simple deployments)")
+	fmt.Println("  POST /api/workflows/golden-paths/deploy-app/execute - Deploy via golden path (recommended)")
 	fmt.Println("  GET  /api/specs          - List all deployed specs")
 	fmt.Println("  GET  /api/specs/{name}   - Get specific spec details")
 	fmt.Println("  DELETE /api/specs/{name} - Delete deployed spec")

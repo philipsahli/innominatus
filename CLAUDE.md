@@ -140,6 +140,62 @@ go build -o innominatus cmd/server/main.go
 ./innominatus-ctl demo-nuke    # Uninstall and clean demo environment
 ```
 
+### Deployment Options
+
+innominatus provides two deployment approaches, each serving different use cases:
+
+#### Option 1: Direct API Deployment (POST /api/specs)
+
+**Use Case:** Simple deployments with workflows embedded directly in Score specifications
+
+**Characteristics:**
+- Direct HTTP API integration for platform tools
+- Executes workflows defined within the Score spec itself
+- Best for simple, self-contained deployments
+- Ideal for platform integrations (Backstage, Port, custom IDPs)
+- No CLI command required (use HTTP client or curl)
+
+**Example:**
+```bash
+# Deploy via API with embedded workflow in Score spec
+curl -X POST http://localhost:8081/api/specs \
+  -H "Content-Type: application/yaml" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  --data-binary @score-spec-with-workflow.yaml
+```
+
+#### Option 2: Golden Path Deployment (run deploy-app)
+
+**Use Case:** Production deployments using standardized platform patterns
+
+**Characteristics:**
+- Uses pre-defined golden path workflows from `goldenpaths.yaml`
+- Provides comprehensive, standardized deployment orchestration
+- Recommended approach for production environments
+- More control over deployment steps and dependencies
+- Runs locally via CLI without server authentication
+
+**Example:**
+```bash
+# Deploy via golden path (recommended)
+./innominatus-ctl run deploy-app score-spec.yaml
+```
+
+**When to Use Each:**
+
+- **Use POST /api/specs when:**
+  - Building platform integrations that need direct API access
+  - Deploying simple applications with basic workflows
+  - Embedding deployment logic directly in Score specs
+  - Integrating with external tools via HTTP API
+
+- **Use run deploy-app when:**
+  - Following standardized deployment patterns
+  - Deploying to production environments
+  - Requiring complex multi-step orchestration
+  - Leveraging pre-defined golden path workflows
+  - Running deployments from local development machines
+
 ### Workflow Capabilities
 
 innominatus supports multi-step workflows with:
