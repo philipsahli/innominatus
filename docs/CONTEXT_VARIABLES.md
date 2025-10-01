@@ -1,0 +1,589 @@
+# Workflow Context and Variable Sharing
+
+This document describes the workflow context system for sharing variables and passing data between steps in innominatus workflows.
+
+## Overview
+
+Workflow context enables:
+- **Workflow-level variables** shared across all steps
+- **Step output capture** from files or stdout
+- **Variable passing** between steps
+- **Dynamic workflows** that adapt based on previous step results
+
+## Features
+
+### 1. Workflow Variables
+
+Define variables at the workflow level that are accessible to all steps:
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: deployment-workflow
+
+variables:
+  ENVIRONMENT: production
+  REGION: us-east-1
+  APP_NAME: myapp
+
+spec:
+  steps:
+    - name: deploy
+      type: kubernetes
+      if: $ENVIRONMENT == production
+```
+
+### 2. Step Outputs
+
+Capture outputs from step execution:
+
+```yaml
+steps:
+  - name: build
+    type: validation
+    outputs:
+      - version
+      - build_id
+    outputFile: /tmp/build-outputs.json
+```
+
+### 3. Set Variables
+
+Explicitly set workflow variables from a step:
+
+```yaml
+steps:
+  - name: configure
+    type: validation
+    setVariables:
+      DATABASE_URL: postgresql://localhost:5432/mydb
+      API_KEY: secret-key-123
+```
+
+### 4. Variable References
+
+Reference variables and outputs in conditions and configurations:
+
+```yaml
+steps:
+  - name: deploy-backend
+    type: kubernetes
+    if: ${build.version} matches ^v[0-9]+
+
+  - name: notify
+    type: monitoring
+    env:
+      VERSION: ${build.version}
+      ENVIRONMENT: ${workflow.ENVIRONMENT}
+```
+
+## Variable Syntax
+
+### Reference Formats
+
+**Workflow variables:**
+```yaml
+$VAR_NAME              # Simple reference
+${VAR_NAME}            # Explicit reference
+${workflow.VAR_NAME}   # Explicit workflow variable
+```
+
+**Step outputs:**
+```yaml
+${stepName.outputKey}  # Reference output from previous step
+$stepName.outputKey    # Short form
+```
+
+**Step environment (scoped to step):**
+```yaml
+env:
+  LOCAL_VAR: value
+if: $LOCAL_VAR == value
+```
+
+### Variable Precedence
+
+Variables are resolved in this order (highest to lowest priority):
+1. **Step env** - Variables defined in step's `env` field
+2. **Workflow variables** - Variables defined in `workflow.variables`
+3. **Context environment** - System-level environment variables
+4. **System environment** - OS environment variables
+
+Example:
+```yaml
+variables:
+  ENV: workflow-value
+
+steps:
+  - name: test
+    type: validation
+    env:
+      ENV: step-value  # This takes precedence
+    if: $ENV == step-value  # TRUE
+```
+
+## Output Capture
+
+### Output File Formats
+
+#### JSON Format
+
+```yaml
+steps:
+  - name: build
+    type: validation
+    outputFile: /tmp/outputs.json
+```
+
+**File content:**
+```json
+{
+  "version": "1.0.0",
+  "build_id": "12345",
+  "artifact_url": "https://artifacts.example.com/app-1.0.0.tar.gz"
+}
+```
+
+#### Key=Value Format
+
+```yaml
+steps:
+  - name: build
+    type: validation
+    outputFile: /tmp/outputs.env
+```
+
+**File content:**
+```bash
+VERSION=1.0.0
+BUILD_ID=12345
+ARTIFACT_URL=https://artifacts.example.com/app-1.0.0.tar.gz
+
+# Comments are supported
+DEBUG=false
+```
+
+### Stdout Parsing
+
+innominatus supports multiple stdout output formats:
+
+#### GitHub Actions Style
+
+```bash
+echo "::set-output name=version::1.0.0"
+echo "::set-output name=build_id::12345"
+```
+
+#### Environment Variable Style
+
+```bash
+echo "OUTPUT_VERSION=1.0.0"
+echo "OUTPUT_BUILD_ID=12345"
+```
+
+#### Named Outputs
+
+```yaml
+steps:
+  - name: get-version
+    type: validation
+    outputs:
+      - version
+```
+
+The step's last non-empty stdout line will be captured as the `version` output.
+
+### Set Variables
+
+Explicitly set workflow variables without output files:
+
+```yaml
+steps:
+  - name: setup
+    type: validation
+    setVariables:
+      DATABASE_URL: postgresql://localhost:5432/db
+      CACHE_ENABLED: "true"
+      MAX_CONNECTIONS: "100"
+```
+
+These variables become available to all subsequent steps.
+
+## Complete Examples
+
+### Example 1: Build and Deploy Pipeline
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: build-deploy-pipeline
+
+variables:
+  ENVIRONMENT: production
+  REGION: us-east-1
+
+spec:
+  steps:
+    # Step 1: Build application and capture version
+    - name: build
+      type: validation
+      outputFile: /tmp/build-outputs.json
+      # Outputs: version, build_id, artifact_url
+
+    # Step 2: Run tests (only if build succeeded)
+    - name: test
+      type: validation
+      if: build.success
+      env:
+        VERSION: ${build.version}
+
+    # Step 3: Deploy to staging
+    - name: deploy-staging
+      type: kubernetes
+      namespace: staging
+      if: $ENVIRONMENT != production
+      env:
+        VERSION: ${build.version}
+        BUILD_ID: ${build.build_id}
+
+    # Step 4: Deploy to production
+    - name: deploy-production
+      type: kubernetes
+      namespace: production
+      if: $ENVIRONMENT == production
+      env:
+        VERSION: ${build.version}
+        ARTIFACT: ${build.artifact_url}
+
+    # Step 5: Notify deployment
+    - name: notify
+      type: monitoring
+      when: on_success
+      env:
+        MESSAGE: "Deployed version ${build.version} to ${workflow.ENVIRONMENT}"
+```
+
+### Example 2: Database Setup with Connection Passing
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: database-setup
+
+spec:
+  steps:
+    # Step 1: Provision database
+    - name: provision-db
+      type: terraform
+      path: ./terraform/database
+      outputFile: /tmp/terraform-outputs.json
+      # Outputs: db_host, db_port, db_name
+
+    # Step 2: Set connection string
+    - name: configure
+      type: validation
+      setVariables:
+        DB_URL: "postgresql://${provision-db.db_host}:${provision-db.db_port}/${provision-db.db_name}"
+
+    # Step 3: Run migrations
+    - name: migrate
+      type: validation
+      env:
+        DATABASE_URL: ${workflow.DB_URL}
+
+    # Step 4: Deploy application with connection
+    - name: deploy
+      type: kubernetes
+      env:
+        DB_HOST: ${provision-db.db_host}
+        DB_PORT: ${provision-db.db_port}
+        DB_NAME: ${provision-db.db_name}
+```
+
+### Example 3: Feature Flag Workflow
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: feature-deployment
+
+variables:
+  FEATURE_A: "true"
+  FEATURE_B: "false"
+  DEPLOYMENT_MODE: canary
+
+spec:
+  steps:
+    - name: deploy-core
+      type: kubernetes
+      setVariables:
+        CORE_VERSION: "2.0.0"
+
+    - name: deploy-feature-a
+      type: kubernetes
+      if: ${workflow.FEATURE_A} == true
+      env:
+        CORE_VERSION: ${workflow.CORE_VERSION}
+
+    - name: deploy-feature-b
+      type: kubernetes
+      if: ${workflow.FEATURE_B} == true
+      env:
+        CORE_VERSION: ${workflow.CORE_VERSION}
+
+    - name: verify-deployment
+      type: validation
+      env:
+        MODE: ${workflow.DEPLOYMENT_MODE}
+        VERSION: ${workflow.CORE_VERSION}
+```
+
+### Example 4: Multi-Environment Deployment
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: multi-env-deployment
+
+variables:
+  VERSION: "1.0.0"
+  TARGET_ENV: staging
+
+spec:
+  steps:
+    - name: build
+      type: validation
+      env:
+        VERSION: ${workflow.VERSION}
+      outputFile: /tmp/build.json
+      # Outputs: artifact_id
+
+    - name: deploy-dev
+      type: kubernetes
+      namespace: development
+      if: ${workflow.TARGET_ENV} == dev
+      env:
+        ARTIFACT_ID: ${build.artifact_id}
+
+    - name: deploy-staging
+      type: kubernetes
+      namespace: staging
+      if: ${workflow.TARGET_ENV} == staging
+      env:
+        ARTIFACT_ID: ${build.artifact_id}
+
+    - name: deploy-production
+      type: kubernetes
+      namespace: production
+      if: ${workflow.TARGET_ENV} == production
+      env:
+        ARTIFACT_ID: ${build.artifact_id}
+
+    - name: update-version
+      type: validation
+      setVariables:
+        DEPLOYED_VERSION: ${workflow.VERSION}
+        DEPLOYED_ENV: ${workflow.TARGET_ENV}
+        DEPLOYED_AT: ${build.artifact_id}
+```
+
+### Example 5: Conditional Deployment Based on Test Results
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: test-and-deploy
+
+spec:
+  steps:
+    - name: run-tests
+      type: validation
+      outputFile: /tmp/test-results.json
+      # Outputs: passed, failed, coverage
+
+    - name: check-quality
+      type: validation
+      setVariables:
+        QUALITY_GATE: "passed"
+      if: ${run-tests.coverage} >= 80
+
+    - name: deploy
+      type: kubernetes
+      if: ${workflow.QUALITY_GATE} == passed
+      env:
+        TEST_COVERAGE: ${run-tests.coverage}
+        TESTS_PASSED: ${run-tests.passed}
+
+    - name: notify-success
+      type: monitoring
+      when: on_success
+      if: deploy.success
+      env:
+        COVERAGE: ${run-tests.coverage}
+
+    - name: notify-failure
+      type: monitoring
+      when: on_failure
+      env:
+        REASON: "Quality gate failed or deployment failed"
+```
+
+## Best Practices
+
+### 1. Use Workflow Variables for Constants
+
+```yaml
+# Good
+variables:
+  REGION: us-east-1
+  ENVIRONMENT: production
+
+# Less maintainable - repeated in each step
+steps:
+  - name: step1
+    env:
+      REGION: us-east-1
+```
+
+### 2. Capture Important Outputs
+
+```yaml
+# Good - capture for reuse
+- name: build
+  type: validation
+  outputFile: /tmp/build.json
+
+# Less flexible - no reuse
+- name: build
+  type: validation
+```
+
+### 3. Use SetVariables for Computed Values
+
+```yaml
+# Good - computed once, used everywhere
+- name: configure
+  type: validation
+  setVariables:
+    DATABASE_URL: "postgresql://${db.host}:${db.port}/${db.name}"
+
+# Bad - recompute in each step
+- name: app1
+  env:
+    URL: "postgresql://${db.host}:${db.port}/${db.name}"
+- name: app2
+  env:
+    URL: "postgresql://${db.host}:${db.port}/${db.name}"
+```
+
+### 4. Use Explicit References for Clarity
+
+```yaml
+# Clear intent
+if: ${workflow.ENVIRONMENT} == production
+
+# Less clear
+if: $ENVIRONMENT == production
+```
+
+### 5. Document Output Contracts
+
+```yaml
+- name: build
+  type: validation
+  outputFile: /tmp/build.json
+  # Outputs expected:
+  # - version: Semantic version (e.g., "1.0.0")
+  # - build_id: Unique build identifier
+  # - artifact_url: Download URL for artifact
+```
+
+## Output Display
+
+When steps complete, captured outputs are displayed:
+
+```
+✅ build completed (took 2.5s)
+📤 Set 2 workflow variables
+📄 Captured 3 outputs from file: /tmp/build.json
+💾 version = 1.0.0
+💾 build_id = 12345
+💾 artifact_url = https://artifacts.example.com/app...
+```
+
+## Limitations
+
+### Current Limitations
+
+1. **No stdout capture for custom executors** - Only output files and setVariables supported currently
+2. **No nested object support** - JSON objects are flattened to strings
+3. **No array support** - JSON arrays converted to strings
+4. **No computed expressions** - Cannot compute values in setVariables (use external scripts)
+
+### Workarounds
+
+**Complex outputs:**
+```bash
+# In your script, write simple key=value
+echo "VERSION=$(compute_version)" > /tmp/outputs.env
+echo "URL=$(build_url)" >> /tmp/outputs.env
+```
+
+**Nested data:**
+```bash
+# Flatten nested JSON to top-level keys
+jq -r 'to_entries | map("\(.key)=\(.value)") | .[]' complex.json > outputs.env
+```
+
+## Future Enhancements
+
+### Planned Features
+
+1. **Stdout capture for all step types**
+2. **Expression evaluation in setVariables**
+3. **Nested object access** (e.g., `${build.metadata.version}`)
+4. **Array indexing** (e.g., `${build.tags[0]}`)
+5. **Output transformation functions**
+6. **Secret masking in output display**
+
+### Example (Future)
+
+```yaml
+steps:
+  - name: compute
+    type: validation
+    setVariables:
+      FULL_URL: "${protocol}://${host}:${port}/${path}"  # Expression eval
+      VERSION_MAJOR: "${version | split('.') | first}"    # Transformation
+
+  - name: use-nested
+    if: ${build.metadata.version} == 1.0.0  # Nested access
+```
+
+## Testing
+
+Run context and output tests:
+
+```bash
+go test -v ./internal/workflow -run "TestOutputParser|TestExecutionContext"
+```
+
+## See Also
+
+- [Conditional Execution](CONDITIONAL_EXECUTION.md) - Use variables in conditions
+- [Parallel Execution](PARALLEL_EXECUTION.md) - Run steps concurrently
+- Examples: `examples/context-workflow.yaml`
+
+## References
+
+- Implementation: `internal/workflow/outputs.go`
+- Context: `internal/workflow/conditions.go`
+- Integration: `internal/workflow/executor.go`
+- Tests: `internal/workflow/outputs_test.go`
+- Gap Analysis: `GAP_ANALYSIS-2025-09-30-2.md` (Gap 4.2.1)

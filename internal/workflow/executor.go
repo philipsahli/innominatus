@@ -38,6 +38,7 @@ type WorkflowExecutor struct {
 	executionTimeout time.Duration
 	stepExecutors    map[string]StepExecutorFunc
 	execContext      *ExecutionContext
+	outputParser     *OutputParser
 	mu               sync.RWMutex
 }
 
@@ -49,6 +50,7 @@ func NewWorkflowExecutor(repo WorkflowRepositoryInterface) *WorkflowExecutor {
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
+		outputParser:     NewOutputParser(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -63,6 +65,7 @@ func NewWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInterface, re
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
+		outputParser:     NewOutputParser(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -77,6 +80,7 @@ func NewMultiTierWorkflowExecutor(repo WorkflowRepositoryInterface, resolver *Wo
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
+		outputParser:     NewOutputParser(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -92,6 +96,7 @@ func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInte
 		executionTimeout: 30 * time.Minute,
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
+		outputParser:     NewOutputParser(),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -163,6 +168,12 @@ func (e *WorkflowExecutor) ExecuteWorkflow(appName string, workflow types.Workfl
 
 // ExecuteWorkflowWithName executes a named workflow with database persistence
 func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow) error {
+	// Initialize workflow variables in execution context
+	if len(workflow.Variables) > 0 {
+		e.execContext.SetWorkflowVariables(workflow.Variables)
+		fmt.Printf("📦 Initialized %d workflow variables\n", len(workflow.Variables))
+	}
+
 	// Create workflow execution record
 	execution, err := e.repo.CreateWorkflowExecution(appName, workflowName, len(workflow.Steps))
 	if err != nil {
@@ -558,10 +569,57 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 	duration := time.Since(stepStartTime)
 	fmt.Printf("      ✅ %s completed (took %v)\n", step.Name, duration.Round(time.Millisecond))
 
+	// Capture step outputs
+	e.captureStepOutputs(step)
+
 	// Record success in execution context
 	e.execContext.SetStepStatus(step.Name, "success")
 
 	return nil
+}
+
+// captureStepOutputs captures outputs from a completed step
+func (e *WorkflowExecutor) captureStepOutputs(step types.Step) {
+	outputs := make(map[string]string)
+
+	// Apply setVariables (highest priority - explicit variable setting)
+	if len(step.SetVariables) > 0 {
+		for k, v := range step.SetVariables {
+			e.execContext.SetVariable(k, v)
+			outputs[k] = v
+		}
+		fmt.Printf("      📤 Set %d workflow variables\n", len(step.SetVariables))
+	}
+
+	// Read output file if specified
+	if step.OutputFile != "" {
+		fileOutputs, err := e.outputParser.ParseOutputFile(step.OutputFile)
+		if err != nil {
+			fmt.Printf("      ⚠️  Warning: failed to parse output file %s: %v\n", step.OutputFile, err)
+		} else {
+			for k, v := range fileOutputs {
+				outputs[k] = v
+			}
+			if len(fileOutputs) > 0 {
+				fmt.Printf("      📄 Captured %d outputs from file: %s\n", len(fileOutputs), step.OutputFile)
+			}
+		}
+	}
+
+	// Store all captured outputs in execution context
+	if len(outputs) > 0 {
+		e.execContext.SetStepOutputs(step.Name, outputs)
+
+		// Display captured outputs
+		for k, v := range outputs {
+			// Truncate long values for display
+			displayValue := v
+			if len(displayValue) > 50 {
+				displayValue = displayValue[:47] + "..."
+			}
+			fmt.Printf("      💾 %s = %s\n", k, displayValue)
+		}
+	}
 }
 
 // executeStepWithExecutor executes a step using registered executors

@@ -1,0 +1,343 @@
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: build-deploy-with-context
+  description: Complete example demonstrating workflow context and variable sharing
+
+variables:
+  ENVIRONMENT: staging
+  REGION: us-east-1
+  APP_NAME: myapp
+  ENABLE_MONITORING: "true"
+
+spec:
+  steps:
+    # Step 1: Build application
+    - name: build
+      type: validation
+      outputFile: /tmp/build-outputs.json
+      # Expected outputs: version, build_id, artifact_url
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+
+    # Step 2: Run security scan
+    - name: security-scan
+      type: security
+      when: on_success
+      setVariables:
+        SECURITY_STATUS: passed
+      env:
+        VERSION: ${build.version}
+
+    # Step 3: Deploy to environment
+    - name: deploy
+      type: kubernetes
+      namespace: ${workflow.ENVIRONMENT}
+      if: ${workflow.SECURITY_STATUS} == passed
+      env:
+        VERSION: ${build.version}
+        BUILD_ID: ${build.build_id}
+        REGION: ${workflow.REGION}
+
+    # Step 4: Setup monitoring
+    - name: setup-monitoring
+      type: monitoring
+      if: ${workflow.ENABLE_MONITORING} == true
+      when: on_success
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+        VERSION: ${build.version}
+        ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+    # Step 5: Notification
+    - name: notify
+      type: monitoring
+      when: on_success
+      env:
+        MESSAGE: "Deployed ${workflow.APP_NAME} version ${build.version} to ${workflow.ENVIRONMENT}"
+        BUILD_URL: ${build.artifact_url}
+
+---
+# Example 2: Database provisioning with connection string passing
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: database-provisioning
+  description: Provision database and share connection details
+
+spec:
+  steps:
+    - name: provision-postgres
+      type: terraform
+      path: ./terraform/postgres
+      outputFile: /tmp/terraform-outputs.json
+      # Outputs: db_host, db_port, db_name, db_password
+
+    - name: create-connection-string
+      type: validation
+      setVariables:
+        DATABASE_URL: "postgresql://admin:${provision-postgres.db_password}@${provision-postgres.db_host}:${provision-postgres.db_port}/${provision-postgres.db_name}"
+        DB_SSL_MODE: require
+
+    - name: run-migrations
+      type: validation
+      env:
+        DATABASE_URL: ${workflow.DATABASE_URL}
+        SSL_MODE: ${workflow.DB_SSL_MODE}
+
+    - name: seed-data
+      type: validation
+      when: on_success
+      env:
+        DATABASE_URL: ${workflow.DATABASE_URL}
+
+    - name: deploy-app
+      type: kubernetes
+      env:
+        DB_HOST: ${provision-postgres.db_host}
+        DB_PORT: ${provision-postgres.db_port}
+        DB_NAME: ${provision-postgres.db_name}
+        DB_SSL_MODE: ${workflow.DB_SSL_MODE}
+
+---
+# Example 3: Multi-stage build with version propagation
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: multi-stage-build
+  description: Build multiple components with shared version
+
+variables:
+  BASE_VERSION: "2.0.0"
+
+spec:
+  steps:
+    - name: generate-version
+      type: validation
+      setVariables:
+        BUILD_VERSION: "${workflow.BASE_VERSION}-${workflow.BUILD_NUMBER}"
+        BUILD_TIMESTAMP: "2025-10-01T12:00:00Z"
+      env:
+        BUILD_NUMBER: "123"
+
+    - name: build-backend
+      type: validation
+      parallel: true
+      parallelGroup: 1
+      outputFile: /tmp/backend-build.json
+      env:
+        VERSION: ${workflow.BUILD_VERSION}
+      # Outputs: backend_artifact
+
+    - name: build-frontend
+      type: validation
+      parallel: true
+      parallelGroup: 1
+      outputFile: /tmp/frontend-build.json
+      env:
+        VERSION: ${workflow.BUILD_VERSION}
+      # Outputs: frontend_artifact
+
+    - name: build-worker
+      type: validation
+      parallel: true
+      parallelGroup: 1
+      outputFile: /tmp/worker-build.json
+      env:
+        VERSION: ${workflow.BUILD_VERSION}
+      # Outputs: worker_artifact
+
+    - name: create-manifest
+      type: validation
+      setVariables:
+        MANIFEST_URL: "https://manifests.example.com/${workflow.BUILD_VERSION}/manifest.json"
+      env:
+        VERSION: ${workflow.BUILD_VERSION}
+        BACKEND: ${build-backend.backend_artifact}
+        FRONTEND: ${build-frontend.frontend_artifact}
+        WORKER: ${build-worker.worker_artifact}
+
+    - name: deploy-all
+      type: kubernetes
+      env:
+        VERSION: ${workflow.BUILD_VERSION}
+        MANIFEST: ${workflow.MANIFEST_URL}
+
+---
+# Example 4: Conditional deployment based on test coverage
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: quality-gate-deployment
+  description: Deploy only if quality metrics are met
+
+variables:
+  MIN_COVERAGE: "80"
+  MIN_TESTS_PASSED: "100"
+
+spec:
+  steps:
+    - name: run-unit-tests
+      type: validation
+      outputFile: /tmp/unit-tests.json
+      # Outputs: passed, failed, coverage
+
+    - name: run-integration-tests
+      type: validation
+      outputFile: /tmp/integration-tests.json
+      # Outputs: passed, failed, duration
+
+    - name: evaluate-quality
+      type: validation
+      setVariables:
+        QUALITY_GATE: failed
+        REASON: "Coverage too low"
+
+    - name: update-quality-gate
+      type: validation
+      if: ${run-unit-tests.coverage} >= ${workflow.MIN_COVERAGE}
+      setVariables:
+        QUALITY_GATE: passed
+        REASON: "All quality checks passed"
+
+    - name: deploy-staging
+      type: kubernetes
+      namespace: staging
+      if: ${workflow.QUALITY_GATE} == passed
+      env:
+        TEST_COVERAGE: ${run-unit-tests.coverage}
+        TESTS_PASSED: ${run-unit-tests.passed}
+
+    - name: notify-success
+      type: monitoring
+      when: on_success
+      if: deploy-staging.success
+      env:
+        MESSAGE: "Deployment successful - Coverage: ${run-unit-tests.coverage}%"
+        TESTS: "${run-unit-tests.passed} passed"
+
+    - name: notify-quality-failure
+      type: monitoring
+      when: on_success
+      unless: ${workflow.QUALITY_GATE} == passed
+      env:
+        MESSAGE: "Deployment blocked: ${workflow.REASON}"
+        COVERAGE: ${run-unit-tests.coverage}
+
+---
+# Example 5: Feature flag deployment
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: feature-flag-deployment
+  description: Deploy features based on flags with shared configuration
+
+variables:
+  FEATURE_NEW_UI: "true"
+  FEATURE_NEW_API: "true"
+  FEATURE_ANALYTICS: "false"
+  DEPLOYMENT_MODE: rolling
+  BASE_IMAGE: "myapp:2.0"
+
+spec:
+  steps:
+    - name: prepare-config
+      type: validation
+      setVariables:
+        CONFIG_HASH: "abc123"
+        DEPLOYMENT_ID: "deploy-2025-10-01"
+
+    - name: deploy-core
+      type: kubernetes
+      namespace: production
+      env:
+        IMAGE: ${workflow.BASE_IMAGE}
+        MODE: ${workflow.DEPLOYMENT_MODE}
+        DEPLOYMENT_ID: ${workflow.DEPLOYMENT_ID}
+
+    - name: deploy-new-ui
+      type: kubernetes
+      namespace: production
+      if: ${workflow.FEATURE_NEW_UI} == true
+      env:
+        IMAGE: ${workflow.BASE_IMAGE}
+        FEATURE: new-ui
+        CONFIG: ${workflow.CONFIG_HASH}
+
+    - name: deploy-new-api
+      type: kubernetes
+      namespace: production
+      if: ${workflow.FEATURE_NEW_API} == true
+      env:
+        IMAGE: ${workflow.BASE_IMAGE}
+        FEATURE: new-api
+        CONFIG: ${workflow.CONFIG_HASH}
+
+    - name: deploy-analytics
+      type: kubernetes
+      namespace: production
+      if: ${workflow.FEATURE_ANALYTICS} == true
+      env:
+        IMAGE: ${workflow.BASE_IMAGE}
+        FEATURE: analytics
+        CONFIG: ${workflow.CONFIG_HASH}
+
+    - name: verify-deployment
+      type: validation
+      env:
+        DEPLOYMENT_ID: ${workflow.DEPLOYMENT_ID}
+        FEATURES: "ui:${workflow.FEATURE_NEW_UI},api:${workflow.FEATURE_NEW_API},analytics:${workflow.FEATURE_ANALYTICS}"
+
+---
+# Example 6: Environment-specific configuration
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: environment-deployment
+  description: Deploy with environment-specific configuration
+
+variables:
+  ENVIRONMENT: production
+  # These would be set differently per environment
+  API_REPLICAS: "5"
+  WORKER_REPLICAS: "10"
+  CACHE_SIZE: "2Gi"
+
+spec:
+  steps:
+    - name: build
+      type: validation
+      outputFile: /tmp/build.json
+      # Outputs: version, commit_sha
+
+    - name: setup-environment
+      type: validation
+      setVariables:
+        NAMESPACE: "${workflow.ENVIRONMENT}"
+        IMAGE_TAG: "${build.version}-${build.commit_sha}"
+        FULL_IMAGE: "registry.example.com/myapp:${build.version}-${build.commit_sha}"
+
+    - name: deploy-api
+      type: kubernetes
+      namespace: ${workflow.NAMESPACE}
+      env:
+        IMAGE: ${workflow.FULL_IMAGE}
+        REPLICAS: ${workflow.API_REPLICAS}
+        CACHE_SIZE: ${workflow.CACHE_SIZE}
+
+    - name: deploy-workers
+      type: kubernetes
+      namespace: ${workflow.NAMESPACE}
+      env:
+        IMAGE: ${workflow.FULL_IMAGE}
+        REPLICAS: ${workflow.WORKER_REPLICAS}
+
+    - name: update-deployment-record
+      type: validation
+      setVariables:
+        DEPLOYED_VERSION: ${build.version}
+        DEPLOYED_IMAGE: ${workflow.FULL_IMAGE}
+        DEPLOYED_AT: ${workflow.NAMESPACE}
+      env:
+        VERSION: ${build.version}
+        ENVIRONMENT: ${workflow.ENVIRONMENT}

@@ -1,0 +1,270 @@
+package workflow
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+)
+
+// OutputParser handles parsing step outputs from various sources
+type OutputParser struct{}
+
+// NewOutputParser creates a new output parser
+func NewOutputParser() *OutputParser {
+	return &OutputParser{}
+}
+
+// ParseOutputFile reads and parses an output file
+// Supports JSON and key=value formats
+func (p *OutputParser) ParseOutputFile(filePath string) (map[string]string, error) {
+	if filePath == "" {
+		return nil, fmt.Errorf("output file path is empty")
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("output file does not exist: %s", filePath)
+	}
+
+	// Read file content
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read output file: %w", err)
+	}
+
+	// Try to detect format and parse
+	if p.isJSON(content) {
+		return p.parseJSON(content)
+	}
+
+	return p.parseKeyValue(content)
+}
+
+// isJSON checks if content looks like JSON
+func (p *OutputParser) isJSON(content []byte) bool {
+	trimmed := strings.TrimSpace(string(content))
+	return strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")
+}
+
+// parseJSON parses JSON format output
+func (p *OutputParser) parseJSON(content []byte) (map[string]string, error) {
+	var data map[string]interface{}
+	if err := json.Unmarshal(content, &data); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	// Convert all values to strings
+	outputs := make(map[string]string)
+	for key, value := range data {
+		outputs[key] = fmt.Sprintf("%v", value)
+	}
+
+	return outputs, nil
+}
+
+// parseKeyValue parses key=value format output
+// Supports:
+//   - key=value
+//   - key="value with spaces"
+//   - key='value with spaces'
+//   - # comments
+//   - empty lines
+func (p *OutputParser) parseKeyValue(content []byte) (map[string]string, error) {
+	outputs := make(map[string]string)
+
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	lineNum := 0
+
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse key=value
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid key=value format at line %d: %s", lineNum, line)
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Remove quotes if present
+		value = strings.Trim(value, `"'`)
+
+		if key == "" {
+			return nil, fmt.Errorf("empty key at line %d", lineNum)
+		}
+
+		outputs[key] = value
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading output file: %w", err)
+	}
+
+	return outputs, nil
+}
+
+// ParseStdout extracts outputs from stdout
+// Looks for special markers:
+//   - ::set-output name=key::value
+//   - OUTPUT_key=value
+//   - Or last non-empty line as single output
+func (p *OutputParser) ParseStdout(stdout string, outputKeys []string) map[string]string {
+	outputs := make(map[string]string)
+
+	if stdout == "" {
+		return outputs
+	}
+
+	lines := strings.Split(stdout, "\n")
+
+	// Look for special output markers
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// GitHub Actions style: ::set-output name=key::value
+		if strings.HasPrefix(line, "::set-output") {
+			if output := p.parseGitHubActionsOutput(line); output != nil {
+				for k, v := range output {
+					outputs[k] = v
+				}
+			}
+			continue
+		}
+
+		// Environment style: OUTPUT_key=value
+		if strings.HasPrefix(line, "OUTPUT_") {
+			if output := p.parseEnvOutput(line); output != nil {
+				for k, v := range output {
+					outputs[k] = v
+				}
+			}
+			continue
+		}
+	}
+
+	// If specific output keys are requested and not found, try to extract from last lines
+	if len(outputKeys) > 0 && len(outputs) == 0 {
+		outputs = p.extractNamedOutputs(lines, outputKeys)
+	}
+
+	// If still no outputs and only one key requested, use last non-empty line
+	if len(outputs) == 0 && len(outputKeys) == 1 {
+		for i := len(lines) - 1; i >= 0; i-- {
+			if trimmed := strings.TrimSpace(lines[i]); trimmed != "" {
+				outputs[outputKeys[0]] = trimmed
+				break
+			}
+		}
+	}
+
+	return outputs
+}
+
+// parseGitHubActionsOutput parses GitHub Actions style output
+// Format: ::set-output name=key::value
+func (p *OutputParser) parseGitHubActionsOutput(line string) map[string]string {
+	// Remove ::set-output prefix
+	if !strings.HasPrefix(line, "::set-output") {
+		return nil
+	}
+
+	content := strings.TrimPrefix(line, "::set-output")
+	content = strings.TrimSpace(content)
+
+	// Split by ::
+	parts := strings.SplitN(content, "::", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+
+	// Parse name=key from first part
+	namePart := strings.TrimSpace(parts[0])
+	if !strings.HasPrefix(namePart, "name=") {
+		return nil
+	}
+
+	key := strings.TrimPrefix(namePart, "name=")
+	value := strings.TrimSpace(parts[1])
+
+	if key == "" {
+		return nil
+	}
+
+	return map[string]string{key: value}
+}
+
+// parseEnvOutput parses environment variable style output
+// Format: OUTPUT_key=value
+func (p *OutputParser) parseEnvOutput(line string) map[string]string {
+	if !strings.HasPrefix(line, "OUTPUT_") {
+		return nil
+	}
+
+	// Remove OUTPUT_ prefix
+	content := strings.TrimPrefix(line, "OUTPUT_")
+
+	// Split by =
+	parts := strings.SplitN(content, "=", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+
+	key := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+
+	if key == "" {
+		return nil
+	}
+
+	// Remove quotes if present
+	value = strings.Trim(value, `"'`)
+
+	return map[string]string{key: value}
+}
+
+// extractNamedOutputs tries to extract specific outputs from lines
+// Looks for lines containing: key=value or key: value
+func (p *OutputParser) extractNamedOutputs(lines []string, keys []string) map[string]string {
+	outputs := make(map[string]string)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		for _, key := range keys {
+			// Look for key=value
+			if strings.HasPrefix(line, key+"=") {
+				value := strings.TrimPrefix(line, key+"=")
+				value = strings.TrimSpace(value)
+				value = strings.Trim(value, `"'`)
+				outputs[key] = value
+				break
+			}
+
+			// Look for key: value (YAML style)
+			if strings.HasPrefix(line, key+":") {
+				value := strings.TrimPrefix(line, key+":")
+				value = strings.TrimSpace(value)
+				value = strings.Trim(value, `"'`)
+				outputs[key] = value
+				break
+			}
+		}
+	}
+
+	return outputs
+}
