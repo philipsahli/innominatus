@@ -107,6 +107,7 @@ resources:
 Resource parameters support full variable interpolation including:
 - Workflow variables: `${workflow.VAR}`
 - Step outputs: `${step.output}`
+- Resource outputs: `${resources.name.attr}` **NEW**
 - Nested maps and arrays
 - Mixed with static values
 
@@ -114,17 +115,67 @@ Resource parameters support full variable interpolation including:
 
 ### Reference Formats
 
-**Workflow variables:**
+innominatus supports **three types of variable references**:
+
+**1. Workflow variables:**
 ```yaml
 $VAR_NAME              # Simple reference
 ${VAR_NAME}            # Explicit reference
-${workflow.VAR_NAME}   # Explicit workflow variable
+${workflow.VAR_NAME}   # Explicit workflow variable (recommended)
 ```
 
-**Step outputs:**
+**2. Step outputs:**
 ```yaml
 ${stepName.outputKey}  # Reference output from previous step
 $stepName.outputKey    # Short form
+```
+
+**3. Resource outputs:** (NEW)
+```yaml
+${resources.resourceName.attribute}  # Reference provisioned resource attributes
+$resources.resourceName.attribute    # Short form
+```
+
+### All Three Syntaxes Together
+
+```yaml
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: complete-example
+
+variables:
+  APP_NAME: myapp
+  ENVIRONMENT: production
+
+spec:
+  steps:
+    - name: build
+      type: validation
+      outputFile: /tmp/build.json
+      # Outputs: version, image_url
+
+    - name: provision-database
+      type: terraform
+      path: ./terraform/postgres
+      # Creates resource outputs: db.host, db.port, db.name
+
+    - name: deploy
+      type: kubernetes
+      env:
+        # Workflow variable
+        APP_NAME: ${workflow.APP_NAME}
+        ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+        # Step output
+        VERSION: ${build.version}
+        IMAGE: ${build.image_url}
+
+        # Resource output
+        DATABASE_URL: "postgresql://${resources.database.host}:${resources.database.port}/${resources.database.name}"
+
+        # All three combined
+        FULL_CONFIG: "app=${workflow.APP_NAME},version=${build.version},db=${resources.database.host}"
 ```
 
 **Step environment (scoped to step):**
@@ -477,9 +528,30 @@ Resource parameters in Score specifications support full variable interpolation.
 **Supported in resource params:**
 - Workflow variables: `${workflow.VAR}`
 - Step outputs: `${step.output}`
+- Resource outputs: `${resources.name.attr}` **NEW**
 - Nested maps and objects
 - Arrays and lists
 - Mixed with static values
+
+### Three Ways to Reference Data
+
+**1. Workflow Variables** - Configuration and constants
+```yaml
+${workflow.ENVIRONMENT}  # "production"
+${workflow.REGION}       # "us-east-1"
+```
+
+**2. Step Outputs** - Results from previous steps
+```yaml
+${build.version}         # "2.5.0" from build step
+${provision-db.db_host}  # "db.example.com" from provisioning
+```
+
+**3. Resource Outputs** - Attributes from provisioned resources
+```yaml
+${resources.database.host}  # Direct reference to database resource
+${resources.cache.endpoint} # Cache endpoint from resource
+```
 
 ### Score Spec Example
 

@@ -13,6 +13,7 @@ import (
 type ExecutionContext struct {
 	PreviousStepStatus  map[string]string            // Map of step name -> status ("success", "failed", "skipped")
 	PreviousStepOutputs map[string]map[string]string // Map of step name -> map of output variables
+	ResourceOutputs     map[string]map[string]string // Map of resource name -> map of attributes (for ${resources.name.attr})
 	Environment         map[string]string            // Environment variables
 	WorkflowVariables   map[string]string            // Workflow-level variables
 	WorkflowStatus      string                       // Overall workflow status
@@ -23,6 +24,7 @@ func NewExecutionContext() *ExecutionContext {
 	return &ExecutionContext{
 		PreviousStepStatus:  make(map[string]string),
 		PreviousStepOutputs: make(map[string]map[string]string),
+		ResourceOutputs:     make(map[string]map[string]string),
 		Environment:         make(map[string]string),
 		WorkflowVariables:   make(map[string]string),
 		WorkflowStatus:      "running",
@@ -82,6 +84,39 @@ func (ctx *ExecutionContext) GetStepOutput(stepName, key string) (string, bool) 
 // GetAllStepOutputs retrieves all outputs from a previous step
 func (ctx *ExecutionContext) GetAllStepOutputs(stepName string) (map[string]string, bool) {
 	outputs, exists := ctx.PreviousStepOutputs[stepName]
+	return outputs, exists
+}
+
+// SetResourceOutputs records outputs for a provisioned resource
+func (ctx *ExecutionContext) SetResourceOutputs(resourceName string, outputs map[string]string) {
+	if ctx.ResourceOutputs[resourceName] == nil {
+		ctx.ResourceOutputs[resourceName] = make(map[string]string)
+	}
+	for k, v := range outputs {
+		ctx.ResourceOutputs[resourceName][k] = v
+	}
+}
+
+// SetResourceOutput records a single output attribute for a resource
+func (ctx *ExecutionContext) SetResourceOutput(resourceName, key, value string) {
+	if ctx.ResourceOutputs[resourceName] == nil {
+		ctx.ResourceOutputs[resourceName] = make(map[string]string)
+	}
+	ctx.ResourceOutputs[resourceName][key] = value
+}
+
+// GetResourceOutput retrieves an output attribute from a provisioned resource
+func (ctx *ExecutionContext) GetResourceOutput(resourceName, key string) (string, bool) {
+	if outputs, exists := ctx.ResourceOutputs[resourceName]; exists {
+		value, found := outputs[key]
+		return value, found
+	}
+	return "", false
+}
+
+// GetAllResourceOutputs retrieves all outputs from a provisioned resource
+func (ctx *ExecutionContext) GetAllResourceOutputs(resourceName string) (map[string]string, bool) {
+	outputs, exists := ctx.ResourceOutputs[resourceName]
 	return outputs, exists
 }
 
@@ -254,28 +289,40 @@ func (ctx *ExecutionContext) evaluateCondition(condition string, env map[string]
 }
 
 // replaceVariables replaces ${VAR} and $VAR with their values
-// Supports: $VAR, ${VAR}, ${step.output}, ${workflow.VAR}
+// Supports: $VAR, ${VAR}, ${step.output}, ${workflow.VAR}, ${resources.name.attr}
 func (ctx *ExecutionContext) replaceVariables(str string, env map[string]string) string {
-	// Replace ${VAR} style (including step.output and workflow.VAR)
+	// Replace ${VAR} style (including step.output, workflow.VAR, and resources.name.attr)
 	re := regexp.MustCompile(`\$\{([^}]+)\}`)
 	str = re.ReplaceAllStringFunc(str, func(match string) string {
 		varName := match[2 : len(match)-1] // Remove ${ and }
 
-		// Check for step output reference: ${step.output}
+		// Check for dotted references: ${prefix.suffix} or ${prefix.suffix.attr}
 		if strings.Contains(varName, ".") {
 			parts := strings.SplitN(varName, ".", 2)
 			if len(parts) == 2 {
-				stepName := parts[0]
-				outputKey := parts[1]
+				prefix := parts[0]
+				suffix := parts[1]
 
-				// Check if it's a workflow variable reference
-				if stepName == "workflow" {
-					if val, exists := ctx.WorkflowVariables[outputKey]; exists {
+				// Check for ${workflow.VAR}
+				if prefix == "workflow" {
+					if val, exists := ctx.WorkflowVariables[suffix]; exists {
 						return val
 					}
+				} else if prefix == "resources" {
+					// Check for ${resources.name.attr}
+					if strings.Contains(suffix, ".") {
+						resourceParts := strings.SplitN(suffix, ".", 2)
+						if len(resourceParts) == 2 {
+							resourceName := resourceParts[0]
+							attrKey := resourceParts[1]
+							if val, found := ctx.GetResourceOutput(resourceName, attrKey); found {
+								return val
+							}
+						}
+					}
 				} else {
-					// Check step outputs
-					if val, found := ctx.GetStepOutput(stepName, outputKey); found {
+					// Check step outputs: ${step.output}
+					if val, found := ctx.GetStepOutput(prefix, suffix); found {
 						return val
 					}
 				}
@@ -296,24 +343,39 @@ func (ctx *ExecutionContext) replaceVariables(str string, env map[string]string)
 		return match // Return original if not found
 	})
 
-	// Replace $VAR style (word boundaries only, not dot notation)
-	re = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?`)
+	// Replace $VAR style (word boundaries only, supports dot notation for resources)
+	// This regex now captures full paths like $resources.db.host
+	re = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_.]*)`)
 	str = re.ReplaceAllStringFunc(str, func(match string) string {
-		// Check if this is a step.output reference
-		if strings.Contains(match, ".") {
-			parts := strings.Split(match[1:], ".") // Remove $
-			if len(parts) == 2 {
-				stepName := parts[0]
-				outputKey := parts[1]
+		fullPath := match[1:] // Remove $
 
-				// Check if it's a workflow variable reference
-				if stepName == "workflow" {
-					if val, exists := ctx.WorkflowVariables[outputKey]; exists {
+		// Check if this is a dotted reference
+		if strings.Contains(fullPath, ".") {
+			parts := strings.SplitN(fullPath, ".", 2)
+			if len(parts) == 2 {
+				prefix := parts[0]
+				suffix := parts[1]
+
+				// Check for $workflow.VAR
+				if prefix == "workflow" {
+					if val, exists := ctx.WorkflowVariables[suffix]; exists {
 						return val
 					}
+				} else if prefix == "resources" {
+					// Check for $resources.name.attr
+					if strings.Contains(suffix, ".") {
+						resourceParts := strings.SplitN(suffix, ".", 2)
+						if len(resourceParts) == 2 {
+							resourceName := resourceParts[0]
+							attrKey := resourceParts[1]
+							if val, found := ctx.GetResourceOutput(resourceName, attrKey); found {
+								return val
+							}
+						}
+					}
 				} else {
-					// Check step outputs
-					if val, found := ctx.GetStepOutput(stepName, outputKey); found {
+					// Check step outputs: $step.output
+					if val, found := ctx.GetStepOutput(prefix, suffix); found {
 						return val
 					}
 				}

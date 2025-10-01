@@ -162,6 +162,193 @@ func TestExecutionContext_InterpolateResourceParams(t *testing.T) {
 	}
 }
 
+func TestExecutionContext_ResourceOutputs(t *testing.T) {
+	ctx := NewExecutionContext()
+
+	t.Run("set and get resource outputs", func(t *testing.T) {
+		outputs := map[string]string{
+			"host": "db.example.com",
+			"port": "5432",
+			"name": "myapp_db",
+		}
+
+		ctx.SetResourceOutputs("database", outputs)
+
+		host, found := ctx.GetResourceOutput("database", "host")
+		assert.True(t, found)
+		assert.Equal(t, "db.example.com", host)
+
+		port, found := ctx.GetResourceOutput("database", "port")
+		assert.True(t, found)
+		assert.Equal(t, "5432", port)
+	})
+
+	t.Run("get non-existent resource output", func(t *testing.T) {
+		_, found := ctx.GetResourceOutput("nonexistent", "key")
+		assert.False(t, found)
+	})
+
+	t.Run("get all resource outputs", func(t *testing.T) {
+		outputs := map[string]string{
+			"endpoint": "cache.example.com",
+			"port":     "6379",
+		}
+
+		ctx.SetResourceOutputs("cache", outputs)
+
+		allOutputs, exists := ctx.GetAllResourceOutputs("cache")
+		assert.True(t, exists)
+		assert.Equal(t, outputs, allOutputs)
+	})
+
+	t.Run("set single resource output", func(t *testing.T) {
+		ctx.SetResourceOutput("storage", "bucket_name", "my-bucket")
+
+		bucket, found := ctx.GetResourceOutput("storage", "bucket_name")
+		assert.True(t, found)
+		assert.Equal(t, "my-bucket", bucket)
+	})
+}
+
+func TestExecutionContext_ResourceReferences(t *testing.T) {
+	ctx := NewExecutionContext()
+	ctx.SetVariable("ENVIRONMENT", "production")
+	ctx.SetResourceOutputs("database", map[string]string{
+		"host": "db-prod.example.com",
+		"port": "5432",
+		"name": "myapp_production",
+	})
+	ctx.SetResourceOutputs("cache", map[string]string{
+		"endpoint": "cache-prod.example.com",
+		"port":     "6379",
+	})
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "resources with braces",
+			input:    "${resources.database.host}",
+			expected: "db-prod.example.com",
+		},
+		{
+			name:     "resources without braces",
+			input:    "$resources.database.port",
+			expected: "5432",
+		},
+		{
+			name:     "multiple resource references",
+			input:    "postgresql://${resources.database.host}:${resources.database.port}/${resources.database.name}",
+			expected: "postgresql://db-prod.example.com:5432/myapp_production",
+		},
+		{
+			name:     "mixed resources and workflow variables",
+			input:    "env=${workflow.ENVIRONMENT},db=${resources.database.host}",
+			expected: "env=production,db=db-prod.example.com",
+		},
+		{
+			name:     "cache resource reference",
+			input:    "redis://${resources.cache.endpoint}:${resources.cache.port}",
+			expected: "redis://cache-prod.example.com:6379",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ctx.replaceVariables(tt.input, map[string]string{})
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExecutionContext_AllSyntaxSupport(t *testing.T) {
+	// Test that all three syntaxes work together
+	ctx := NewExecutionContext()
+
+	// Set workflow variables
+	ctx.SetVariable("APP_NAME", "myapp")
+	ctx.SetVariable("ENVIRONMENT", "production")
+
+	// Set step outputs
+	ctx.SetStepOutputs("build", map[string]string{
+		"version": "2.5.0",
+		"image":   "registry.example.com/myapp:2.5.0",
+	})
+
+	// Set resource outputs
+	ctx.SetResourceOutputs("database", map[string]string{
+		"host": "db-prod.example.com",
+		"port": "5432",
+	})
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "workflow variable",
+			input:    "${workflow.APP_NAME}",
+			expected: "myapp",
+		},
+		{
+			name:     "step output",
+			input:    "${build.version}",
+			expected: "2.5.0",
+		},
+		{
+			name:     "resource output",
+			input:    "${resources.database.host}",
+			expected: "db-prod.example.com",
+		},
+		{
+			name:     "all three combined",
+			input:    "app=${workflow.APP_NAME},version=${build.version},db=${resources.database.host}",
+			expected: "app=myapp,version=2.5.0,db=db-prod.example.com",
+		},
+		{
+			name:     "connection string with all three",
+			input:    "postgresql://${resources.database.host}:${resources.database.port}/${workflow.APP_NAME}_${workflow.ENVIRONMENT}?version=${build.version}",
+			expected: "postgresql://db-prod.example.com:5432/myapp_production?version=2.5.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ctx.replaceVariables(tt.input, map[string]string{})
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExecutionContext_InterpolateResourceParams_WithResources(t *testing.T) {
+	ctx := NewExecutionContext()
+	ctx.SetVariable("ENVIRONMENT", "production")
+	ctx.SetResourceOutputs("database", map[string]string{
+		"host": "db.example.com",
+		"port": "5432",
+	})
+
+	params := map[string]interface{}{
+		"application": map[string]interface{}{
+			"name": "myapp",
+			"environment": map[string]interface{}{
+				"DATABASE_URL": "postgresql://${resources.database.host}:${resources.database.port}/myapp",
+				"ENV":          "${workflow.ENVIRONMENT}",
+			},
+		},
+	}
+
+	result := ctx.InterpolateResourceParams(params, map[string]string{})
+
+	app := result["application"].(map[string]interface{})
+	env := app["environment"].(map[string]interface{})
+	assert.Equal(t, "postgresql://db.example.com:5432/myapp", env["DATABASE_URL"])
+	assert.Equal(t, "production", env["ENV"])
+}
+
 func TestExecutionContext_InterpolateResourceParams_Integration(t *testing.T) {
 	// Simulate a real workflow scenario
 	ctx := NewExecutionContext()

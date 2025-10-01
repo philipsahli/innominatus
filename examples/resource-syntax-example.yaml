@@ -1,0 +1,307 @@
+# Example demonstrating all three variable reference syntaxes:
+# 1. ${workflow.VAR} - Workflow variables
+# 2. ${step.output} - Step outputs
+# 3. ${resources.name.attr} - Resource outputs (NEW)
+
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: three-syntax-example
+  description: Demonstrates all three variable reference syntaxes working together
+
+variables:
+  APP_NAME: payment-api
+  ENVIRONMENT: production
+  REGION: us-east-1
+  VERSION: "2.5.0"
+
+spec:
+  steps:
+    # Step 1: Build application
+    - name: build
+      type: validation
+      outputFile: /tmp/build-outputs.json
+      # This step produces:
+      # - image_url: "registry.example.com/payment-api:2.5.0"
+      # - commit_sha: "abc123def456"
+      # - build_timestamp: "2025-10-01T12:00:00Z"
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+        VERSION: ${workflow.VERSION}
+
+    # Step 2: Provision database (creates resource outputs)
+    - name: provision-database
+      type: terraform
+      path: ./terraform/postgres
+      # This step provisions a database resource and records outputs:
+      # Resources:
+      #   - database.host: "db-prod.example.com"
+      #   - database.port: "5432"
+      #   - database.name: "payment_api_production"
+      #   - database.endpoint: "db-prod.example.com:5432"
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+        ENVIRONMENT: ${workflow.ENVIRONMENT}
+        REGION: ${workflow.REGION}
+
+    # Step 3: Provision cache (creates more resource outputs)
+    - name: provision-cache
+      type: terraform
+      path: ./terraform/redis
+      # This step provisions a cache resource:
+      # Resources:
+      #   - cache.endpoint: "cache-prod.example.com"
+      #   - cache.port: "6379"
+      #   - cache.cluster_id: "payment-api-cache-prod"
+      env:
+        APP_NAME: ${workflow.APP_NAME}
+        ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+    # Step 4: Deploy application using all three syntaxes
+    - name: deploy-app
+      type: kubernetes
+      namespace: ${workflow.ENVIRONMENT}
+      env:
+        # SYNTAX 1: Workflow variables
+        APP_NAME: ${workflow.APP_NAME}
+        ENVIRONMENT: ${workflow.ENVIRONMENT}
+        REGION: ${workflow.REGION}
+
+        # SYNTAX 2: Step outputs
+        IMAGE: ${build.image_url}
+        COMMIT_SHA: ${build.commit_sha}
+        BUILD_TIMESTAMP: ${build.build_timestamp}
+
+        # SYNTAX 3: Resource outputs (NEW!)
+        DATABASE_HOST: ${resources.database.host}
+        DATABASE_PORT: ${resources.database.port}
+        DATABASE_NAME: ${resources.database.name}
+        CACHE_ENDPOINT: ${resources.cache.endpoint}
+        CACHE_PORT: ${resources.cache.port}
+
+        # COMBINED: All three together in connection strings
+        DATABASE_URL: "postgresql://${resources.database.host}:${resources.database.port}/${resources.database.name}?app=${workflow.APP_NAME}&version=${build.commit_sha}"
+        REDIS_URL: "redis://${resources.cache.endpoint}:${resources.cache.port}/0?app=${workflow.APP_NAME}"
+
+    # Step 5: Run database migrations
+    - name: run-migrations
+      type: validation
+      env:
+        # Use resource syntax for database connection
+        DB_HOST: ${resources.database.host}
+        DB_PORT: ${resources.database.port}
+        DB_NAME: ${resources.database.name}
+        DB_URL: "postgresql://${resources.database.endpoint}/${resources.database.name}"
+
+        # Include version from build step
+        MIGRATION_VERSION: ${build.commit_sha}
+
+    # Step 6: Update configuration service
+    - name: update-config
+      type: validation
+      setVariables:
+        CONFIG_UPDATED: "true"
+        DEPLOYED_VERSION: ${build.commit_sha}
+      env:
+        # Send all connection details to config service
+        CONFIG: |
+          {
+            "app": "${workflow.APP_NAME}",
+            "environment": "${workflow.ENVIRONMENT}",
+            "version": "${build.commit_sha}",
+            "deployed_at": "${build.build_timestamp}",
+            "database": {
+              "host": "${resources.database.host}",
+              "port": "${resources.database.port}",
+              "name": "${resources.database.name}"
+            },
+            "cache": {
+              "endpoint": "${resources.cache.endpoint}",
+              "port": "${resources.cache.port}"
+            }
+          }
+
+---
+# Example 2: Comparison of Step Output vs Resource Output Syntax
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: syntax-comparison
+  description: Shows when to use step outputs vs resource outputs
+
+spec:
+  steps:
+    # When a step provisions a resource, you can use BOTH syntaxes:
+
+    - name: create-db
+      type: terraform
+      path: ./terraform/database
+      outputFile: /tmp/terraform-outputs.json
+      # Creates both:
+      # - Step outputs: create-db.db_host, create-db.db_port
+      # - Resource outputs: database.host, database.port
+
+    - name: use-step-syntax
+      type: validation
+      env:
+        # Reference via the STEP that created it
+        DB_HOST: ${create-db.db_host}
+        DB_PORT: ${create-db.db_port}
+
+    - name: use-resource-syntax
+      type: validation
+      env:
+        # Reference via the RESOURCE itself (clearer!)
+        DB_HOST: ${resources.database.host}
+        DB_PORT: ${resources.database.port}
+
+---
+# Example 3: Resource Syntax Benefits
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: resource-syntax-benefits
+  description: Why resource syntax is better for Score resources
+
+variables:
+  APP_NAME: web-app
+  ENVIRONMENT: production
+
+spec:
+  steps:
+    # Multiple steps might interact with the same resource
+    - name: provision-db
+      type: terraform
+      path: ./terraform/postgres
+      # Creates resource: database
+
+    - name: configure-db
+      type: validation
+      env:
+        # Resource syntax: Clear that we're referencing the database resource
+        DB_HOST: ${resources.database.host}
+        DB_NAME: ${resources.database.name}
+
+    - name: backup-db
+      type: validation
+      env:
+        # Still clear - we're backing up the database resource
+        # Not tied to which step created it
+        BACKUP_HOST: ${resources.database.host}
+        BACKUP_NAME: ${resources.database.name}
+
+    - name: deploy-app
+      type: kubernetes
+      env:
+        # In deployment config, resource syntax is more semantic
+        DATABASE_URL: "postgresql://${resources.database.host}:${resources.database.port}/${resources.database.name}"
+
+        # vs step syntax (less clear what 'provision-db' represents)
+        # DATABASE_URL: "postgresql://${provision-db.db_host}:${provision-db.db_port}/${provision-db.db_name}"
+
+---
+# Example 4: Real-world Multi-Resource Application
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: multi-resource-app
+  description: Realistic application with multiple resource types
+
+variables:
+  APP_NAME: ecommerce-api
+  ENVIRONMENT: production
+  REGION: us-east-1
+
+spec:
+  steps:
+    - name: build
+      type: validation
+      outputFile: /tmp/build.json
+      # Outputs: version, image_url
+
+    # Provision all infrastructure resources
+    - name: provision-infrastructure
+      type: terraform
+      path: ./terraform/infrastructure
+      # Creates resources:
+      #   - database (postgres)
+      #   - cache (redis)
+      #   - queue (rabbitmq)
+      #   - storage (s3)
+
+    # Deploy application with all resource connections
+    - name: deploy
+      type: kubernetes
+      namespace: ${workflow.ENVIRONMENT}
+      env:
+        # Application metadata
+        APP_NAME: ${workflow.APP_NAME}
+        VERSION: ${build.version}
+        IMAGE: ${build.image_url}
+
+        # Database connection (resource syntax)
+        DATABASE_URL: "postgresql://${resources.database.host}:${resources.database.port}/${resources.database.name}"
+        DATABASE_POOL_SIZE: "20"
+
+        # Cache connection (resource syntax)
+        REDIS_URL: "redis://${resources.cache.endpoint}:${resources.cache.port}/0"
+        REDIS_CLUSTER_MODE: "true"
+
+        # Message queue connection (resource syntax)
+        RABBITMQ_URL: "amqp://${resources.queue.host}:${resources.queue.port}/"
+        RABBITMQ_VHOST: ${resources.queue.vhost}
+
+        # Object storage (resource syntax)
+        S3_BUCKET: ${resources.storage.bucket_name}
+        S3_REGION: ${resources.storage.region}
+        S3_ENDPOINT: ${resources.storage.endpoint}
+
+    # Health check using resource endpoints
+    - name: health-check
+      type: validation
+      when: on_success
+      env:
+        # Check all resource endpoints
+        CHECK_DATABASE: ${resources.database.endpoint}
+        CHECK_CACHE: ${resources.cache.endpoint}
+        CHECK_QUEUE: ${resources.queue.endpoint}
+        CHECK_STORAGE: ${resources.storage.endpoint}
+
+---
+# Example 5: Choosing Between Syntaxes
+apiVersion: orchestrator.innominatus.dev/v1
+kind: Workflow
+metadata:
+  name: syntax-choice-guide
+  description: When to use which syntax
+
+variables:
+  ENVIRONMENT: staging
+  VERSION: "1.0.0"
+
+spec:
+  steps:
+    - name: example-step
+      type: validation
+      outputFile: /tmp/outputs.json
+      env:
+        # Use ${workflow.VAR} for:
+        # - Configuration values
+        # - Constants defined in variables section
+        ENV: ${workflow.ENVIRONMENT}
+        VER: ${workflow.VERSION}
+
+        # Use ${step.output} for:
+        # - Intermediate processing results
+        # - Step-specific calculations
+        # - When the step name is meaningful
+        BUILD_ID: ${calculate-build-id.result}
+        TEST_SCORE: ${run-quality-check.score}
+
+        # Use ${resources.name.attr} for:
+        # - Infrastructure resource attributes
+        # - Score specification resources
+        # - When resource name is more meaningful than provisioning step
+        DB: ${resources.database.host}
+        CACHE: ${resources.cache.endpoint}
+        BUCKET: ${resources.storage.bucket_name}
