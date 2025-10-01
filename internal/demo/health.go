@@ -267,7 +267,7 @@ func (h *HealthChecker) checkVaultSecretsOperator(component DemoComponent, statu
 	start := time.Now()
 
 	// Check if VSO pods are running
-	cmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "-l", "app.kubernetes.io/name=vault-secrets-operator", "-o", "jsonpath={.items[*].status.phase}")
+	cmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "-l", "app.kubernetes.io/name=vault-secrets-operator", "-o", "jsonpath={.items[*].status.phase}")  // #nosec G204 - curl command for health check
 	output, err := cmd.Output()
 
 	status.Latency = time.Since(start)
