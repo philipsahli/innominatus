@@ -16,9 +16,9 @@ import (
 
 func TestNewAuthService(t *testing.T) {
 	// Clear environment variables first
-	os.Unsetenv("GOOGLE_CLIENT_ID")
-	os.Unsetenv("GOOGLE_CLIENT_SECRET")
-	os.Unsetenv("GOOGLE_REDIRECT_URL")
+	_ = os.Unsetenv("GOOGLE_CLIENT_ID")
+	_ = os.Unsetenv("GOOGLE_CLIENT_SECRET")
+	_ = os.Unsetenv("GOOGLE_REDIRECT_URL")
 
 	// Test without environment variables
 	service := NewAuthService()
@@ -27,9 +27,9 @@ func TestNewAuthService(t *testing.T) {
 	assert.False(t, service.IsConfigured())
 
 	// Test with environment variables
-	os.Setenv("GOOGLE_CLIENT_ID", "test-client-id")
-	os.Setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
-	os.Setenv("GOOGLE_REDIRECT_URL", "http://localhost:8081/auth/callback")
+	_ = os.Setenv("GOOGLE_CLIENT_ID", "test-client-id")
+	_ = os.Setenv("GOOGLE_CLIENT_SECRET", "test-client-secret")
+	_ = os.Setenv("GOOGLE_REDIRECT_URL", "http://localhost:8081/auth/callback")
 
 	service = NewAuthService()
 	assert.NotNil(t, service)
@@ -39,9 +39,9 @@ func TestNewAuthService(t *testing.T) {
 	assert.Equal(t, "http://localhost:8081/auth/callback", service.config.RedirectURL)
 
 	// Cleanup
-	os.Unsetenv("GOOGLE_CLIENT_ID")
-	os.Unsetenv("GOOGLE_CLIENT_SECRET")
-	os.Unsetenv("GOOGLE_REDIRECT_URL")
+	_ = os.Unsetenv("GOOGLE_CLIENT_ID")
+	_ = os.Unsetenv("GOOGLE_CLIENT_SECRET")
+	_ = os.Unsetenv("GOOGLE_REDIRECT_URL")
 }
 
 func TestIsConfigured(t *testing.T) {

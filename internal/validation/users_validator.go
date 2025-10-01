@@ -15,10 +15,7 @@ type UsersValidator struct {
 // NewUsersValidator creates a new users validator
 func NewUsersValidator(usersFile string) (*UsersValidator, error) {
 	// Use default path if not provided
-	_ = usersFile // Parameter kept for interface compatibility
-	if usersFile == "" {
-		usersFile = users.UsersFile
-	}
+	_ = usersFile // Parameter kept for interface compatibility but not used
 
 	store, err := users.LoadUsers()
 	if err != nil {

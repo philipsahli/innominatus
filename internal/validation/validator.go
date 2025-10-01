@@ -167,7 +167,7 @@ func ValidateFileExists(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("file is not readable: %w", err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	return nil
 }

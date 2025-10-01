@@ -3,8 +3,10 @@ package validation
 import (
 	"fmt"
 	"innominatus/internal/errors"
+	"innominatus/internal/security"
 	"innominatus/internal/types"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -21,7 +23,16 @@ type ScoreValidator struct {
 
 // NewScoreValidator creates a new Score validator
 func NewScoreValidator(filePath string) (*ScoreValidator, error) {
-	content, err := os.ReadFile(filePath)
+	// Validate file path to prevent path traversal
+	cleanPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+	if err := security.ValidateFilePath(cleanPath); err != nil {
+		return nil, fmt.Errorf("invalid file path: %w", err)
+	}
+
+	content, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +130,8 @@ func (sv *ScoreValidator) validateRequiredFields() []*errors.RichError {
 		lineNum := sv.findFieldLine("containers")
 		err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, "At least one container is required").
 			WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-		err = err.WithSuggestion("Add at least one container definition")
-		err = err.WithSuggestion("Example: containers:\n  web:\n    image: nginx:latest")
+		_ = err.WithSuggestion("Add at least one container definition")
+		_ = err.WithSuggestion("Example: containers:\n  web:\n    image: nginx:latest")
 		errs = append(errs, err)
 	}
 
@@ -137,9 +148,9 @@ func (sv *ScoreValidator) validateFieldFormats() []*errors.RichError {
 			lineNum := sv.findFieldLine("name")
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Invalid name format: %s", sv.spec.Metadata.Name)).
 				WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Name must be lowercase alphanumeric with hyphens")
-			err.WithSuggestion("Must start and end with alphanumeric character")
-			err.WithSuggestion("Example: my-app, web-service, api-v1")
+			_ = err.WithSuggestion("Name must be lowercase alphanumeric with hyphens")
+			_ = err.WithSuggestion("Must start and end with alphanumeric character")
+			_ = err.WithSuggestion("Example: my-app, web-service, api-v1")
 			errs = append(errs, err)
 		}
 	}
@@ -157,8 +168,8 @@ func (sv *ScoreValidator) validateResources() []*errors.RichError {
 			lineNum := sv.findFieldLineInSection("resources", resourceName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Resource '%s' missing type", resourceName)).
 				WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Add a type to the resource definition")
-			err.WithSuggestion("Example: type: postgres")
+			_ = err.WithSuggestion("Add a type to the resource definition")
+			_ = err.WithSuggestion("Example: type: postgres")
 			errs = append(errs, err)
 		}
 
@@ -180,7 +191,7 @@ func (sv *ScoreValidator) validateResourceType(name string, resource types.Resou
 			lineNum := sv.findFieldLineInSection("resources", name)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Database resource '%s' should have parameters", name)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
 			err.Severity = errors.SeverityWarning
-			err.WithSuggestion("Consider adding database version, size, or other configuration")
+			_ = err.WithSuggestion("Consider adding database version, size, or other configuration")
 			return err
 		}
 	}
@@ -195,8 +206,8 @@ func (sv *ScoreValidator) validateWorkflows() []*errors.RichError {
 		if len(workflow.Steps) == 0 {
 			lineNum := sv.findFieldLineInSection("workflows", workflowName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Workflow '%s' has no steps", workflowName)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Add at least one step to the workflow")
-			err.WithSuggestion("Example: steps:\n  - name: deploy\n    type: kubernetes")
+			_ = err.WithSuggestion("Add at least one step to the workflow")
+			_ = err.WithSuggestion("Example: steps:\n  - name: deploy\n    type: kubernetes")
 			errs = append(errs, err)
 		}
 
@@ -227,7 +238,7 @@ func (sv *ScoreValidator) validateContainers() []*errors.RichError {
 		if container.Image == "" {
 			lineNum := sv.findFieldLineInSection("containers", containerName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Container '%s' missing image", containerName)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
-			err.WithSuggestion("Add an image to the container definition")
+			_ = err.WithSuggestion("Add an image to the container definition")
 			errs = append(errs, err)
 		}
 	}
@@ -245,7 +256,7 @@ func (sv *ScoreValidator) checkBestPractices() []*errors.RichError {
 			lineNum := sv.findFieldLineInSection("containers", containerName)
 			err := errors.NewRichError(errors.CategoryValidation, errors.SeverityError, fmt.Sprintf("Container '%s' uses 'latest' tag", containerName)).WithLocation(sv.filePath, lineNum, 0, sv.getLine(lineNum))
 			err.Severity = errors.SeverityWarning
-			err.WithSuggestion("Use specific version tags instead of 'latest' for reproducibility")
+			_ = err.WithSuggestion("Use specific version tags instead of 'latest' for reproducibility")
 			errs = append(errs, err)
 		}
 	}

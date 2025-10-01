@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"io"
 
-	"net/http"
-	"os"
-	"os/exec"
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
@@ -17,9 +14,14 @@ import (
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
 	"innominatus/internal/resources"
+	"innominatus/internal/security"
 	"innominatus/internal/teams"
 	"innominatus/internal/types"
 	"innominatus/internal/workflow"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,10 +31,10 @@ import (
 
 // LogBuffer captures command output for workflow step logging
 type LogBuffer struct {
-	buffer   strings.Builder
-	stepID   *int64
-	repo     *database.WorkflowRepository
-	mu       sync.Mutex
+	buffer strings.Builder
+	stepID *int64
+	repo   *database.WorkflowRepository
+	mu     sync.Mutex
 }
 
 // NewLogBuffer creates a new log buffer for a workflow step
@@ -87,11 +89,11 @@ func (lb *LogBuffer) GetLogs() string {
 
 // StepExecutionContext contains context for executing a workflow step
 type StepExecutionContext struct {
-	Step       types.Step
-	AppName    string
-	EnvType    string
-	StepID     *int64
-	LogBuffer  *LogBuffer
+	Step         types.Step
+	AppName      string
+	EnvType      string
+	StepID       *int64
+	LogBuffer    *LogBuffer
 	WorkflowRepo *database.WorkflowRepository
 }
 
@@ -108,25 +110,25 @@ type Server struct {
 	loginAttempts    map[string][]time.Time
 	loginMutex       sync.Mutex
 	// In-memory workflow tracking (when database is not available)
-	memoryWorkflows  map[int64]*MemoryWorkflowExecution
-	workflowCounter  int64
-	workflowMutex    sync.RWMutex
+	memoryWorkflows map[int64]*MemoryWorkflowExecution
+	workflowCounter int64
+	workflowMutex   sync.RWMutex
 	// Workflow scheduler for periodic execution
-	workflowTicker   *time.Ticker
-	stopScheduler    chan struct{}
+	workflowTicker *time.Ticker
+	stopScheduler  chan struct{}
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
 type MemoryWorkflowExecution struct {
-	ID           int64                    `json:"id"`
-	AppName      string                   `json:"app_name"`
-	WorkflowName string                   `json:"workflow_name"`
-	Status       string                   `json:"status"`
-	StartedAt    time.Time                `json:"started_at"`
-	CompletedAt  *time.Time               `json:"completed_at,omitempty"`
-	ErrorMessage *string                  `json:"error_message,omitempty"`
-	StepCount    int                      `json:"step_count"`
-	Steps        []*MemoryWorkflowStep    `json:"steps"`
+	ID           int64                 `json:"id"`
+	AppName      string                `json:"app_name"`
+	WorkflowName string                `json:"workflow_name"`
+	Status       string                `json:"status"`
+	StartedAt    time.Time             `json:"started_at"`
+	CompletedAt  *time.Time            `json:"completed_at,omitempty"`
+	ErrorMessage *string               `json:"error_message,omitempty"`
+	StepCount    int                   `json:"step_count"`
+	Steps        []*MemoryWorkflowStep `json:"steps"`
 }
 
 // MemoryWorkflowStep represents a workflow step stored in memory
@@ -464,7 +466,7 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleSpecDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Path[len("/api/specs/"):]
-	
+
 	switch r.Method {
 	case "GET":
 		s.handleGetSpec(w, r, name)
@@ -550,9 +552,9 @@ func (s *Server) HandleEnvironments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	environments := s.storage.ListEnvironments()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(environments); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
@@ -590,8 +592,8 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 			w.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(w).Encode(response); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-	}
+				fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+			}
 			return
 		}
 	}
@@ -652,10 +654,10 @@ func (s *Server) addMockResourceStatus(resourceGraph *graph.Graph) {
 	for _, node := range postgresNodes {
 		resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
 			"connection_string": "postgresql://localhost:5432/" + node.Name,
-			"status":           "running",
-			"host":             "postgres.demo.local",
-			"port":             5432,
-			"database":         node.Name,
+			"status":            "running",
+			"host":              "postgres.demo.local",
+			"port":              5432,
+			"database":          node.Name,
 		})
 	}
 
@@ -815,7 +817,7 @@ func (s *Server) HandleTeamDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListTeams(w http.ResponseWriter, r *http.Request) {
 	teams := s.teamManager.ListTeams()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(teams); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
@@ -827,23 +829,23 @@ func (s *Server) handleCreateTeam(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	
+
 	if req.Name == "" {
 		http.Error(w, "Team name is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	team, err := s.teamManager.CreateTeam(req.Name, req.Description)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create team: %v", err), http.StatusConflict)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(team); err != nil {
@@ -857,7 +859,7 @@ func (s *Server) handleGetTeam(w http.ResponseWriter, r *http.Request, teamID st
 		http.Error(w, "Team not found", http.StatusNotFound)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(team); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
@@ -874,7 +876,7 @@ func (s *Server) handleDeleteTeam(w http.ResponseWriter, r *http.Request, teamID
 		}
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{
 		"message": fmt.Sprintf("Team '%s' deleted successfully", teamID),
@@ -962,7 +964,7 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(healthResponse)
+	_ = json.NewEncoder(w).Encode(healthResponse)
 }
 
 // HandleReady returns the readiness status for Kubernetes readiness probes
@@ -979,7 +981,7 @@ func (s *Server) HandleReady(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(readinessResponse)
+	_ = json.NewEncoder(w).Encode(readinessResponse)
 }
 
 // HandleMetrics returns Prometheus-format metrics
@@ -988,7 +990,7 @@ func (s *Server) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(metricsData))
+	_, _ = w.Write([]byte(metricsData))
 }
 
 // Memory workflow tracking methods
@@ -1199,8 +1201,8 @@ func (s *Server) handleGetMemoryWorkflow(w http.ResponseWriter, r *http.Request)
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(workflow); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-	}
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -1211,7 +1213,7 @@ func (s *Server) handleGetMemoryWorkflow(w http.ResponseWriter, r *http.Request)
 // saveWorkflowsToDisk saves workflow executions to disk
 func (s *Server) saveWorkflowsToDisk() {
 	// Create data directory if it doesn't exist
-	if err := os.MkdirAll("data", 0755); err != nil {
+	if err := os.MkdirAll("data", 0750); err != nil {
 		fmt.Printf("Warning: Failed to create data directory: %v\n", err)
 		return
 	}
@@ -1219,7 +1221,7 @@ func (s *Server) saveWorkflowsToDisk() {
 	// Marshal workflow data
 	data := struct {
 		Workflows       map[int64]*MemoryWorkflowExecution `json:"workflows"`
-		WorkflowCounter int64                               `json:"workflow_counter"`
+		WorkflowCounter int64                              `json:"workflow_counter"`
 	}{
 		Workflows:       s.memoryWorkflows,
 		WorkflowCounter: s.workflowCounter,
@@ -1232,7 +1234,7 @@ func (s *Server) saveWorkflowsToDisk() {
 	}
 
 	// Write to file
-	if err := os.WriteFile("data/workflows.json", jsonData, 0644); err != nil {
+	if err := os.WriteFile("data/workflows.json", jsonData, 0600); err != nil {
 		fmt.Printf("Warning: Failed to write workflow file: %v\n", err)
 	}
 }
@@ -1255,7 +1257,7 @@ func (s *Server) loadWorkflowsFromDisk() {
 
 	var workflowData struct {
 		Workflows       map[int64]*MemoryWorkflowExecution `json:"workflows"`
-		WorkflowCounter int64                               `json:"workflow_counter"`
+		WorkflowCounter int64                              `json:"workflow_counter"`
 	}
 
 	if err := json.Unmarshal(data, &workflowData); err != nil {
@@ -1294,12 +1296,12 @@ func (s *Server) HandleDemoStatus(w http.ResponseWriter, r *http.Request) {
 	components := []map[string]interface{}{}
 	for _, result := range healthResults {
 		component := map[string]interface{}{
-			"name":       result.Name,
-			"url":        getComponentURL(result.Name, result.Host),
-			"status":     result.Healthy,
+			"name":        result.Name,
+			"url":         getComponentURL(result.Name, result.Host),
+			"status":      result.Healthy,
 			"credentials": getComponentCredentials(result.Name, env),
-			"health":     result.Status,
-			"latency_ms": result.Latency.Milliseconds(),
+			"health":      result.Status,
+			"latency_ms":  result.Latency.Milliseconds(),
 		}
 		if result.Error != "" {
 			component["error"] = result.Error
@@ -1324,6 +1326,10 @@ func getComponentURL(name, host string) string {
 	protocol := "http"
 	if name == "kubernetes-dashboard" {
 		protocol = "https"
+	}
+	// Minio uses a separate console URL
+	if name == "minio" {
+		return "http://minio-console.localtest.me"
 	}
 	return fmt.Sprintf("%s://%s", protocol, host)
 }
@@ -1485,6 +1491,7 @@ func (s *Server) startWorkflowScheduler() {
 }
 
 // stopWorkflowScheduler stops the background workflow scheduler
+//
 //nolint:unused // Reserved for future graceful shutdown implementation
 func (s *Server) stopWorkflowScheduler() {
 	if s.workflowTicker != nil {
@@ -1521,7 +1528,13 @@ func (s *Server) triggerDummyWorkflow() {
 
 // loadWorkflowFromFile loads a workflow definition from a YAML file
 func (s *Server) loadWorkflowFromFile(filePath string) (*types.Workflow, error) {
-	data, err := os.ReadFile(filePath)
+	// Validate file path to prevent path traversal
+	cleanPath, err := security.SafeFilePath(filePath, "./workflows", "./data")
+	if err != nil {
+		return nil, fmt.Errorf("invalid workflow path: %w", err)
+	}
+
+	data, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workflow file: %w", err)
 	}
@@ -1558,7 +1571,7 @@ func (s *Server) handleAnalyzeWorkflow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// Parse Score specification
 	var spec types.ScoreSpec
@@ -1611,7 +1624,7 @@ func (s *Server) handleAnalyzeWorkflowPreview(w http.ResponseWriter, r *http.Req
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// Check for empty body
 	if len(body) == 0 {
@@ -1637,9 +1650,9 @@ func (s *Server) handleAnalyzeWorkflowPreview(w http.ResponseWriter, r *http.Req
 	preview := map[string]interface{}{
 		"summary": analysis.Summary,
 		"executionPlan": map[string]interface{}{
-			"totalTime":    analysis.ExecutionPlan.TotalTime.String(),
-			"phases":       len(analysis.ExecutionPlan.Phases),
-			"maxParallel":  analysis.ExecutionPlan.MaxParallel,
+			"totalTime":   analysis.ExecutionPlan.TotalTime.String(),
+			"phases":      len(analysis.ExecutionPlan.Phases),
+			"maxParallel": analysis.ExecutionPlan.MaxParallel,
 		},
 		"resourceGraph": map[string]interface{}{
 			"nodes": len(analysis.ResourceGraph.Nodes),
@@ -1835,7 +1848,15 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 
 	// Load golden path workflow
 	workflowFile := fmt.Sprintf("./workflows/%s.yaml", goldenPathName)
-	workflowData, err := os.ReadFile(workflowFile)
+
+	// Validate workflow path to prevent path traversal
+	cleanPath, err := security.SafeFilePath(workflowFile, "./workflows")
+	if err != nil {
+		http.Error(w, "Invalid workflow path", http.StatusBadRequest)
+		return
+	}
+
+	workflowData, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Golden path '%s' not found", goldenPathName), http.StatusNotFound)
 		return
@@ -1916,10 +1937,10 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := map[string]interface{}{
-		"message":      fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name),
-		"application":  spec.Metadata.Name,
-		"golden_path":  goldenPathName,
-		"workflow_id":  nil,
+		"message":     fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name),
+		"application": spec.Metadata.Name,
+		"golden_path": goldenPathName,
+		"workflow_id": nil,
 	}
 
 	if workflowExecution != nil {
@@ -1963,7 +1984,7 @@ func (s *Server) executeGoldenPathWorkflowWithResources(workflow *types.Workflow
 
 		// Execute the step
 		stepContext := &StepExecutionContext{
-			StepID:      &stepRecord.ID,
+			StepID:       &stepRecord.ID,
 			WorkflowRepo: s.workflowRepo,
 		}
 		err := s.runWorkflowStepWithTracking(step, spec.Metadata.Name, "default", stepContext)
@@ -2000,7 +2021,7 @@ func (s *Server) executeBasicGoldenPathWorkflow(workflow *types.Workflow, spec *
 
 		// For basic workflow, create minimal context without database tracking
 		stepContext := &StepExecutionContext{
-			StepID:      nil, // No database tracking for basic workflow
+			StepID:       nil, // No database tracking for basic workflow
 			WorkflowRepo: nil,
 		}
 		err := s.runWorkflowStepWithTracking(step, spec.Metadata.Name, "default", stepContext)
@@ -2032,6 +2053,17 @@ func substituteVariables(step *types.Step, appName string, envType string) {
 	step.TargetPath = replacer.Replace(step.TargetPath)
 	step.Owner = replacer.Replace(step.Owner)
 	step.SyncPolicy = replacer.Replace(step.SyncPolicy)
+	step.OutputDir = replacer.Replace(step.OutputDir)
+	step.WorkingDir = replacer.Replace(step.WorkingDir)
+
+	// Substitute in variables map
+	if step.Variables != nil {
+		for key, value := range step.Variables {
+			if strValue, ok := value.(string); ok {
+				step.Variables[key] = replacer.Replace(strValue)
+			}
+		}
+	}
 }
 
 // runWorkflowStepWithTracking executes a single workflow step with real command execution and output capture
@@ -2050,12 +2082,15 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 	}
 
 	// Log step start
-	if _, err := logBuffer.Write([]byte(fmt.Sprintf("Starting step: %s (type: %s)", step.Name, step.Type))); err != nil {
+	if _, err := fmt.Fprintf(logBuffer, "Starting step: %s (type: %s)", step.Name, step.Type); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
 	}
 
 	// Execute the step based on its type
 	switch step.Type {
+	case "terraform-generate":
+		fmt.Printf("   📝 Executing Terraform Generate step: %s\n", step.Name)
+		return s.executeTerraformGenerateStep(step, appName, envType, logBuffer)
 	case "terraform":
 		fmt.Printf("   🏗️  Executing Terraform step: %s\n", step.Name)
 		return s.executeTerraformStep(step, appName, envType, logBuffer)
@@ -2082,7 +2117,7 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 		return s.executeDummyStep(step, appName, envType, logBuffer)
 	default:
 		fmt.Printf("   ❓ Executing unknown step type: %s\n", step.Type)
-		if _, err := logBuffer.Write([]byte(fmt.Sprintf("Warning: Unknown step type '%s', skipping execution", step.Type))); err != nil {
+		if _, err := fmt.Fprintf(logBuffer, "Warning: Unknown step type '%s', skipping execution", step.Type); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to write log: %v\n", err)
 		}
 		return nil
@@ -2123,13 +2158,155 @@ func (s *Server) executeCommand(command string, args []string, workDir string, l
 	return nil
 }
 
+// executeTerraformGenerateStep generates Terraform code from Score resources
+func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
+	_, _ = fmt.Fprintf(logBuffer, "Generating Terraform code for: %s", step.Name)
+
+	// Get output directory from step (supports variable substitution)
+	outputDir := step.OutputDir
+	if outputDir == "" {
+		outputDir = fmt.Sprintf("workspaces/%s/terraform", appName)
+	}
+
+	// Get resource type to generate
+	resourceType := step.Resource
+	if resourceType == "" && step.Config != nil {
+		if rt, ok := step.Config["resource"].(string); ok {
+			resourceType = rt
+		}
+	}
+
+	if resourceType == "" {
+		errMsg := "terraform-generate requires 'resource' field (e.g., 's3', 'postgres')"
+		_, _ = logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("terraform-generate requires 'resource' field (e.g., 's3', 'postgres')")
+	}
+
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0750); err != nil {
+		errMsg := fmt.Sprintf("Failed to create output directory: %v", err)
+		_, _ = logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Output directory: %s", outputDir)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Resource type: %s", resourceType)))
+
+	// Generate Terraform code based on resource type
+	switch resourceType {
+	case "s3", "minio-s3-bucket":
+		return s.generateS3BucketTerraform(outputDir, appName, step, logBuffer)
+	case "postgres", "postgresql":
+		errMsg := "PostgreSQL Terraform generation not yet implemented"
+		_, _ = logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("PostgreSQL Terraform generation not yet implemented")
+	default:
+		errMsg := fmt.Sprintf("Unsupported resource type for terraform generation: %s", resourceType)
+		_, _ = logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("unsupported resource type for terraform generation: %s", resourceType)
+	}
+}
+
+// generateS3BucketTerraform generates Terraform code for Minio S3 bucket
+func (s *Server) generateS3BucketTerraform(outputDir, appName string, step types.Step, logBuffer *LogBuffer) error {
+	_, _ = logBuffer.Write([]byte("Generating Minio S3 bucket Terraform configuration"))
+
+	// Get variables from step
+	variables := step.Variables
+	if variables == nil {
+		variables = make(map[string]interface{})
+	}
+
+	// Extract Minio configuration
+	bucketName, _ := variables["bucket_name"].(string)
+	if bucketName == "" {
+		bucketName = fmt.Sprintf("%s-storage", appName)
+	}
+
+	minioEndpoint, _ := variables["minio_endpoint"].(string)
+	if minioEndpoint == "" {
+		minioEndpoint = "http://minio.minio-system.svc.cluster.local:9000"
+	}
+
+	minioUser, _ := variables["minio_user"].(string)
+	if minioUser == "" {
+		minioUser = "minioadmin"
+	}
+
+	minioPassword, _ := variables["minio_password"].(string)
+	if minioPassword == "" {
+		minioPassword = "minioadmin"
+	}
+
+	// Strip protocol from endpoint for Minio provider (it expects just host:port)
+	minioServer := strings.TrimPrefix(minioEndpoint, "http://")
+	minioServer = strings.TrimPrefix(minioServer, "https://")
+
+	// Generate main.tf
+	mainTf := fmt.Sprintf(`terraform {
+  required_providers {
+    minio = {
+      source  = "aminueza/minio"
+      version = "~> 2.0"
+    }
+  }
+}
+
+provider "minio" {
+  minio_server   = "%s"
+  minio_user     = "%s"
+  minio_password = "%s"
+  minio_ssl      = false
+}
+
+resource "minio_s3_bucket" "bucket" {
+  bucket = "%s"
+  acl    = "private"
+}
+
+output "bucket_name" {
+  value = minio_s3_bucket.bucket.bucket
+}
+
+output "minio_url" {
+  value = "%s"
+}
+
+output "endpoint" {
+  value = "%s/${minio_s3_bucket.bucket.bucket}"
+}
+
+output "bucket_arn" {
+  value = "arn:aws:s3:::${minio_s3_bucket.bucket.bucket}"
+}
+`, minioServer, minioUser, minioPassword, bucketName, minioEndpoint, minioEndpoint)
+
+	// Write main.tf
+	mainTfPath := filepath.Join(outputDir, "main.tf")
+	if err := os.WriteFile(mainTfPath, []byte(mainTf), 0600); err != nil {
+		errMsg := fmt.Sprintf("Failed to write main.tf: %v", err)
+		_, _ = logBuffer.Write([]byte(errMsg))
+		return fmt.Errorf("failed to write main.tf: %w", err)
+	}
+
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Generated Terraform configuration: %s", mainTfPath)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Bucket name: %s", bucketName)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Minio endpoint: %s", minioEndpoint)))
+
+	return nil
+}
+
 // executeTerraformStep executes a terraform workflow step
 func (s *Server) executeTerraformStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	workDir := fmt.Sprintf("./terraform/%s-%s", appName, envType)
+	// Use workingDir from step config if provided, otherwise use default
+	workDir := step.WorkingDir
+	if workDir == "" {
+		workDir = fmt.Sprintf("./terraform/%s-%s", appName, envType)
+	}
 
 	// Create workspace directory if it doesn't exist
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
-		err = os.MkdirAll(workDir, 0755)
+		err = os.MkdirAll(workDir, 0750)
 		if err != nil {
 			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create workspace directory: %v", err)))
 			return err
@@ -2173,7 +2350,7 @@ func (s *Server) executeKubernetesStep(step types.Step, appName string, envType 
 	err := s.executeCommand("kubectl", []string{"create", "namespace", namespace}, "", logBuffer)
 	if err != nil {
 		// Namespace might already exist, which is fine
-		logBuffer.Write([]byte("Namespace may already exist, continuing..."))
+		_, _ = logBuffer.Write([]byte("Namespace may already exist, continuing..."))
 	}
 
 	// Generate and apply kubernetes manifests (simplified for now)
@@ -2202,9 +2379,9 @@ spec:
         - containerPort: 80
 `, appName, namespace, appName, appName)
 
-	err = os.WriteFile(manifestPath, []byte(manifest), 0644)
+	err = os.WriteFile(manifestPath, []byte(manifest), 0600)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to write manifest file: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write manifest file: %v", err)))
 		return err
 	}
 
@@ -2218,12 +2395,12 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 		repoName = fmt.Sprintf("%s-%s", appName, envType)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Creating Gitea repository: %s", repoName)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating Gitea repository: %s", repoName)))
 
 	// Load admin configuration
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
 		return fmt.Errorf("failed to load admin config: %w", err)
 	}
 
@@ -2258,7 +2435,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
 		return fmt.Errorf("failed to create repository: %w", err)
 	}
 	defer resp.Body.Close()
@@ -2267,7 +2444,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 
 	// If org doesn't exist (404), create under user account instead
 	if resp.StatusCode == 404 {
-		logBuffer.Write([]byte(fmt.Sprintf("Organization '%s' not found, creating repository under user account", owner)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Organization '%s' not found, creating repository under user account", owner)))
 		createURL = fmt.Sprintf("%s/api/v1/user/repos", adminConfig.Gitea.URL)
 		owner = adminConfig.Gitea.Username
 
@@ -2281,7 +2458,7 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 
 		resp, err = client.Do(req)
 		if err != nil {
-			logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
+			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
 			return fmt.Errorf("failed to create repository: %w", err)
 		}
 		defer resp.Body.Close()
@@ -2290,13 +2467,13 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	}
 
 	if resp.StatusCode == 409 {
-		logBuffer.Write([]byte("Repository already exists, continuing..."))
+		_, _ = logBuffer.Write([]byte("Repository already exists, continuing..."))
 	} else if resp.StatusCode != 201 {
 		errMsg := fmt.Sprintf("Failed to create repository, status %d: %s", resp.StatusCode, string(body))
-		logBuffer.Write([]byte(errMsg))
+		_, _ = logBuffer.Write([]byte(errMsg))
 		return fmt.Errorf("failed to create repository, status %d: %s", resp.StatusCode, string(body))
 	} else {
-		logBuffer.Write([]byte("Repository created successfully"))
+		_, _ = logBuffer.Write([]byte("Repository created successfully"))
 	}
 
 	// Clone repository locally for manifest commits
@@ -2309,11 +2486,11 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	// Clone repository
 	err = s.executeCommand("git", []string{"clone", repoURL, repoDir}, "", logBuffer)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to clone repository: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to clone repository: %v", err)))
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Repository cloned to: %s", repoDir)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Repository cloned to: %s", repoDir)))
 	return nil
 }
 
@@ -2324,12 +2501,12 @@ func (s *Server) executeArgoCDStep(step types.Step, appName string, envType stri
 		appNameArgo = fmt.Sprintf("%s-%s", appName, envType)
 	}
 
-	logBuffer.Write([]byte(fmt.Sprintf("Creating ArgoCD application: %s", appNameArgo)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating ArgoCD application: %s", appNameArgo)))
 
 	// Load admin configuration to get Gitea URL
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
 		return fmt.Errorf("failed to load admin config: %w", err)
 	}
 
@@ -2379,9 +2556,9 @@ spec:
 `, appNameArgo, repoURL, targetPath, namespace)
 
 	manifestPath := fmt.Sprintf("/tmp/%s-argocd-app.yaml", appNameArgo)
-	err = os.WriteFile(manifestPath, []byte(manifest), 0644)
+	err = os.WriteFile(manifestPath, []byte(manifest), 0600)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to write ArgoCD manifest: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write ArgoCD manifest: %v", err)))
 		return err
 	}
 
@@ -2392,7 +2569,7 @@ spec:
 func (s *Server) executeGitCommitStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
 	repoDir := fmt.Sprintf("/tmp/%s-%s-repo", appName, envType)
 
-	logBuffer.Write([]byte(fmt.Sprintf("Committing manifests to repository in %s", repoDir)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Committing manifests to repository in %s", repoDir)))
 
 	// Create manifests directory if it doesn't exist
 	manifestDir := fmt.Sprintf("%s/%s", repoDir, step.ManifestPath)
@@ -2400,9 +2577,9 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 		manifestDir = fmt.Sprintf("%s/manifests", repoDir)
 	}
 
-	err := os.MkdirAll(manifestDir, 0755)
+	err := os.MkdirAll(manifestDir, 0750)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Failed to create manifest directory: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create manifest directory: %v", err)))
 		return err
 	}
 
@@ -2412,7 +2589,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 
 	err = s.executeCommand("cp", []string{manifestPath, destPath}, "", logBuffer)
 	if err != nil {
-		logBuffer.Write([]byte(fmt.Sprintf("Warning: Failed to copy manifests: %v", err)))
+		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Warning: Failed to copy manifests: %v", err)))
 	}
 
 	// Add files
@@ -2430,7 +2607,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 	err = s.executeCommand("git", []string{"commit", "-m", commitMessage}, repoDir, logBuffer)
 	if err != nil {
 		// Ignore error if nothing to commit
-		logBuffer.Write([]byte("No changes to commit or commit failed"))
+		_, _ = logBuffer.Write([]byte("No changes to commit or commit failed"))
 	}
 
 	// Push
@@ -2452,10 +2629,10 @@ func (s *Server) executeAnsibleStep(step types.Step, appName string, envType str
 
 // executePolicyStep executes a policy validation step
 func (s *Server) executePolicyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	logBuffer.Write([]byte(fmt.Sprintf("Executing policy validation for %s in %s environment", appName, envType)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Executing policy validation for %s in %s environment", appName, envType)))
 
 	// Simulate policy execution (would integrate with OPA, Gatekeeper, etc.)
-	logBuffer.Write([]byte("Policy validation simulated - would require integration with policy engine"))
+	_, _ = logBuffer.Write([]byte("Policy validation simulated - would require integration with policy engine"))
 	time.Sleep(1 * time.Second)
 
 	return nil
@@ -2485,7 +2662,7 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 			err := s.resourceManager.ProvisionResource(resource.ID, "golden-path-provisioner",
 				map[string]interface{}{
 					"provisioned_via": "golden_path_workflow",
-					"workflow_type": "deploy-app",
+					"workflow_type":   "deploy-app",
 				}, username)
 			if err != nil {
 				fmt.Printf("❌ Failed to provision resource %s: %v\n", resource.ResourceName, err)
@@ -2501,23 +2678,23 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 
 // executeDummyStep executes a dummy workflow step with logging for testing purposes
 func (s *Server) executeDummyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	logBuffer.Write([]byte("INFO: This is a dummy workflow for testing the logging system"))
-	logBuffer.Write([]byte(fmt.Sprintf("Executing dummy step '%s' for application: %s", step.Name, appName)))
-	logBuffer.Write([]byte(fmt.Sprintf("Environment: %s", envType)))
+	_, _ = logBuffer.Write([]byte("INFO: This is a dummy workflow for testing the logging system"))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Executing dummy step '%s' for application: %s", step.Name, appName)))
+	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Environment: %s", envType)))
 
 	// Simulate some processing time with multiple log entries
-	logBuffer.Write([]byte("Step 1: Initializing dummy process..."))
+	_, _ = logBuffer.Write([]byte("Step 1: Initializing dummy process..."))
 	time.Sleep(500 * time.Millisecond)
 
-	logBuffer.Write([]byte("Step 2: Processing dummy data..."))
-	logBuffer.Write([]byte("INFO: Dummy workflow is demonstrating log capture functionality"))
+	_, _ = logBuffer.Write([]byte("Step 2: Processing dummy data..."))
+	_, _ = logBuffer.Write([]byte("INFO: Dummy workflow is demonstrating log capture functionality"))
 	time.Sleep(500 * time.Millisecond)
 
-	logBuffer.Write([]byte("Step 3: Finalizing dummy process..."))
+	_, _ = logBuffer.Write([]byte("Step 3: Finalizing dummy process..."))
 	time.Sleep(300 * time.Millisecond)
 
-	logBuffer.Write([]byte("SUCCESS: Dummy workflow step completed successfully"))
-	logBuffer.Write([]byte("This log message confirms the enhanced logging system is working"))
+	_, _ = logBuffer.Write([]byte("SUCCESS: Dummy workflow step completed successfully"))
+	_, _ = logBuffer.Write([]byte("This log message confirms the enhanced logging system is working"))
 
 	return nil
 }

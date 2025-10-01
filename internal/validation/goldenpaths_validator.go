@@ -2,9 +2,11 @@ package validation
 
 import (
 	"fmt"
-	"os"
 	"innominatus/internal/goldenpaths"
+	"innominatus/internal/security"
 	"innominatus/internal/types"
+	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,10 +19,7 @@ type GoldenPathsValidator struct {
 // NewGoldenPathsValidator creates a new golden paths validator
 func NewGoldenPathsValidator(configPath string) (*GoldenPathsValidator, error) {
 	// Use default path if not provided
-	_ = configPath // Parameter kept for interface compatibility
-	if configPath == "" {
-		configPath = "goldenpaths.yaml"
-	}
+	_ = configPath // Parameter kept for interface compatibility but not used
 
 	config, err := goldenpaths.LoadGoldenPaths()
 	if err != nil {
@@ -91,8 +90,13 @@ func (v *GoldenPathsValidator) validateGoldenPaths(result *ValidationResult) {
 }
 
 func (v *GoldenPathsValidator) validateWorkflowFile(pathName, workflowFile string, result *ValidationResult) error {
+	// Validate workflow path to prevent path traversal
+	if err := security.ValidateWorkflowPath(workflowFile); err != nil {
+		return fmt.Errorf("invalid workflow path: %w", err)
+	}
+
 	// Read and parse workflow file
-	data, err := os.ReadFile(workflowFile)
+	data, err := os.ReadFile(filepath.Clean(workflowFile))
 	if err != nil {
 		return fmt.Errorf("cannot read workflow file: %w", err)
 	}

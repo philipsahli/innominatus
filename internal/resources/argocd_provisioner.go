@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/database"
+	"innominatus/internal/security"
 	"io"
 	"net/http"
 	"time"
@@ -140,7 +141,7 @@ func (ap *ArgoCDProvisioner) Provision(resource *database.ResourceInstance, conf
 	if err != nil {
 		return fmt.Errorf("failed to create application: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -190,7 +191,7 @@ func (ap *ArgoCDProvisioner) Deprovision(resource *database.ResourceInstance) er
 	if err != nil {
 		return fmt.Errorf("failed to delete application: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 && resp.StatusCode != 404 {
 		body, _ := io.ReadAll(resp.Body)
@@ -240,7 +241,7 @@ func (ap *ArgoCDProvisioner) GetStatus(resource *database.ResourceInstance) (map
 		status["error"] = fmt.Sprintf("failed to get application: %v", err)
 		return status, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 404 {
 		status["state"] = "not_found"
@@ -286,12 +287,17 @@ func (ap *ArgoCDProvisioner) authenticateArgoCD(argoCDURL, username, password st
 		return "", fmt.Errorf("failed to marshal login data: %w", err)
 	}
 
+	// Validate URL to prevent SSRF attacks
+	if err := security.ValidateArgoCDURL(argoCDURL); err != nil {
+		return "", fmt.Errorf("invalid ArgoCD URL: %w", err)
+	}
+
 	loginURL := fmt.Sprintf("%s/api/v1/session", argoCDURL)
-	resp, err := http.Post(loginURL, "application/json", bytes.NewReader(loginJSON))
+	resp, err := http.Post(loginURL, "application/json", bytes.NewReader(loginJSON)) // #nosec G107 - URL validated above
 	if err != nil {
 		return "", fmt.Errorf("failed to authenticate: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)

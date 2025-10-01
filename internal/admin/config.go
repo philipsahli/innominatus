@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"innominatus/internal/security"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -51,12 +52,17 @@ type AdminConfig struct {
 }
 
 func LoadAdminConfig(configPath string) (*AdminConfig, error) {
+	// Validate config path to prevent path traversal
+	if err := security.ValidateConfigPath(configPath); err != nil {
+		return nil, fmt.Errorf("invalid config path: %w", err)
+	}
+
 	// Check if file exists
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to read config file: %s", configPath)
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) // #nosec G304 - path validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}

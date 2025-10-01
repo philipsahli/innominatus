@@ -220,7 +220,7 @@ func (r *WorkflowRepository) GetWorkflowSteps(workflowID int64) ([]*WorkflowStep
 	if err != nil {
 		return nil, fmt.Errorf("failed to query workflow steps: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var steps []*WorkflowStepExecution
 	for rows.Next() {
@@ -316,7 +316,7 @@ func (r *WorkflowRepository) ListWorkflowExecutions(appName string, limit, offse
 	if err != nil {
 		return nil, fmt.Errorf("failed to query workflow executions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var executions []*WorkflowExecutionSummary
 	for rows.Next() {

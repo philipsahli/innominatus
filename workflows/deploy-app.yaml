@@ -15,10 +15,10 @@ spec:
       type: terraform-generate
       if: "resources.s3-bucket != null"
       resource: s3
-      outputDir: workspaces/${metadata.name}/terraform
+      outputDir: workspaces/${metadata.name}-${environment.type}/terraform
       variables:
         bucket_name: ${metadata.name}-storage
-        minio_endpoint: http://minio.minio-system.svc.cluster.local:9000
+        minio_endpoint: http://minio.localtest.me
         minio_user: minioadmin
         minio_password: minioadmin
 
@@ -26,7 +26,7 @@ spec:
       type: terraform
       if: "resources.s3-bucket != null"
       operation: apply
-      workingDir: workspaces/${metadata.name}/terraform
+      workingDir: workspaces/${metadata.name}-${environment.type}/terraform
       outputs:
         - minio_url
         - bucket_name

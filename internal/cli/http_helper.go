@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 )
 
@@ -57,7 +56,7 @@ func (h *HTTPHelper) doRequest(method, path string, body io.Reader, contentType 
 	defer resp.Body.Close()
 
 	// Read response body
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
@@ -126,7 +125,7 @@ func (h *HTTPHelper) doRequestWithStatus(method, path string, body io.Reader, co
 	defer resp.Body.Close()
 
 	// Read response body
-	respBody, err := ioutil.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}

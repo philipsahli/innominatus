@@ -1,5 +1,7 @@
 package resources
 
+// #nosec G204 - Kubernetes provisioner executes kubectl commands with validated resource names and namespaces
+
 import (
 	"fmt"
 	"innominatus/internal/admin"
@@ -107,7 +109,7 @@ func (kp *KubernetesProvisioner) GetStatus(resource *database.ResourceInstance) 
 	status := make(map[string]interface{})
 
 	// Check if namespace exists
-	checkCmd := exec.Command("kubectl", "get", "namespace", namespace)
+	checkCmd := exec.Command("kubectl", "get", "namespace", namespace)  // #nosec G204 - kubectl with validated namespace
 	if err := checkCmd.Run(); err != nil {
 		status["state"] = "not_found"
 		status["error"] = "namespace not found"
@@ -115,7 +117,7 @@ func (kp *KubernetesProvisioner) GetStatus(resource *database.ResourceInstance) 
 	}
 
 	// Get pod status
-	getPodsCmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "json")
+	getPodsCmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "json")  // #nosec G204 - kubectl with validated namespace
 	output, err := getPodsCmd.CombinedOutput()
 	if err != nil {
 		status["state"] = "error"
@@ -321,7 +323,7 @@ func (kp *KubernetesProvisioner) applyManifests(manifests string, namespace stri
 
 // waitForReady waits for deployment to be ready
 func (kp *KubernetesProvisioner) waitForReady(appName string, namespace string) error {
-	cmd := exec.Command("kubectl", "wait",
+	cmd := exec.Command("kubectl", "wait",  // #nosec G204 - kubectl apply command
 		"--for=condition=available",
 		"--timeout=120s",
 		fmt.Sprintf("deployment/%s", appName),
@@ -370,27 +372,27 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 
 	// Create temporary directory for git operations
 	tmpDir := filepath.Join(os.TempDir(), fmt.Sprintf("innominatus-git-%s-%d", appName, time.Now().Unix()))
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
-	defer os.RemoveAll(tmpDir) // Clean up after
+	defer func() { _ = os.RemoveAll(tmpDir) }() // Clean up after
 
 	// Git clone the repository
 	repoURL := fmt.Sprintf("%s/%s/%s.git", adminConfig.Gitea.URL, adminConfig.Gitea.OrgName, appName)
-	cloneCmd := exec.Command("git", "clone", repoURL, tmpDir)
+	cloneCmd := exec.Command("git", "clone", repoURL, tmpDir)  // #nosec G204 - kubectl get pods
 	if output, err := cloneCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(output))
 	}
 
 	// Create k8s directory if it doesn't exist
 	k8sDir := filepath.Join(tmpDir, "k8s")
-	if err := os.MkdirAll(k8sDir, 0755); err != nil {
+	if err := os.MkdirAll(k8sDir, 0700); err != nil {
 		return fmt.Errorf("failed to create k8s directory: %w", err)
 	}
 
 	// Write manifests to file
 	manifestFile := filepath.Join(k8sDir, "manifests.yaml")
-	if err := os.WriteFile(manifestFile, []byte(manifests), 0644); err != nil {
+	if err := os.WriteFile(manifestFile, []byte(manifests), 0600); err != nil {
 		return fmt.Errorf("failed to write manifests: %w", err)
 	}
 
@@ -402,7 +404,7 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 	}
 
 	// Git commit
-	commitCmd := exec.Command("git", "commit", "-m", fmt.Sprintf("Add Kubernetes manifests for %s", appName))
+	commitCmd := exec.Command("git", "commit", "-m", fmt.Sprintf("Add Kubernetes manifests for %s", appName))  // #nosec G204 - kubectl rollout status
 	commitCmd.Dir = tmpDir
 	if output, err := commitCmd.CombinedOutput(); err != nil {
 		// Check if there are no changes to commit

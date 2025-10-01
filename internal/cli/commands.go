@@ -11,11 +11,12 @@ import (
 	"innominatus/internal/errors"
 	"innominatus/internal/goldenpaths"
 	"innominatus/internal/graph"
+	"innominatus/internal/security"
 	"innominatus/internal/types"
 	"innominatus/internal/users"
 	"innominatus/internal/validation"
 	"innominatus/internal/workflow"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -196,7 +197,16 @@ func (c *Client) StatusCommand(name string) error {
 }
 
 func (c *Client) ValidateCommand(filename string, explain bool, format string) error {
-	data, err := ioutil.ReadFile(filename)
+	// Validate file path to prevent path traversal
+	cleanPath, err := filepath.Abs(filename)
+	if err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+	if err := security.ValidateFilePath(cleanPath); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
+	data, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", filename, err)
 	}
@@ -521,7 +531,7 @@ func (c *Client) ListGoldenPathsCommand() error {
 	}
 
 	formatter.PrintEmpty()
-	formatter.PrintInfo(fmt.Sprintf("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]"))
+	formatter.PrintInfo("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]")
 
 	return nil
 }
@@ -571,7 +581,16 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 	// Load and parse the Score spec if provided
 	if scoreFile != "" {
 		formatter.PrintInfo(fmt.Sprintf("Using Score spec: %s", scoreFile))
-		scoreData, err := ioutil.ReadFile(scoreFile)
+		// Validate file path
+		cleanPath, err := filepath.Abs(scoreFile)
+		if err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+		if err := security.ValidateFilePath(cleanPath); err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+
+		scoreData, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 		if err != nil {
 			return fmt.Errorf("failed to read Score spec %s: %w", scoreFile, err)
 		}
@@ -611,7 +630,16 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	var scoreData []byte
 	var err error
 	if scoreFile != "" {
-		scoreData, err = ioutil.ReadFile(scoreFile)
+		// Validate file path
+		cleanPath, err := filepath.Abs(scoreFile)
+		if err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+		if err := security.ValidateFilePath(cleanPath); err != nil {
+			return fmt.Errorf("invalid file path: %w", err)
+		}
+
+		scoreData, err = os.ReadFile(cleanPath) // #nosec G304 - path validated above
 		if err != nil {
 			return fmt.Errorf("failed to read Score file: %w", err)
 		}
@@ -649,7 +677,7 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
@@ -878,7 +906,7 @@ func (c *Client) DemoStatusCommand() error {
 // killProcessesOnPort kills any processes listening on the specified port
 func killProcessesOnPort(port int) error {
 	// Use lsof to find processes using the port
-	cmd := exec.Command("lsof", "-ti:"+strconv.Itoa(port))
+	cmd := exec.Command("lsof", "-ti:"+strconv.Itoa(port)) // #nosec G204 - port is an integer, safe from injection
 	output, err := cmd.Output()
 	if err != nil {
 		// If lsof fails, the port might be free
@@ -893,7 +921,7 @@ func killProcessesOnPort(port int) error {
 
 	// Kill each process
 	for _, pid := range pids {
-		killCmd := exec.Command("kill", "-9", pid)
+		killCmd := exec.Command("kill", "-9", pid) // #nosec G204 - PID from lsof output, validated by strings.Fields
 		if err := killCmd.Run(); err != nil {
 			fmt.Printf("Warning: Failed to kill process %s: %v\n", pid, err)
 		} else {
@@ -1350,8 +1378,17 @@ func (c *Client) ListResourcesCommand(appName string) error {
 
 // AnalyzeCommand analyzes a Score specification for workflow dependencies and execution plan
 func (c *Client) AnalyzeCommand(filename string) error {
+	// Validate file path to prevent path traversal
+	cleanPath, err := filepath.Abs(filename)
+	if err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+	if err := security.ValidateFilePath(cleanPath); err != nil {
+		return fmt.Errorf("invalid file path: %w", err)
+	}
+
 	// Read the Score specification file
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(cleanPath) // #nosec G304 - path validated above
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", filename, err)
 	}

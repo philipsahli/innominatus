@@ -6,11 +6,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 	"innominatus/internal/admin"
 	"innominatus/internal/database"
 	"innominatus/internal/server"
 	"innominatus/internal/validation"
-	"strings"
 )
 
 func fileExists(path string) bool {
@@ -69,7 +70,7 @@ func main() {
 			if err != nil {
 				fmt.Printf("Warning: Failed to initialize database schema: %v\n", err)
 				fmt.Println("Starting server without database features...")
-				db.Close()
+				_ = db.Close()
 				srv = server.NewServer()
 			} else {
 				fmt.Println("Database connected successfully")
@@ -180,5 +181,13 @@ func main() {
 	fmt.Println("  DB_NAME (default: idp_orchestrator)")
 	fmt.Println("  DB_SSLMODE (default: disable)")
 
-	log.Fatal(http.ListenAndServe(addr, nil))
+	// Create HTTP server with proper timeouts to prevent resource exhaustion
+	httpServer := &http.Server{
+		Addr:         addr,
+		Handler:      nil,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	log.Fatal(httpServer.ListenAndServe())
 }

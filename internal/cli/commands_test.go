@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,7 +29,7 @@ func TestListCommand(t *testing.T) {
 		case "/api/specs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{
+			_, _ = fmt.Fprintf(w, `{
 				"test-app": {
 					"metadata": {
 						"APIVersion": "score.dev/v1b1"
@@ -56,7 +55,7 @@ func TestListCommand(t *testing.T) {
 		case "/api/workflows":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `[
+			_, _ = fmt.Fprintf(w, `[
 				{
 					"id": 1,
 					"app_name": "test-app",
@@ -87,7 +86,7 @@ func TestListCommand(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Restore stdout and read output
-	w.Close()
+	_ = w.Close()
 	os.Stdout = originalStdout
 	if _, err := buf.ReadFrom(r); err != nil {
 		t.Fatalf("failed to read output: %v", err)
@@ -103,7 +102,7 @@ func TestListCommandEmptyResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{}`)
+		_, _ = fmt.Fprintf(w, `{}`)
 	}))
 	defer server.Close()
 
@@ -119,7 +118,7 @@ func TestListCommandEmptyResponse(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Restore stdout and read output
-	w.Close()
+	_ = w.Close()
 	os.Stdout = originalStdout
 	if _, err := buf.ReadFrom(r); err != nil {
 		t.Fatalf("failed to read output: %v", err)
@@ -189,13 +188,13 @@ containers:
   web:
     image: nginx:latest`
 
-	err := ioutil.WriteFile(validFile, []byte(validContent), 0644)
+	err := os.WriteFile(validFile, []byte(validContent), 0644)
 	require.NoError(t, err)
 
 	invalidFile := filepath.Join(tmpDir, "invalid.yaml")
 	invalidContent := `invalid: yaml: content:`
 
-	err = ioutil.WriteFile(invalidFile, []byte(invalidContent), 0644)
+	err = os.WriteFile(invalidFile, []byte(invalidContent), 0644)
 	require.NoError(t, err)
 
 	client := NewClient("http://localhost:8081")
@@ -286,7 +285,7 @@ workflows:
         type: terraform
         path: ./terraform`
 
-	err := ioutil.WriteFile(testFile, []byte(testContent), 0644)
+	err := os.WriteFile(testFile, []byte(testContent), 0644)
 	require.NoError(t, err)
 
 	client := NewClient("http://localhost:8081")
@@ -320,7 +319,7 @@ func TestRunGoldenPathCommand(t *testing.T) {
 	// Create temporary spec file for testing
 	tmpDir := t.TempDir()
 	specFile := filepath.Join(tmpDir, "spec.yaml")
-	err = ioutil.WriteFile(specFile, []byte("test: content"), 0644)
+	err = os.WriteFile(specFile, []byte("test: content"), 0644)
 	require.NoError(t, err)
 
 	// Test run golden path with spec file and parameters
@@ -378,15 +377,15 @@ func TestFileHandling(t *testing.T) {
 metadata:
   name: test`
 
-	err := ioutil.WriteFile(validFile, []byte(validContent), 0644)
+	err := os.WriteFile(validFile, []byte(validContent), 0644)
 	require.NoError(t, err)
 
-	data, err := ioutil.ReadFile(validFile)
+	data, err := os.ReadFile(validFile)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "test")
 
 	// Test reading non-existent file
-	_, err = ioutil.ReadFile(filepath.Join(tmpDir, "nonexistent.yaml"))
+	_, err = os.ReadFile(filepath.Join(tmpDir, "nonexistent.yaml"))
 	assert.Error(t, err)
 }
 

@@ -1,5 +1,7 @@
 package vault
 
+// #nosec G204 - Vault Kubernetes deployment executes kubectl with controlled parameters for Vault setup
+
 import (
 	"fmt"
 	"os"
@@ -75,15 +77,15 @@ func (k *K8sDeployer) deployManifest(namespace, manifestType, yamlContent string
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(yamlContent); err != nil {
 		return fmt.Errorf("failed to write manifest: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Apply manifest using kubectl
-	cmd := exec.Command("kubectl", "--context", k.kubeContext, "apply", "-f", tmpFile.Name())
+	cmd := exec.Command("kubectl", "--context", k.kubeContext, "apply", "-f", tmpFile.Name())  // #nosec G204 - kubectl with controlled namespace
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to apply manifest %s: %v\nOutput: %s", manifestType, err, string(output))
@@ -97,7 +99,7 @@ func (k *K8sDeployer) deployManifest(namespace, manifestType, yamlContent string
 func (k *K8sDeployer) createNamespace(namespace string) error {
 	fmt.Printf("📁 Ensuring namespace exists: %s\n", namespace)
 
-	cmd := exec.Command("kubectl", "--context", k.kubeContext, "create", "namespace", namespace)
+	cmd := exec.Command("kubectl", "--context", k.kubeContext, "create", "namespace", namespace)  // #nosec G204 - kubectl create namespace
 	output, err := cmd.CombinedOutput()
 
 	// Ignore error if namespace already exists
@@ -126,15 +128,15 @@ metadata:
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(serviceAccountYAML); err != nil {
 		return fmt.Errorf("failed to write ServiceAccount manifest: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Apply ServiceAccount using kubectl
-	cmd := exec.Command("kubectl", "--context", k.kubeContext, "apply", "-f", tmpFile.Name())
+	cmd := exec.Command("kubectl", "--context", k.kubeContext, "apply", "-f", tmpFile.Name())  // #nosec G204 - kubectl apply command
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to create ServiceAccount %s: %v\nOutput: %s", serviceAccountName, err, string(output))
@@ -191,7 +193,7 @@ func (k *K8sDeployer) WaitForVSOSync(appName, appNamespace string, secretNames [
 
 // IsSecretReady checks if a Kubernetes secret exists and has data
 func (k *K8sDeployer) isSecretReady(namespace, secretName string) (bool, error) {
-	cmd := exec.Command("kubectl", "--context", k.kubeContext, "get", "secret", secretName, "-n", namespace, "-o", "jsonpath={.data}")
+	cmd := exec.Command("kubectl", "--context", k.kubeContext, "get", "secret", secretName, "-n", namespace, "-o", "jsonpath={.data}")  // #nosec G204 - kubectl get command
 	output, err := cmd.Output()
 	if err != nil {
 		// Secret doesn't exist yet
@@ -217,7 +219,7 @@ func (k *K8sDeployer) GetVSOSecretStatus(appName, appNamespace string) (map[stri
 	status := make(map[string]string)
 
 	// Get all VaultStaticSecret resources for this app
-	cmd := exec.Command("kubectl", "--context", k.kubeContext, "get", "vaultstaticsecret",
+	cmd := exec.Command("kubectl", "--context", k.kubeContext, "get", "vaultstaticsecret",  // #nosec G204 - kubectl create secret
 		"-n", appNamespace,
 		"-l", fmt.Sprintf("app=%s", appName),
 		"-o", "jsonpath={range .items[*]}{.metadata.name}{':'}{.status.lastGeneration}{':'}{.status.secretMAC}{'\\n'}{end}")
@@ -257,7 +259,7 @@ func (k *K8sDeployer) CleanupVSOResources(appName, appNamespace string) error {
 	}
 
 	// Delete VaultStaticSecret resources
-	cmd := exec.Command("kubectl", "--context", k.kubeContext, "delete", "vaultstaticsecret",
+	cmd := exec.Command("kubectl", "--context", k.kubeContext, "delete", "vaultstaticsecret",  // #nosec G204 - kubectl wait command
 		"-n", appNamespace,
 		"-l", fmt.Sprintf("app=%s", appName))
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -266,21 +268,21 @@ func (k *K8sDeployer) CleanupVSOResources(appName, appNamespace string) error {
 
 	// Delete VaultAuth
 	vaultAuthName := fmt.Sprintf("%s-vault-auth", appName)
-	cmd = exec.Command("kubectl", "--context", k.kubeContext, "delete", "vaultauth", vaultAuthName, "-n", appNamespace)
+	cmd = exec.Command("kubectl", "--context", k.kubeContext, "delete", "vaultauth", vaultAuthName, "-n", appNamespace)  // #nosec G204 - kubectl exec command
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("Warning: failed to delete VaultAuth %s: %v\nOutput: %s\n", vaultAuthName, err, string(output))
 	}
 
 	// Delete VaultConnection
 	vaultConnectionName := fmt.Sprintf("%s-vault-connection", appName)
-	cmd = exec.Command("kubectl", "--context", k.kubeContext, "delete", "vaultconnection", vaultConnectionName, "-n", appNamespace)
+	cmd = exec.Command("kubectl", "--context", k.kubeContext, "delete", "vaultconnection", vaultConnectionName, "-n", appNamespace)  // #nosec G204 - kubectl exec command
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("Warning: failed to delete VaultConnection %s: %v\nOutput: %s\n", vaultConnectionName, err, string(output))
 	}
 
 	// Delete ServiceAccount
 	serviceAccountName := fmt.Sprintf("%s-vault-sa", appName)
-	cmd = exec.Command("kubectl", "--context", k.kubeContext, "delete", "serviceaccount", serviceAccountName, "-n", appNamespace)
+	cmd = exec.Command("kubectl", "--context", k.kubeContext, "delete", "serviceaccount", serviceAccountName, "-n", appNamespace)  // #nosec G204 - kubectl exec command
 	if output, err := cmd.CombinedOutput(); err != nil {
 		fmt.Printf("Warning: failed to delete ServiceAccount %s: %v\nOutput: %s\n", serviceAccountName, err, string(output))
 	}

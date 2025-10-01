@@ -148,7 +148,7 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resource instances: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var resources []*ResourceInstance
 	for rows.Next() {
@@ -267,7 +267,7 @@ func (r *ResourceRepository) GetResourceStateTransitions(resourceID int64, limit
 	if err != nil {
 		return nil, fmt.Errorf("failed to get state transitions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var transitions []*ResourceStateTransition
 	for rows.Next() {
