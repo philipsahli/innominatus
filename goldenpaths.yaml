@@ -1,6 +1,54 @@
 goldenpaths:
-  deploy-app: ./workflows/deploy-app.yaml
-  undeploy-app: ./workflows/undeploy-app.yaml
-  ephemeral-env: ./workflows/ephemeral-env.yaml
-  db-lifecycle: ./workflows/db-lifecycle.yaml
-  observability-setup: ./workflows/observability-setup.yaml
+  deploy-app:
+    workflow: ./workflows/deploy-app.yaml
+    description: Deploy application with full GitOps pipeline including Git repository and ArgoCD onboarding
+    category: deployment
+    tags: [deployment, gitops, argocd, production]
+    estimated_duration: 5-10 minutes
+    required_params: []
+    optional_params:
+      sync_policy: auto
+      namespace_prefix: ""
+
+  undeploy-app:
+    workflow: ./workflows/undeploy-app.yaml
+    description: Remove deployed application and clean up all associated resources
+    category: cleanup
+    tags: [cleanup, teardown, removal]
+    estimated_duration: 2-5 minutes
+    required_params: []
+    optional_params: {}
+
+  ephemeral-env:
+    workflow: ./workflows/ephemeral-env.yaml
+    description: Create temporary environment for testing with automatic TTL-based cleanup
+    category: environment
+    tags: [testing, ephemeral, temporary, preview]
+    estimated_duration: 3-7 minutes
+    required_params: []
+    optional_params:
+      ttl: 2h
+      environment_type: preview
+
+  db-lifecycle:
+    workflow: ./workflows/db-lifecycle.yaml
+    description: Manage database operations including backup, migration, and health checks
+    category: database
+    tags: [database, backup, migration, maintenance]
+    estimated_duration: 5-15 minutes
+    required_params: []
+    optional_params:
+      operation: health-check
+      backup_retention: 7d
+
+  observability-setup:
+    workflow: ./workflows/observability-setup.yaml
+    description: Setup monitoring and observability stack with metrics, logs, and tracing
+    category: observability
+    tags: [monitoring, observability, metrics, logging, tracing]
+    estimated_duration: 10-20 minutes
+    required_params: []
+    optional_params:
+      enable_metrics: "true"
+      enable_logs: "true"
+      enable_tracing: "false"

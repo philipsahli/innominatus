@@ -226,8 +226,27 @@ goldenpaths:
 
 **Golden Path Commands:**
 - List available paths: `./innominatus-ctl list-goldenpaths`
-- Run a path: `./innominatus-ctl run <path-name> [score-spec.yaml]`
+- Run a path: `./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]`
 - Workflows are executed locally without requiring server authentication
+
+**Golden Path Metadata:**
+Golden paths support rich metadata including descriptions, tags, categories, and configurable parameters:
+- **Description**: Human-readable explanation of what the path does
+- **Category**: Grouping (deployment, cleanup, environment, database, observability)
+- **Tags**: Searchable keywords for filtering
+- **Estimated Duration**: Expected completion time
+- **Parameters**: Required and optional parameters with defaults
+
+Example with parameters:
+```bash
+# Override optional parameters
+./innominatus-ctl run ephemeral-env score-spec.yaml --param ttl=4h --param environment_type=staging
+
+# List shows all metadata and parameters
+./innominatus-ctl list-goldenpaths
+```
+
+See [docs/GOLDEN_PATHS_METADATA.md](docs/GOLDEN_PATHS_METADATA.md) for detailed documentation.
 
 ### Demo Environment
 

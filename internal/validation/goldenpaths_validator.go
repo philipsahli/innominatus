@@ -62,7 +62,7 @@ func (v *GoldenPathsValidator) GetComponent() string {
 }
 
 func (v *GoldenPathsValidator) validateGoldenPaths(result *ValidationResult) {
-	for pathName, workflowFile := range v.config.GoldenPaths {
+	for pathName := range v.config.GoldenPaths {
 		// Validate path name format
 		if err := ValidateRegex("goldenPath.name", pathName,
 			`^[a-z][a-z0-9\-]*[a-z0-9]$`, "lowercase alphanumeric with hyphens"); err != nil {
@@ -70,14 +70,21 @@ func (v *GoldenPathsValidator) validateGoldenPaths(result *ValidationResult) {
 			continue
 		}
 
+		// Get metadata which contains the workflow file
+		metadata, err := v.config.GetMetadata(pathName)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("Golden path '%s': failed to get metadata: %s", pathName, err.Error()))
+			continue
+		}
+
 		// Validate workflow file exists
-		if err := ValidateFileExists(workflowFile); err != nil {
+		if err := ValidateFileExists(metadata.WorkflowFile); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Golden path '%s': %s", pathName, err.Error()))
 			continue
 		}
 
 		// Validate workflow file content
-		if err := v.validateWorkflowFile(pathName, workflowFile, result); err != nil {
+		if err := v.validateWorkflowFile(pathName, metadata.WorkflowFile, result); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("Golden path '%s': %s", pathName, err.Error()))
 		}
 	}

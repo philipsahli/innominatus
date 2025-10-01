@@ -454,7 +454,7 @@ func (c *Client) deleteUserCommand(username string) error {
 	return nil
 }
 
-// ListGoldenPathsCommand lists all available golden paths
+// ListGoldenPathsCommand lists all available golden paths with metadata
 func (c *Client) ListGoldenPathsCommand() error {
 	formatter := NewOutputFormatter()
 	config, err := goldenpaths.LoadGoldenPaths()
@@ -468,17 +468,66 @@ func (c *Client) ListGoldenPathsCommand() error {
 		return nil
 	}
 
-	formatter.PrintHeader("Available Golden Paths:")
+	formatter.PrintHeader(fmt.Sprintf("Available Golden Paths (%d):", len(paths)))
+
 	for _, pathName := range paths {
-		workflowFile := config.GoldenPaths[pathName]
-		formatter.PrintItem(1, SymbolWorkflow, fmt.Sprintf("%s %s %s", pathName, SymbolArrow, workflowFile))
+		metadata, err := config.GetMetadata(pathName)
+		if err != nil {
+			formatter.PrintWarning(fmt.Sprintf("Failed to load metadata for '%s': %v", pathName, err))
+			continue
+		}
+
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolWorkflow, pathName)
+
+		// Description
+		if metadata.Description != "" {
+			formatter.PrintKeyValue(1, "Description", metadata.Description)
+		}
+
+		// Workflow file
+		formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
+
+		// Category and duration
+		if metadata.Category != "" {
+			formatter.PrintKeyValue(1, "Category", metadata.Category)
+		}
+		if metadata.EstimatedDuration != "" {
+			formatter.PrintKeyValue(1, "Duration", metadata.EstimatedDuration)
+		}
+
+		// Tags
+		if len(metadata.Tags) > 0 {
+			formatter.PrintKeyValue(1, "Tags", strings.Join(metadata.Tags, ", "))
+		}
+
+		// Required parameters
+		if len(metadata.RequiredParams) > 0 {
+			formatter.PrintSection(1, "", "Required Parameters:")
+			for _, param := range metadata.RequiredParams {
+				formatter.PrintItem(2, SymbolBullet, param)
+			}
+		}
+
+		// Optional parameters with defaults
+		if len(metadata.OptionalParams) > 0 {
+			formatter.PrintSection(1, "", "Optional Parameters:")
+			for param, defaultValue := range metadata.OptionalParams {
+				formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s (default: %s)", param, defaultValue))
+			}
+		}
+
+		formatter.PrintDivider(0)
 	}
+
+	formatter.PrintEmpty()
+	formatter.PrintInfo(fmt.Sprintf("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]"))
 
 	return nil
 }
 
-// RunGoldenPathCommand executes a golden path workflow
-func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
+// RunGoldenPathCommand executes a golden path workflow with parameter overrides
+func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params map[string]string) error {
 	formatter := NewOutputFormatter()
 
 	// Load golden paths configuration
@@ -487,8 +536,8 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
 		return fmt.Errorf("failed to load golden paths: %w", err)
 	}
 
-	// Get workflow file for the specified golden path
-	workflowFile, err := config.GetWorkflowFile(pathName)
+	// Get metadata for the golden path
+	metadata, err := config.GetMetadata(pathName)
 	if err != nil {
 		return err
 	}
@@ -498,7 +547,26 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	formatter.PrintInfo(fmt.Sprintf("Running golden path '%s' with workflow: %s", pathName, workflowFile))
+	// Validate required parameters
+	if err := config.ValidateParameters(pathName, params); err != nil {
+		return fmt.Errorf("parameter validation failed: %w", err)
+	}
+
+	// Merge with defaults for optional parameters
+	finalParams, err := config.GetParametersWithDefaults(pathName, params)
+	if err != nil {
+		return fmt.Errorf("failed to merge parameters: %w", err)
+	}
+
+	formatter.PrintInfo(fmt.Sprintf("Running golden path '%s' with workflow: %s", pathName, metadata.WorkflowFile))
+
+	// Show active parameters if any
+	if len(finalParams) > 0 {
+		formatter.PrintSection(0, "", "Active Parameters:")
+		for key, value := range finalParams {
+			formatter.PrintKeyValue(1, key, value)
+		}
+	}
 
 	// Load and parse the Score spec if provided
 	if scoreFile != "" {
@@ -518,7 +586,8 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string) error {
 	}
 
 	// Execute the workflow using the existing RunWorkflow function
-	err = c.runWorkflow(workflowFile, scoreFile)
+	// TODO: Pass finalParams to runWorkflow for parameter substitution in workflow steps
+	err = c.runWorkflow(metadata.WorkflowFile, scoreFile)
 	if err != nil {
 		return fmt.Errorf("failed to execute golden path workflow: %w", err)
 	}

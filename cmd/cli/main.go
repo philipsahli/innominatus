@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"innominatus/internal/cli"
 	"innominatus/internal/users"
 	"innominatus/internal/validation"
@@ -152,15 +153,48 @@ func main() {
 	case "run":
 		if len(flag.Args()) < 2 {
 			fmt.Fprintf(os.Stderr, "Error: run command requires a golden path name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s run <golden-path-name> [score-spec.yaml]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "Usage: %s run <golden-path-name> [score-spec.yaml] [--param key=value ...]\n", os.Args[0])
 			os.Exit(1)
 		}
+
+		// Parse run-specific flags
+		runFlags := flag.NewFlagSet("run", flag.ContinueOnError)
+		runFlags.SetOutput(os.Stderr)
+
+		// Define --param flag for parameter overrides
+		var params []string
+		runFlags.Func("param", "Parameter override (key=value)", func(s string) error {
+			params = append(params, s)
+			return nil
+		})
+
+		// Parse flags after the golden path name
 		goldenPath := flag.Args()[1]
 		scoreFile := ""
-		if len(flag.Args()) >= 3 {
-			scoreFile = flag.Args()[2]
+		remainingArgs := flag.Args()[2:]
+
+		// Parse flags
+		if err := runFlags.Parse(remainingArgs); err != nil {
+			os.Exit(1)
 		}
-		err = client.RunGoldenPathCommand(goldenPath, scoreFile)
+
+		// Check for score file (first non-flag argument)
+		if runFlags.NArg() > 0 {
+			scoreFile = runFlags.Arg(0)
+		}
+
+		// Parse parameters into map
+		paramMap := make(map[string]string)
+		for _, param := range params {
+			parts := strings.SplitN(param, "=", 2)
+			if len(parts) != 2 {
+				fmt.Fprintf(os.Stderr, "Error: invalid parameter format '%s'. Use key=value\n", param)
+				os.Exit(1)
+			}
+			paramMap[parts[0]] = parts[1]
+		}
+
+		err = client.RunGoldenPathCommand(goldenPath, scoreFile, paramMap)
 
 	case "demo-time":
 		err = client.DemoTimeCommand()
