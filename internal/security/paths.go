@@ -36,10 +36,10 @@ func ValidateFilePath(path string, allowedBases ...string) error {
 		return fmt.Errorf("path traversal detected: '..' not allowed in paths")
 	}
 
-	// Check for suspicious patterns
-	if strings.Contains(cleanPath, "~") {
-		return fmt.Errorf("path traversal detected: '~' not allowed in paths")
-	}
+	// Note: We don't reject '~' because:
+	// 1. filepath.Clean() does not expand '~' (no security risk)
+	// 2. Users may legitimately want to specify home directory paths in CLI
+	// 3. The '~' character itself is not a path traversal vulnerability
 
 	return nil
 }
