@@ -33,9 +33,9 @@ updates:
       prefix: "ci"
       include: "scope"
 
-  # Enable version updates for Node.js (v2 frontend)
+  # Enable version updates for Node.js (web-ui frontend)
   - package-ecosystem: "npm"
-    directory: "/v2"
+    directory: "/web-ui"
     schedule:
       interval: "weekly"
       day: "monday"
