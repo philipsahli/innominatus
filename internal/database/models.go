@@ -10,16 +10,16 @@ import (
 // Workflow definitions/templates are stored as YAML files (e.g., workflows/deploy-app.yaml)
 // while executions are runtime instances stored in the database.
 type WorkflowExecution struct {
-	ID              int64     `json:"id" db:"id"`
-	ApplicationName string    `json:"application_name" db:"application_name"`
-	WorkflowName    string    `json:"workflow_name" db:"workflow_name"`    // References the template name
-	Status          string    `json:"status" db:"status"`
-	StartedAt       time.Time `json:"started_at" db:"started_at"`
+	ID              int64      `json:"id" db:"id"`
+	ApplicationName string     `json:"application_name" db:"application_name"`
+	WorkflowName    string     `json:"workflow_name" db:"workflow_name"` // References the template name
+	Status          string     `json:"status" db:"status"`
+	StartedAt       time.Time  `json:"started_at" db:"started_at"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
-	ErrorMessage    *string   `json:"error_message,omitempty" db:"error_message"`
-	TotalSteps      int       `json:"total_steps" db:"total_steps"`
-	CreatedAt       time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+	ErrorMessage    *string    `json:"error_message,omitempty" db:"error_message"`
+	TotalSteps      int        `json:"total_steps" db:"total_steps"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
 
 	// Related data (not stored in DB directly)
 	Steps []*WorkflowStepExecution `json:"steps,omitempty"`
@@ -112,7 +112,7 @@ func (c *WorkflowStepConfigJSON) Scan(value interface{}) error {
 		*c = nil
 		return nil
 	}
-	
+
 	switch v := value.(type) {
 	case []byte:
 		return json.Unmarshal(v, c)
@@ -141,23 +141,23 @@ type ResourceInstance struct {
 	ErrorMessage        *string                `json:"error_message,omitempty" db:"error_message"`
 
 	// Related data (not stored in DB directly)
-	Dependencies        []string                     `json:"dependencies,omitempty"`
-	StateTransitions    []*ResourceStateTransition   `json:"state_transitions,omitempty"`
+	Dependencies     []string                   `json:"dependencies,omitempty"`
+	StateTransitions []*ResourceStateTransition `json:"state_transitions,omitempty"`
 }
 
 // ResourceLifecycleState represents the current state of a resource
 type ResourceLifecycleState string
 
 const (
-	ResourceStateRequested     ResourceLifecycleState = "requested"
-	ResourceStateProvisioning  ResourceLifecycleState = "provisioning"
-	ResourceStateActive        ResourceLifecycleState = "active"
-	ResourceStateScaling       ResourceLifecycleState = "scaling"
-	ResourceStateUpdating      ResourceLifecycleState = "updating"
-	ResourceStateDegraded      ResourceLifecycleState = "degraded"
-	ResourceStateTerminating   ResourceLifecycleState = "terminating"
-	ResourceStateTerminated    ResourceLifecycleState = "terminated"
-	ResourceStateFailed        ResourceLifecycleState = "failed"
+	ResourceStateRequested    ResourceLifecycleState = "requested"
+	ResourceStateProvisioning ResourceLifecycleState = "provisioning"
+	ResourceStateActive       ResourceLifecycleState = "active"
+	ResourceStateScaling      ResourceLifecycleState = "scaling"
+	ResourceStateUpdating     ResourceLifecycleState = "updating"
+	ResourceStateDegraded     ResourceLifecycleState = "degraded"
+	ResourceStateTerminating  ResourceLifecycleState = "terminating"
+	ResourceStateTerminated   ResourceLifecycleState = "terminated"
+	ResourceStateFailed       ResourceLifecycleState = "failed"
 )
 
 // ResourceStateTransition tracks state changes for audit trail
@@ -186,10 +186,10 @@ type ResourceHealthCheck struct {
 
 // ResourceDependency tracks dependencies between resources
 type ResourceDependency struct {
-	ID                 int64  `json:"id" db:"id"`
-	ResourceInstanceID int64  `json:"resource_instance_id" db:"resource_instance_id"`
-	DependsOnID        int64  `json:"depends_on_id" db:"depends_on_id"`
-	DependencyType     string `json:"dependency_type" db:"dependency_type"` // hard, soft, optional
+	ID                 int64     `json:"id" db:"id"`
+	ResourceInstanceID int64     `json:"resource_instance_id" db:"resource_instance_id"`
+	DependsOnID        int64     `json:"depends_on_id" db:"depends_on_id"`
+	DependencyType     string    `json:"dependency_type" db:"dependency_type"` // hard, soft, optional
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
 }
 

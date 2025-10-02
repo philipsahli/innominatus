@@ -342,7 +342,7 @@ innominatus supports admin-level configuration through `admin-config.yaml`:
 ```yaml
 admin:
   defaultCostCenter: "engineering"
-  defaultRuntime: "kubernetes" 
+  defaultRuntime: "kubernetes"
   splunkIndex: "orchestrator-logs"
 
 resourceDefinitions:

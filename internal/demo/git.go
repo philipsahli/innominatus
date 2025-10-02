@@ -1,4 +1,5 @@
 package demo
+
 // #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
@@ -12,11 +13,11 @@ import (
 
 // GitManager handles Git operations for the demo environment
 type GitManager struct {
-	giteaURL     string
-	username     string
-	password     string
-	repoName     string
-	workDir      string
+	giteaURL string
+	username string
+	password string
+	repoName string
+	workDir  string
 }
 
 // NewGitManager creates a new Git manager
@@ -45,7 +46,7 @@ func (g *GitManager) SeedRepository() error {
 		return fmt.Errorf("failed to create temp directory: %v", err)
 	}
 	g.workDir = workDir
-	defer os.RemoveAll(workDir)
+	defer func() { _ = os.RemoveAll(workDir) }()
 
 	// Check if repository already exists
 	repoExists, err := g.checkRepositoryExists()
@@ -79,7 +80,7 @@ func (g *GitManager) waitForGitea() error {
 		}
 
 		// Try to access Gitea
-		cmd := exec.Command("curl", "-f", "-s", fmt.Sprintf("http://%s/api/v1/version", g.giteaURL))  // #nosec G204 - curl command with controlled gitea URL
+		cmd := exec.Command("curl", "-f", "-s", fmt.Sprintf("http://%s/api/v1/version", g.giteaURL)) // #nosec G204 - curl command with controlled gitea URL
 		if err := cmd.Run(); err == nil {
 			fmt.Printf("✅ Gitea is ready\n")
 			return nil
@@ -96,7 +97,7 @@ func (g *GitManager) checkRepositoryExists() (bool, error) {
 	repoURL := fmt.Sprintf("http://%s:%s@%s/%s/%s.git",
 		g.username, g.password, g.giteaURL, g.username, g.repoName)
 
-	cmd := exec.Command("git", "ls-remote", repoURL)  // #nosec G204 - git command with controlled parameters
+	cmd := exec.Command("git", "ls-remote", repoURL) // #nosec G204 - git command with controlled parameters
 	err := cmd.Run()
 	return err == nil, nil
 }
@@ -218,7 +219,7 @@ func (g *GitManager) createGiteaRepository() error {
 		"auto_init": false
 	}`, g.repoName)
 
-	cmd := exec.Command("curl", "-X", "POST",  // #nosec G204 - git commands with controlled repository
+	cmd := exec.Command("curl", "-X", "POST", // #nosec G204 - git commands with controlled repository
 		"-H", "Content-Type: application/json",
 		"-u", fmt.Sprintf("%s:%s", g.username, g.password),
 		"-d", payload,

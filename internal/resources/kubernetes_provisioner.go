@@ -109,7 +109,7 @@ func (kp *KubernetesProvisioner) GetStatus(resource *database.ResourceInstance) 
 	status := make(map[string]interface{})
 
 	// Check if namespace exists
-	checkCmd := exec.Command("kubectl", "get", "namespace", namespace)  // #nosec G204 - kubectl with validated namespace
+	checkCmd := exec.Command("kubectl", "get", "namespace", namespace) // #nosec G204 - kubectl with validated namespace
 	if err := checkCmd.Run(); err != nil {
 		status["state"] = "not_found"
 		status["error"] = "namespace not found"
@@ -117,7 +117,7 @@ func (kp *KubernetesProvisioner) GetStatus(resource *database.ResourceInstance) 
 	}
 
 	// Get pod status
-	getPodsCmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "json")  // #nosec G204 - kubectl with validated namespace
+	getPodsCmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "json") // #nosec G204 - kubectl with validated namespace
 	output, err := getPodsCmd.CombinedOutput()
 	if err != nil {
 		status["state"] = "error"
@@ -323,7 +323,7 @@ func (kp *KubernetesProvisioner) applyManifests(manifests string, namespace stri
 
 // waitForReady waits for deployment to be ready
 func (kp *KubernetesProvisioner) waitForReady(appName string, namespace string) error {
-	cmd := exec.Command("kubectl", "wait",  // #nosec G204 - kubectl apply command
+	cmd := exec.Command("kubectl", "wait", // #nosec G204 - kubectl apply command
 		"--for=condition=available",
 		"--timeout=120s",
 		fmt.Sprintf("deployment/%s", appName),
@@ -379,7 +379,7 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 
 	// Git clone the repository
 	repoURL := fmt.Sprintf("%s/%s/%s.git", adminConfig.Gitea.URL, adminConfig.Gitea.OrgName, appName)
-	cloneCmd := exec.Command("git", "clone", repoURL, tmpDir)  // #nosec G204 - kubectl get pods
+	cloneCmd := exec.Command("git", "clone", repoURL, tmpDir) // #nosec G204 - kubectl get pods
 	if output, err := cloneCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(output))
 	}
@@ -404,7 +404,7 @@ func (kp *KubernetesProvisioner) commitManifestsToGit(appName, namespace, manife
 	}
 
 	// Git commit
-	commitCmd := exec.Command("git", "commit", "-m", fmt.Sprintf("Add Kubernetes manifests for %s", appName))  // #nosec G204 - kubectl rollout status
+	commitCmd := exec.Command("git", "commit", "-m", fmt.Sprintf("Add Kubernetes manifests for %s", appName)) // #nosec G204 - kubectl rollout status
 	commitCmd.Dir = tmpDir
 	if output, err := commitCmd.CombinedOutput(); err != nil {
 		// Check if there are no changes to commit

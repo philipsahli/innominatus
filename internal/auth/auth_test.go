@@ -237,4 +237,3 @@ func TestAuthServiceConfig(t *testing.T) {
 	assert.Equal(t, "https://accounts.google.com/o/oauth2/auth", service.config.Endpoint.AuthURL)
 	assert.Equal(t, "https://oauth2.googleapis.com/token", service.config.Endpoint.TokenURL)
 }
-

@@ -51,14 +51,14 @@ func (r *WorkflowRepository) UpdateWorkflowExecution(id int64, status string, er
 
 	if status == WorkflowStatusCompleted || status == WorkflowStatusFailed {
 		query = `
-			UPDATE workflow_executions 
+			UPDATE workflow_executions
 			SET status = $1, completed_at = NOW(), error_message = $2
 			WHERE id = $3
 		`
 		args = []interface{}{status, errorMessage, id}
 	} else {
 		query = `
-			UPDATE workflow_executions 
+			UPDATE workflow_executions
 			SET status = $1, error_message = $2
 			WHERE id = $3
 		`
@@ -116,7 +116,7 @@ func (r *WorkflowRepository) UpdateWorkflowStepStatus(stepID int64, status strin
 	switch status {
 	case StepStatusRunning:
 		query = `
-			UPDATE workflow_step_executions 
+			UPDATE workflow_step_executions
 			SET status = $1, started_at = $2, error_message = $3
 			WHERE id = $4
 		`
@@ -124,17 +124,17 @@ func (r *WorkflowRepository) UpdateWorkflowStepStatus(stepID int64, status strin
 	case StepStatusCompleted, StepStatusFailed:
 		// Calculate duration if step has started_at
 		query = `
-			UPDATE workflow_step_executions 
+			UPDATE workflow_step_executions
 			SET status = $1, completed_at = $2, error_message = $3,
-			    duration_ms = CASE WHEN started_at IS NOT NULL 
-			                      THEN EXTRACT(EPOCH FROM ($2 - started_at)) * 1000 
+			    duration_ms = CASE WHEN started_at IS NOT NULL
+			                      THEN EXTRACT(EPOCH FROM ($2 - started_at)) * 1000
 			                      ELSE NULL END
 			WHERE id = $4
 		`
 		args = []interface{}{status, now, errorMessage, stepID}
 	default:
 		query = `
-			UPDATE workflow_step_executions 
+			UPDATE workflow_step_executions
 			SET status = $1, error_message = $2
 			WHERE id = $3
 		`
@@ -152,7 +152,7 @@ func (r *WorkflowRepository) UpdateWorkflowStepStatus(stepID int64, status strin
 // AddWorkflowStepLogs adds output logs to a workflow step
 func (r *WorkflowRepository) AddWorkflowStepLogs(stepID int64, logs string) error {
 	query := `
-		UPDATE workflow_step_executions 
+		UPDATE workflow_step_executions
 		SET output_logs = COALESCE(output_logs, '') || $1
 		WHERE id = $2
 	`
@@ -168,7 +168,7 @@ func (r *WorkflowRepository) AddWorkflowStepLogs(stepID int64, logs string) erro
 // GetWorkflowExecution retrieves a workflow execution by ID
 func (r *WorkflowRepository) GetWorkflowExecution(id int64) (*WorkflowExecution, error) {
 	query := `
-		SELECT id, application_name, workflow_name, status, started_at, completed_at, 
+		SELECT id, application_name, workflow_name, status, started_at, completed_at,
 		       error_message, total_steps, created_at, updated_at
 		FROM workflow_executions
 		WHERE id = $1
@@ -269,7 +269,7 @@ func (r *WorkflowRepository) ListWorkflowExecutions(appName string, limit, offse
 
 	if appName != "" {
 		query = `
-			SELECT we.id, we.application_name, we.workflow_name, we.status, we.started_at, 
+			SELECT we.id, we.application_name, we.workflow_name, we.status, we.started_at,
 			       we.completed_at, we.total_steps,
 			       COALESCE(step_stats.completed_steps, 0) as completed_steps,
 			       COALESCE(step_stats.failed_steps, 0) as failed_steps,
@@ -291,7 +291,7 @@ func (r *WorkflowRepository) ListWorkflowExecutions(appName string, limit, offse
 		args = []interface{}{appName, limit, offset}
 	} else {
 		query = `
-			SELECT we.id, we.application_name, we.workflow_name, we.status, we.started_at, 
+			SELECT we.id, we.application_name, we.workflow_name, we.status, we.started_at,
 			       we.completed_at, we.total_steps,
 			       COALESCE(step_stats.completed_steps, 0) as completed_steps,
 			       COALESCE(step_stats.failed_steps, 0) as failed_steps,

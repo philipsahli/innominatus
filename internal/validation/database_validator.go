@@ -3,8 +3,8 @@ package validation
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"innominatus/internal/database"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -134,7 +134,11 @@ func (v *DatabaseValidator) testConnectivity(result *ValidationResult) {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Failed to create database connection: %s - server will run without database features", err.Error()))
 		return
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("Warning: Failed to close database connection: %v\n", err)
+		}
+	}()
 
 	// Set connection timeout
 	db.SetConnMaxLifetime(5 * time.Second)
@@ -174,7 +178,11 @@ func (v *DatabaseValidator) validateSchema(result *ValidationResult) {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Cannot validate database schema: %s", err.Error()))
 		return
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			fmt.Printf("Warning: Failed to close database connection: %v\n", err)
+		}
+	}()
 
 	// Check if required tables exist
 	requiredTables := []string{"workflow_executions", "workflow_step_executions"}

@@ -88,6 +88,7 @@ func (m *MockWorkflowRepository) UpdateWorkflowStepStatus(stepID int64, status s
 		step.ErrorMessage = errorMsg
 	}
 
+	//nolint:staticcheck // Simple if statement is clearer for status check
 	// Track timing for parallel execution verification
 	if status == database.StepStatusRunning {
 		m.stepStartTimes[stepID] = time.Now()

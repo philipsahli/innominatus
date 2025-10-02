@@ -8,7 +8,7 @@
         module: copy
         content: "Web application configured successfully by Ansible!"
         dest: ./ansible/web_configured.txt
-        
+
     - name: Display web setup completion
       debug:
         msg: "Web application configuration completed successfully"

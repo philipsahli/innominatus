@@ -32,16 +32,16 @@ func ValidateCommand(command string) error {
 func ValidateCommandArgs(args []string) error {
 	// Check for dangerous patterns
 	dangerousPatterns := []string{
-		";",      // command chaining
-		"&&",     // command chaining
-		"||",     // command chaining
-		"|",      // piping (allow -| for kubectl)
-		"`",      // command substitution
-		"$(",     // command substitution
-		"<(",     // process substitution
-		">(",     // process substitution
-		"../",    // path traversal
-		"~/",     // home directory expansion
+		";",   // command chaining
+		"&&",  // command chaining
+		"||",  // command chaining
+		"|",   // piping (allow -| for kubectl)
+		"`",   // command substitution
+		"$(",  // command substitution
+		"<(",  // process substitution
+		">(",  // process substitution
+		"../", // path traversal
+		"~/",  // home directory expansion
 	}
 
 	for _, arg := range args {

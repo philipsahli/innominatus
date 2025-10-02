@@ -22,11 +22,11 @@ func GenerateTraceID() string {
 type contextKey string
 
 const (
-	traceIDKey  contextKey = "trace_id"
-	loggerKey   contextKey = "logger"
-	requestKey  contextKey = "request_id"
-	userIDKey   contextKey = "user_id"
-	operKey     contextKey = "operation"
+	traceIDKey contextKey = "trace_id"
+	loggerKey  contextKey = "logger"
+	requestKey contextKey = "request_id"
+	userIDKey  contextKey = "user_id"
+	operKey    contextKey = "operation"
 )
 
 // WithTraceID adds a trace ID to the context
@@ -96,9 +96,9 @@ func GetOperation(ctx context.Context) string {
 
 // ContextLogger wraps a logger with context information
 type ContextLogger struct {
-	logger  *Logger
-	ctx     context.Context
-	fields  map[string]interface{}
+	logger *Logger
+	ctx    context.Context
+	fields map[string]interface{}
 }
 
 // NewContextLogger creates a new context-aware logger

@@ -3,9 +3,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"innominatus/internal/database"
 	"net/http"
 	"os"
-	"innominatus/internal/database"
 	"strconv"
 	"strings"
 )
@@ -83,9 +83,9 @@ func (s *Server) HandleResourceTransition(w http.ResponseWriter, r *http.Request
 
 	// Parse request body
 	var req struct {
-		NewState    string                 `json:"new_state"`
-		Reason      string                 `json:"reason"`
-		Metadata    map[string]interface{} `json:"metadata,omitempty"`
+		NewState string                 `json:"new_state"`
+		Reason   string                 `json:"reason"`
+		Metadata map[string]interface{} `json:"metadata,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

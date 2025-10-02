@@ -73,18 +73,18 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 	// Cluster Health Dashboard JSON
 	dashboard := map[string]interface{}{
 		"dashboard": map[string]interface{}{
-			"id":    nil,
-			"title": "Kubernetes Cluster Health",
-			"tags":  []string{"kubernetes", "cluster", "health"},
+			"id":       nil,
+			"title":    "Kubernetes Cluster Health",
+			"tags":     []string{"kubernetes", "cluster", "health"},
 			"timezone": "browser",
 			"panels": []map[string]interface{}{
 				{
-					"id":        1,
-					"title":     "Cluster CPU Usage",
-					"type":      "stat",
+					"id":    1,
+					"title": "Cluster CPU Usage",
+					"type":  "stat",
 					"targets": []map[string]interface{}{
 						{
-							"expr": "100 - (avg(irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+							"expr":         "100 - (avg(irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
 							"legendFormat": "CPU Usage %",
 						},
 					},
@@ -103,12 +103,12 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 					},
 				},
 				{
-					"id":        2,
-					"title":     "Cluster Memory Usage",
-					"type":      "stat",
+					"id":    2,
+					"title": "Cluster Memory Usage",
+					"type":  "stat",
 					"targets": []map[string]interface{}{
 						{
-							"expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+							"expr":         "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
 							"legendFormat": "Memory Usage %",
 						},
 					},
@@ -127,12 +127,12 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 					},
 				},
 				{
-					"id":        3,
-					"title":     "Total Pods",
-					"type":      "stat",
+					"id":    3,
+					"title": "Total Pods",
+					"type":  "stat",
 					"targets": []map[string]interface{}{
 						{
-							"expr": "sum(kube_pod_info)",
+							"expr":         "sum(kube_pod_info)",
 							"legendFormat": "Total Pods",
 						},
 					},
@@ -144,12 +144,12 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 					},
 				},
 				{
-					"id":        4,
-					"title":     "Node Count",
-					"type":      "stat",
+					"id":    4,
+					"title": "Node Count",
+					"type":  "stat",
 					"targets": []map[string]interface{}{
 						{
-							"expr": "count(kube_node_info)",
+							"expr":         "count(kube_node_info)",
 							"legendFormat": "Nodes",
 						},
 					},
@@ -161,12 +161,12 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 					},
 				},
 				{
-					"id":        5,
-					"title":     "Pods by Namespace",
-					"type":      "piechart",
+					"id":    5,
+					"title": "Pods by Namespace",
+					"type":  "piechart",
 					"targets": []map[string]interface{}{
 						{
-							"expr": "count by (namespace) (kube_pod_info)",
+							"expr":         "count by (namespace) (kube_pod_info)",
 							"legendFormat": "{{namespace}}",
 						},
 					},
@@ -178,12 +178,12 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 					},
 				},
 				{
-					"id":        6,
-					"title":     "Pod Status",
-					"type":      "piechart",
+					"id":    6,
+					"title": "Pod Status",
+					"type":  "piechart",
 					"targets": []map[string]interface{}{
 						{
-							"expr": "count by (phase) (kube_pod_status_phase)",
+							"expr":         "count by (phase) (kube_pod_status_phase)",
 							"legendFormat": "{{phase}}",
 						},
 					},
@@ -224,7 +224,7 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 	if err != nil {
 		return fmt.Errorf("failed to send dashboard request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("failed to install dashboard, status: %d", resp.StatusCode)

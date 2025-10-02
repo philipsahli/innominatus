@@ -32,21 +32,21 @@ type AdminConfig struct {
 		Password string `yaml:"password"`
 	} `yaml:"argocd"`
 	WorkflowPolicies struct {
-		WorkflowsRoot                string   `yaml:"workflowsRoot"`
-		RequiredPlatformWorkflows    []string `yaml:"requiredPlatformWorkflows"`
-		AllowedProductWorkflows      []string `yaml:"allowedProductWorkflows"`
-		MaxWorkflowDuration          string   `yaml:"maxWorkflowDuration"`
-		MaxConcurrentWorkflows       int      `yaml:"maxConcurrentWorkflows"`
-		MaxStepsPerWorkflow          int      `yaml:"maxStepsPerWorkflow"`
-		AllowedStepTypes             []string `yaml:"allowedStepTypes"`
-		WorkflowOverrides struct {
+		WorkflowsRoot             string   `yaml:"workflowsRoot"`
+		RequiredPlatformWorkflows []string `yaml:"requiredPlatformWorkflows"`
+		AllowedProductWorkflows   []string `yaml:"allowedProductWorkflows"`
+		MaxWorkflowDuration       string   `yaml:"maxWorkflowDuration"`
+		MaxConcurrentWorkflows    int      `yaml:"maxConcurrentWorkflows"`
+		MaxStepsPerWorkflow       int      `yaml:"maxStepsPerWorkflow"`
+		AllowedStepTypes          []string `yaml:"allowedStepTypes"`
+		WorkflowOverrides         struct {
 			Platform bool `yaml:"platform"`
 			Product  bool `yaml:"product"`
 		} `yaml:"workflowOverrides"`
 		Security struct {
-			RequireApproval    []string `yaml:"requireApproval"`
-			AllowedExecutors   []string `yaml:"allowedExecutors"`
-			SecretsAccess      map[string]string `yaml:"secretsAccess"`
+			RequireApproval  []string          `yaml:"requireApproval"`
+			AllowedExecutors []string          `yaml:"allowedExecutors"`
+			SecretsAccess    map[string]string `yaml:"secretsAccess"`
 		} `yaml:"security"`
 	} `yaml:"workflowPolicies"`
 }

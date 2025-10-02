@@ -956,6 +956,7 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 	// Set HTTP status code based on health status
 	statusCode := http.StatusOK
+	//nolint:staticcheck // Simple if statement is clearer for health status check - QF1003
 	if healthResponse.Status == health.StatusUnhealthy {
 		statusCode = http.StatusServiceUnavailable
 	} else if healthResponse.Status == health.StatusDegraded {
@@ -2189,8 +2190,8 @@ func (s *Server) executeTerraformGenerateStep(step types.Step, appName string, e
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Output directory: %s", outputDir)))
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Resource type: %s", resourceType)))
+	_, _ = fmt.Fprintf(logBuffer, "Output directory: %s", outputDir)
+	_, _ = fmt.Fprintf(logBuffer, "Resource type: %s", resourceType)
 
 	// Generate Terraform code based on resource type
 	switch resourceType {
@@ -2289,9 +2290,9 @@ output "bucket_arn" {
 		return fmt.Errorf("failed to write main.tf: %w", err)
 	}
 
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Generated Terraform configuration: %s", mainTfPath)))
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Bucket name: %s", bucketName)))
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Minio endpoint: %s", minioEndpoint)))
+	_, _ = fmt.Fprintf(logBuffer, "Generated Terraform configuration: %s", mainTfPath)
+	_, _ = fmt.Fprintf(logBuffer, "Bucket name: %s", bucketName)
+	_, _ = fmt.Fprintf(logBuffer, "Minio endpoint: %s", minioEndpoint)
 
 	return nil
 }
@@ -2308,14 +2309,14 @@ func (s *Server) executeTerraformStep(step types.Step, appName string, envType s
 	if _, err := os.Stat(workDir); os.IsNotExist(err) {
 		err = os.MkdirAll(workDir, 0750)
 		if err != nil {
-			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create workspace directory: %v", err)))
+			_, _ = fmt.Fprintf(logBuffer, "Failed to create workspace directory: %v", err)
 			return err
 		}
 	}
 
 	// Copy terraform files from step.Path to workspace
 	if step.Path != "" {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Copying terraform files from %s to %s", step.Path, workDir)))
+		_, _ = fmt.Fprintf(logBuffer, "Copying terraform files from %s to %s", step.Path, workDir)
 		err := s.executeCommand("cp", []string{"-r", step.Path + "/.", workDir}, "", logBuffer)
 		if err != nil {
 			return err
@@ -2346,7 +2347,7 @@ func (s *Server) executeKubernetesStep(step types.Step, appName string, envType 
 	}
 
 	// Create namespace if it doesn't exist
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating namespace: %s", namespace)))
+	_, _ = fmt.Fprintf(logBuffer, "Creating namespace: %s", namespace)
 	err := s.executeCommand("kubectl", []string{"create", "namespace", namespace}, "", logBuffer)
 	if err != nil {
 		// Namespace might already exist, which is fine
@@ -2381,7 +2382,7 @@ spec:
 
 	err = os.WriteFile(manifestPath, []byte(manifest), 0600)
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write manifest file: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to write manifest file: %v", err)
 		return err
 	}
 
@@ -2395,12 +2396,12 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 		repoName = fmt.Sprintf("%s-%s", appName, envType)
 	}
 
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating Gitea repository: %s", repoName)))
+	_, _ = fmt.Fprintf(logBuffer, "Creating Gitea repository: %s", repoName)
 
 	// Load admin configuration
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to load admin config: %v", err)
 		return fmt.Errorf("failed to load admin config: %w", err)
 	}
 
@@ -2435,16 +2436,16 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to create repository: %v", err)
 		return fmt.Errorf("failed to create repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
 	// If org doesn't exist (404), create under user account instead
 	if resp.StatusCode == 404 {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Organization '%s' not found, creating repository under user account", owner)))
+		_, _ = fmt.Fprintf(logBuffer, "Organization '%s' not found, creating repository under user account", owner)
 		createURL = fmt.Sprintf("%s/api/v1/user/repos", adminConfig.Gitea.URL)
 		owner = adminConfig.Gitea.Username
 
@@ -2458,10 +2459,10 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 
 		resp, err = client.Do(req)
 		if err != nil {
-			_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create repository: %v", err)))
+			_, _ = fmt.Fprintf(logBuffer, "Failed to create repository: %v", err)
 			return fmt.Errorf("failed to create repository: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, _ = io.ReadAll(resp.Body)
 	}
@@ -2486,11 +2487,11 @@ func (s *Server) executeGiteaRepoStep(step types.Step, appName string, envType s
 	// Clone repository
 	err = s.executeCommand("git", []string{"clone", repoURL, repoDir}, "", logBuffer)
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to clone repository: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to clone repository: %v", err)
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
 
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Repository cloned to: %s", repoDir)))
+	_, _ = fmt.Fprintf(logBuffer, "Repository cloned to: %s", repoDir)
 	return nil
 }
 
@@ -2501,12 +2502,12 @@ func (s *Server) executeArgoCDStep(step types.Step, appName string, envType stri
 		appNameArgo = fmt.Sprintf("%s-%s", appName, envType)
 	}
 
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Creating ArgoCD application: %s", appNameArgo)))
+	_, _ = fmt.Fprintf(logBuffer, "Creating ArgoCD application: %s", appNameArgo)
 
 	// Load admin configuration to get Gitea URL
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to load admin config: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to load admin config: %v", err)
 		return fmt.Errorf("failed to load admin config: %w", err)
 	}
 
@@ -2558,7 +2559,7 @@ spec:
 	manifestPath := fmt.Sprintf("/tmp/%s-argocd-app.yaml", appNameArgo)
 	err = os.WriteFile(manifestPath, []byte(manifest), 0600)
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to write ArgoCD manifest: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to write ArgoCD manifest: %v", err)
 		return err
 	}
 
@@ -2569,7 +2570,7 @@ spec:
 func (s *Server) executeGitCommitStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
 	repoDir := fmt.Sprintf("/tmp/%s-%s-repo", appName, envType)
 
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Committing manifests to repository in %s", repoDir)))
+	_, _ = fmt.Fprintf(logBuffer, "Committing manifests to repository in %s", repoDir)
 
 	// Create manifests directory if it doesn't exist
 	manifestDir := fmt.Sprintf("%s/%s", repoDir, step.ManifestPath)
@@ -2579,7 +2580,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 
 	err := os.MkdirAll(manifestDir, 0750)
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Failed to create manifest directory: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Failed to create manifest directory: %v", err)
 		return err
 	}
 
@@ -2589,7 +2590,7 @@ func (s *Server) executeGitCommitStep(step types.Step, appName string, envType s
 
 	err = s.executeCommand("cp", []string{manifestPath, destPath}, "", logBuffer)
 	if err != nil {
-		_, _ = logBuffer.Write([]byte(fmt.Sprintf("Warning: Failed to copy manifests: %v", err)))
+		_, _ = fmt.Fprintf(logBuffer, "Warning: Failed to copy manifests: %v", err)
 	}
 
 	// Add files
@@ -2629,7 +2630,7 @@ func (s *Server) executeAnsibleStep(step types.Step, appName string, envType str
 
 // executePolicyStep executes a policy validation step
 func (s *Server) executePolicyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Executing policy validation for %s in %s environment", appName, envType)))
+	_, _ = fmt.Fprintf(logBuffer, "Executing policy validation for %s in %s environment", appName, envType)
 
 	// Simulate policy execution (would integrate with OPA, Gatekeeper, etc.)
 	_, _ = logBuffer.Write([]byte("Policy validation simulated - would require integration with policy engine"))
@@ -2679,8 +2680,8 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 // executeDummyStep executes a dummy workflow step with logging for testing purposes
 func (s *Server) executeDummyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
 	_, _ = logBuffer.Write([]byte("INFO: This is a dummy workflow for testing the logging system"))
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Executing dummy step '%s' for application: %s", step.Name, appName)))
-	_, _ = logBuffer.Write([]byte(fmt.Sprintf("Environment: %s", envType)))
+	_, _ = fmt.Fprintf(logBuffer, "Executing dummy step '%s' for application: %s", step.Name, appName)
+	_, _ = fmt.Fprintf(logBuffer, "Environment: %s", envType)
 
 	// Simulate some processing time with multiple log entries
 	_, _ = logBuffer.Write([]byte("Step 1: Initializing dummy process..."))

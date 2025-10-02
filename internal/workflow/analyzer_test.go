@@ -107,8 +107,8 @@ func TestAnalyzeResources(t *testing.T) {
 	spec := &types.ScoreSpec{
 		Metadata: types.Metadata{Name: "test-app"},
 		Resources: map[string]types.Resource{
-			"db": {Type: "postgres"},
-			"cache": {Type: "redis"},
+			"db":      {Type: "postgres"},
+			"cache":   {Type: "redis"},
 			"storage": {Type: "volume"},
 		},
 	}
@@ -205,18 +205,18 @@ func TestBuildParallelGroups_CircularDependency(t *testing.T) {
 	// Create circular dependency: step1 -> step2 -> step3 -> step1
 	dependencies := []DependencyAnalysis{
 		{
-			StepName:         "step1",
-			DependsOn:        []string{"step3"},
+			StepName:          "step1",
+			DependsOn:         []string{"step3"},
 			EstimatedDuration: 1 * time.Minute,
 		},
 		{
-			StepName:         "step2",
-			DependsOn:        []string{"step1"},
+			StepName:          "step2",
+			DependsOn:         []string{"step1"},
 			EstimatedDuration: 1 * time.Minute,
 		},
 		{
-			StepName:         "step3",
-			DependsOn:        []string{"step2"},
+			StepName:          "step3",
+			DependsOn:         []string{"step2"},
 			EstimatedDuration: 1 * time.Minute,
 		},
 	}
@@ -460,10 +460,10 @@ func TestAnalyzeSpec_EmptySpec(t *testing.T) {
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) &&
-		   (s == substr ||
-		    (len(s) > len(substr) && (s[:len(substr)] == substr ||
-		     s[len(s)-len(substr):] == substr ||
-		     containsSubstring(s, substr))))
+		(s == substr ||
+			(len(s) > len(substr) && (s[:len(substr)] == substr ||
+				s[len(s)-len(substr):] == substr ||
+				containsSubstring(s, substr))))
 }
 
 func containsSubstring(s, substr string) bool {

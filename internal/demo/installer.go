@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,13 +32,13 @@ func (i *Installer) VerifyKubeContext() error {
 	fmt.Printf("🔍 Verifying Kubernetes context: %s\n", i.kubeContext)
 
 	// Check if context exists
-	cmd := exec.Command("kubectl", "config", "get-contexts", i.kubeContext)  // #nosec G204 - kubectl with controlled context
+	cmd := exec.Command("kubectl", "config", "get-contexts", i.kubeContext) // #nosec G204 - kubectl with controlled context
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Kubernetes context '%s' not found. Make sure Docker Desktop is running", i.kubeContext)
+		return fmt.Errorf("kubernetes context '%s' not found, make sure Docker Desktop is running", i.kubeContext)
 	}
 
 	// Test connectivity
-	cmd = exec.Command("kubectl", "--context", i.kubeContext, "cluster-info")  // #nosec G204 - kubectl with controlled context
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "cluster-info") // #nosec G204 - kubectl with controlled context
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("unable to connect to Kubernetes cluster with context '%s'", i.kubeContext)
 	}
@@ -55,7 +56,7 @@ func (i *Installer) CreateNamespace(namespace string) error {
 		return nil
 	}
 
-	cmd := exec.Command("kubectl", "--context", i.kubeContext, "create", "namespace", namespace)  // #nosec G204 - kubectl with controlled namespace
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "create", "namespace", namespace) // #nosec G204 - kubectl with controlled namespace
 	output, err := cmd.CombinedOutput()
 
 	// Ignore error if namespace already exists
@@ -154,7 +155,7 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	installCtx, installCancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer installCancel()
 
-	cmd := exec.CommandContext(installCtx, "helm", "upgrade", "--install", component.Name,  // #nosec G204 - helm with controlled parameters
+	cmd := exec.CommandContext(installCtx, "helm", "upgrade", "--install", component.Name, // #nosec G204 - helm with controlled parameters
 		chartRef,
 		"--version", component.Version,
 		"--namespace", component.Namespace,
@@ -200,7 +201,7 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 		case <-statusTicker.C:
 			fmt.Printf("\n   ⏳ Still installing %s... (checking pods)\n", component.Name)
 			// Show pod status
-			statusCmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "--no-headers")  // #nosec G204 - kubectl for pod status
+			statusCmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "--no-headers") // #nosec G204 - kubectl for pod status
 			if statusOutput, err := statusCmd.Output(); err == nil {
 				lines := strings.Split(strings.TrimSpace(string(statusOutput)), "\n")
 				if len(lines) > 0 && lines[0] != "" {
@@ -227,7 +228,7 @@ func (i *Installer) UninstallComponent(component DemoComponent) error {
 	}
 
 	// Uninstall Helm release
-	cmd := exec.Command("helm", "uninstall", component.Name,  // #nosec G204 - helm uninstall command
+	cmd := exec.Command("helm", "uninstall", component.Name, // #nosec G204 - helm uninstall command
 		"--namespace", component.Namespace,
 		"--kube-context", i.kubeContext)
 
@@ -249,7 +250,7 @@ func (i *Installer) DeleteNamespace(namespace string) error {
 		return nil
 	}
 
-	cmd := exec.Command("kubectl", "--context", i.kubeContext, "delete", "namespace", namespace, "--ignore-not-found=true")  // #nosec G204 - kubectl delete namespace
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "delete", "namespace", namespace, "--ignore-not-found=true") // #nosec G204 - kubectl delete namespace
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to delete namespace %s: %v", namespace, err)
 	}
@@ -266,7 +267,7 @@ func (i *Installer) WaitForDeployment(namespace, deploymentName string, timeout 
 		return nil
 	}
 
-	cmd := exec.Command("kubectl", "--context", i.kubeContext, "wait",  // #nosec G204 - kubectl wait command
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "wait", // #nosec G204 - kubectl wait command
 		"--for=condition=Available",
 		"--timeout="+timeout.String(),
 		"-n", namespace,
@@ -307,7 +308,7 @@ func (i *Installer) DeployManifest(namespace, name, yamlContent string) error {
 	_ = tmpFile.Close()
 
 	// Apply manifest
-	cmd := exec.Command("kubectl", "--context", i.kubeContext, "apply", "-f", tmpFile.Name(), "-n", namespace)  // #nosec G204 - kubectl apply command
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "apply", "-f", tmpFile.Name(), "-n", namespace) // #nosec G204 - kubectl apply command
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to apply manifest %s: %v\nOutput: %s", name, err, string(output))
@@ -319,7 +320,7 @@ func (i *Installer) DeployManifest(namespace, name, yamlContent string) error {
 
 // CheckHelmRelease checks if a Helm release exists
 func (i *Installer) CheckHelmRelease(releaseName, namespace string) (bool, error) {
-	cmd := exec.Command("helm", "list", "-n", namespace, "--kube-context", i.kubeContext, "-q")  // #nosec G204 - helm list command
+	cmd := exec.Command("helm", "list", "-n", namespace, "--kube-context", i.kubeContext, "-q") // #nosec G204 - helm list command
 	output, err := cmd.Output()
 	if err != nil {
 		return false, err
@@ -386,7 +387,7 @@ func (i *Installer) InstallKubernetesDashboard() error {
 
 	// Download and apply official dashboard manifest
 	dashboardURL := "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"
-	cmd := exec.Command("kubectl", "--context", i.kubeContext, "apply", "-f", dashboardURL)  // #nosec G204 - kubectl apply for dashboard
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "apply", "-f", dashboardURL) // #nosec G204 - kubectl apply for dashboard
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to install dashboard: %v\nOutput: %s", err, string(output))

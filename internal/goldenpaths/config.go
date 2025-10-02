@@ -22,7 +22,7 @@ type GoldenPathMetadata struct {
 // GoldenPathsConfig defines the configuration for available golden paths
 // Supports both simple string format (backward compatible) and metadata format
 type GoldenPathsConfig struct {
-	GoldenPaths map[string]interface{} `yaml:"goldenpaths"`
+	GoldenPaths map[string]interface{}         `yaml:"goldenpaths"`
 	paths       map[string]*GoldenPathMetadata // Parsed metadata cache
 }
 

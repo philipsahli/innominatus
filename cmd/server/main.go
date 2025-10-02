@@ -3,15 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
+	"innominatus/internal/admin"
+	"innominatus/internal/database"
+	"innominatus/internal/server"
+	"innominatus/internal/validation"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
-	"innominatus/internal/admin"
-	"innominatus/internal/database"
-	"innominatus/internal/server"
-	"innominatus/internal/validation"
 )
 
 func fileExists(path string) bool {

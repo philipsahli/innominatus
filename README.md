@@ -2,6 +2,8 @@
 
 A **Score-based platform orchestration component** designed for integration into enterprise Internal Developer Platform (IDP) ecosystems.
 
+[![codecov](https://codecov.io/github/philipsahli/idp-o/graph/badge.svg?token=757WSWZMKD)](https://codecov.io/github/philipsahli/idp-o) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 ## Overview
 
 innominatus provides centralized execution of multi-step workflows from [Score specifications](https://score.dev), enabling platform teams to automate complex deployment and infrastructure provisioning workflows. It's designed as an integration component for existing IDP platforms rather than a standalone solution.

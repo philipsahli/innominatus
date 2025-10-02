@@ -11,18 +11,18 @@ import (
 type Metrics struct {
 	mu                sync.RWMutex
 	httpRequestsTotal map[string]map[string]int64 // method -> path -> count
-	httpRequestErrors map[string]int64             // path -> error count
+	httpRequestErrors map[string]int64            // path -> error count
 	startTime         time.Time
 
 	// Workflow metrics
-	workflowsExecuted   int64
-	workflowsSucceeded  int64
-	workflowsFailed     int64
-	workflowDurations   []time.Duration // For calculating average
+	workflowsExecuted  int64
+	workflowsSucceeded int64
+	workflowsFailed    int64
+	workflowDurations  []time.Duration // For calculating average
 
 	// Database metrics
-	dbQueriesTotal      int64
-	dbQueryErrors       int64
+	dbQueriesTotal int64
+	dbQueryErrors  int64
 }
 
 // Global metrics instance

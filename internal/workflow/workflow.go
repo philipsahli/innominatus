@@ -503,7 +503,7 @@ func runGiteaRepoStepWithSpinner(step types.Step, appName string, envType string
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == 409 {
 		fmt.Printf("Repository %s/%s already exists, skipping creation\n", owner, step.RepoName)
@@ -650,10 +650,7 @@ func runArgoCDAppStepWithSpinner(step types.Step, appName string, envType string
 	fmt.Printf("Repository: %s\n", repoURL)
 
 	// Check if we should wait for sync completion
-	waitForSync := true
-	if step.WaitForSync != nil && !*step.WaitForSync {
-		waitForSync = false
-	}
+	waitForSync := step.WaitForSync == nil || *step.WaitForSync
 
 	if waitForSync {
 		timeout := step.Timeout
@@ -883,7 +880,7 @@ func authenticateArgoCD(argoCDURL, username, password string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to authenticate: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -939,7 +936,7 @@ func waitForArgoCDSync(appName, argoCDURL, token string, timeoutSeconds int, spi
 			time.Sleep(10 * time.Second)
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != 200 {
 			time.Sleep(10 * time.Second)

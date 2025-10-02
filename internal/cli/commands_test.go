@@ -134,7 +134,7 @@ func TestStatusCommand(t *testing.T) {
 		if r.URL.Path == "/api/specs" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{
+			_, _ = fmt.Fprintf(w, `{
 				"test-app": {
 					"metadata": {"APIVersion": "score.dev/v1b1"}
 				}
@@ -142,7 +142,7 @@ func TestStatusCommand(t *testing.T) {
 		} else if r.URL.Path == "/api/specs/test-app" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{
+			_, _ = fmt.Fprintf(w, `{
 				"metadata": {"APIVersion": "score.dev/v1b1"}
 			}`)
 		} else if r.URL.Path == "/api/specs/non-existing-app" {
@@ -150,7 +150,7 @@ func TestStatusCommand(t *testing.T) {
 		} else if strings.HasPrefix(r.URL.Path, "/api/workflows") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `[
+			_, _ = fmt.Fprintf(w, `[
 				{
 					"id": 1,
 					"app_name": "test-app",
@@ -222,7 +222,7 @@ func TestDeleteCommand(t *testing.T) {
 
 		if strings.Contains(r.URL.Path, "test-app") {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, `{"message": "Application deleted successfully"}`)
+			_, _ = fmt.Fprintf(w, `{"message": "Application deleted successfully"}`)
 		} else {
 			http.Error(w, "Not found", http.StatusNotFound)
 		}
@@ -245,7 +245,7 @@ func TestEnvironmentsCommand(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{
+		_, _ = fmt.Fprintf(w, `{
 			"development": {
 				"name": "development",
 				"type": "kubernetes",
@@ -324,7 +324,7 @@ func TestRunGoldenPathCommand(t *testing.T) {
 
 	// Test run golden path with spec file and parameters
 	params := map[string]string{
-		"ttl": "4h",
+		"ttl":              "4h",
 		"environment_type": "staging",
 	}
 	err = client.RunGoldenPathCommand("test-path", specFile, params)

@@ -1,8 +1,8 @@
 package graph
 
 import (
-	"regexp"
 	"innominatus/internal/types"
+	"regexp"
 	"time"
 )
 
@@ -19,11 +19,11 @@ const (
 type NodeStatus string
 
 const (
-	NodeStatusPending    NodeStatus = "pending"
-	NodeStatusRunning    NodeStatus = "running"
-	NodeStatusCompleted  NodeStatus = "completed"
-	NodeStatusFailed     NodeStatus = "failed"
-	NodeStatusUnknown    NodeStatus = "unknown"
+	NodeStatusPending   NodeStatus = "pending"
+	NodeStatusRunning   NodeStatus = "running"
+	NodeStatusCompleted NodeStatus = "completed"
+	NodeStatusFailed    NodeStatus = "failed"
+	NodeStatusUnknown   NodeStatus = "unknown"
 )
 
 // GraphNode represents a node in the resource graph
@@ -210,15 +210,15 @@ func mapWorkflowStatus(status string) NodeStatus {
 
 func BuildGraph(scoreSpec *types.ScoreSpec) map[string][]string {
 	graph := make(map[string][]string)
-	
+
 	// Parse container variables to find resource references
 	for containerName, container := range scoreSpec.Containers {
 		containerKey := "container:" + containerName
 		var dependencies []string
-		
+
 		// Look for ${resources.resourceName.*} patterns in variables
 		resourcePattern := regexp.MustCompile(`\$\{resources\.([^.}]+)`)
-		
+
 		for _, value := range container.Variables {
 			matches := resourcePattern.FindAllStringSubmatch(value, -1)
 			for _, match := range matches {
@@ -234,12 +234,12 @@ func BuildGraph(scoreSpec *types.ScoreSpec) map[string][]string {
 				}
 			}
 		}
-		
+
 		if len(dependencies) > 0 {
 			graph[containerKey] = dependencies
 		}
 	}
-	
+
 	// Add environment node and connect it to all resources
 	if scoreSpec.Environment != nil {
 		var resourceList []string
@@ -250,7 +250,7 @@ func BuildGraph(scoreSpec *types.ScoreSpec) map[string][]string {
 			graph["environment"] = resourceList
 		}
 	}
-	
+
 	return graph
 }
 

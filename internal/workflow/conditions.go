@@ -332,6 +332,7 @@ func (ctx *ExecutionContext) replaceVariables(str string, env map[string]string)
 				suffix := parts[1]
 
 				// Check for ${workflow.VAR}
+				//nolint:staticcheck // Simple if statement is clearer for prefix check - QF1003
 				if prefix == "workflow" {
 					if val, exists := ctx.WorkflowVariables[suffix]; exists {
 						return val
@@ -385,6 +386,7 @@ func (ctx *ExecutionContext) replaceVariables(str string, env map[string]string)
 				suffix := parts[1]
 
 				// Check for $workflow.VAR
+				//nolint:staticcheck // Simple if statement is clearer for prefix check - QF1003
 				if prefix == "workflow" {
 					if val, exists := ctx.WorkflowVariables[suffix]; exists {
 						return val

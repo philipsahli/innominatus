@@ -147,9 +147,9 @@ func TestExecutionContext_InterpolateResourceParams(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:   "empty params",
-			params: map[string]interface{}{},
-			env:    map[string]string{},
+			name:     "empty params",
+			params:   map[string]interface{}{},
+			env:      map[string]string{},
 			expected: map[string]interface{}{},
 		},
 	}

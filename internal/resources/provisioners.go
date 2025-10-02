@@ -224,7 +224,7 @@ func (m *Manager) deprovisionPostgres(resource *database.ResourceInstance, trans
 		"deprovisioning_method": "postgres_cleanup",
 		"database_backed_up":    false, // Could be configurable
 		"connections_dropped":   true,
-		"cleanup_time":         "30s",
+		"cleanup_time":          "30s",
 	}
 
 	// Transition to terminated state
@@ -248,9 +248,9 @@ func (m *Manager) deprovisionRedis(resource *database.ResourceInstance, transiti
 
 	metadata := map[string]interface{}{
 		"deprovisioning_method": "redis_cleanup",
-		"cache_flushed":        false, // Could be configurable
-		"connections_closed":   true,
-		"cleanup_time":        "15s",
+		"cache_flushed":         false, // Could be configurable
+		"connections_closed":    true,
+		"cleanup_time":          "15s",
 	}
 
 	return m.TransitionResourceState(resource.ID,
@@ -273,9 +273,9 @@ func (m *Manager) deprovisionVolume(resource *database.ResourceInstance, transit
 
 	metadata := map[string]interface{}{
 		"deprovisioning_method": "volume_cleanup",
-		"volume_unmounted":     true,
-		"snapshot_created":     false, // Could be configurable
-		"cleanup_time":        "20s",
+		"volume_unmounted":      true,
+		"snapshot_created":      false, // Could be configurable
+		"cleanup_time":          "20s",
 	}
 
 	return m.TransitionResourceState(resource.ID,
@@ -331,10 +331,10 @@ func (m *Manager) deprovisionVaultSpace(resource *database.ResourceInstance, tra
 	metadata := map[string]interface{}{
 		"deprovisioning_method": "vault_space_cleanup",
 		"vso_manifests_removed": true,
-		"secrets_deleted":      true,
-		"policies_cleaned":     true,
-		"app_namespace":        appNamespace,
-		"cleanup_time":        "45s",
+		"secrets_deleted":       true,
+		"policies_cleaned":      true,
+		"app_namespace":         appNamespace,
+		"cleanup_time":          "45s",
 	}
 
 	return m.TransitionResourceState(resource.ID,
@@ -350,8 +350,8 @@ func (m *Manager) deprovisionGenericResource(resource *database.ResourceInstance
 
 	metadata := map[string]interface{}{
 		"deprovisioning_method": "generic_cleanup",
-		"resource_type":        resource.ResourceType,
-		"cleanup_time":        "10s",
+		"resource_type":         resource.ResourceType,
+		"cleanup_time":          "10s",
 	}
 
 	return m.TransitionResourceState(resource.ID,
@@ -424,10 +424,10 @@ func (m *Manager) GenerateDefaultSecretData(secretName, appName string) map[stri
 		}
 	default:
 		return map[string]interface{}{
-			"default_key":   fmt.Sprintf("%s_default_value", secretName),
-			"created_for":   appName,
-			"secret_type":   secretName,
-			"created_at":    "2024-01-01T00:00:00Z",
+			"default_key": fmt.Sprintf("%s_default_value", secretName),
+			"created_for": appName,
+			"secret_type": secretName,
+			"created_at":  "2024-01-01T00:00:00Z",
 		}
 	}
 }

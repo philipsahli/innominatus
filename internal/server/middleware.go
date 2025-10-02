@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
-	"log"
-	"net/http"
 	"innominatus/internal/auth"
 	"innominatus/internal/users"
+	"log"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -23,6 +23,7 @@ func (s *Server) CorsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Allow requests from localhost:3000 or localhost:3001 (Next.js dev server) or same-origin
 		origin := r.Header.Get("Origin")
+		//nolint:staticcheck // Multiple OR conditions are clearer than switch for CORS origins - QF1003
 		if origin == "http://localhost:3000" || origin == "http://localhost:3001" || origin == "http://localhost:8081" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 		} else if origin == "" {
@@ -142,6 +143,7 @@ func (s *Server) TeamFilterMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // getTeamFromContext retrieves team filter from request context
+//
 //nolint:unused // Reserved for future multi-tenancy filtering
 func (s *Server) getTeamFromContext(r *http.Request) string {
 	if team, ok := r.Context().Value(contextKeyTeamFilter).(string); ok {

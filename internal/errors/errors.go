@@ -265,9 +265,10 @@ func NewResourceError(resourceType, resourceName, operation, message string) *Re
 		ResourceName: resourceName,
 		Operation:    operation,
 	}
+	//nolint:staticcheck // Explicit field access improves code clarity - QF1008
 	err.RichError = err.RichError.WithContext("resource_type", resourceType)
-	err.RichError = err.RichError.WithContext("resource_name", resourceName)
-	err.RichError = err.RichError.WithContext("operation", operation)
+	err.RichError = err.RichError.WithContext("resource_name", resourceName) //nolint:staticcheck // QF1008
+	err.RichError = err.RichError.WithContext("operation", operation)        //nolint:staticcheck // QF1008
 	return err
 }
 
@@ -304,7 +305,7 @@ func NewConfigurationError(configFile, configKey, message string) *Configuration
 		ConfigFile: configFile,
 		ConfigKey:  configKey,
 	}
-	err.RichError = err.RichError.WithContext("config_file", configFile)
-	err.RichError = err.RichError.WithContext("config_key", configKey)
+	err.RichError = err.RichError.WithContext("config_file", configFile) //nolint:staticcheck // QF1008
+	err.RichError = err.RichError.WithContext("config_key", configKey)   //nolint:staticcheck // QF1008
 	return err
 }

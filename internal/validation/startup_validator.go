@@ -99,9 +99,9 @@ func ValidateConfigurationWithExit() {
 type ValidationMode int
 
 const (
-	ValidationModeStartup ValidationMode = iota // Full validation on startup
-	ValidationModeFast                          // Fast validation for CLI operations
-	ValidationModeRequired                      // Only required/critical validations
+	ValidationModeStartup  ValidationMode = iota // Full validation on startup
+	ValidationModeFast                           // Fast validation for CLI operations
+	ValidationModeRequired                       // Only required/critical validations
 )
 
 // ValidateWithMode runs validation with a specific mode

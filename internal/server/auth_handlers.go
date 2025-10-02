@@ -3,9 +3,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"innominatus/internal/users"
 	"net/http"
 	"os"
-	"innominatus/internal/users"
 )
 
 // HandleLogin handles the login page and authentication

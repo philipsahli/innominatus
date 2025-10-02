@@ -2,9 +2,9 @@ package workflow
 
 import (
 	"fmt"
+	"innominatus/internal/types"
 	"os"
 	"path/filepath"
-	"innominatus/internal/types"
 	"strings"
 
 	"gopkg.in/yaml.v3"

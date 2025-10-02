@@ -5,24 +5,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"innominatus/internal/users"
 	"net/http"
 	"os"
 	"path/filepath"
-	"innominatus/internal/users"
 	"sync"
 	"time"
 )
 
 // Session represents a user session
 type Session struct {
-	ID                string
-	User              *users.User
-	CreatedAt         time.Time
-	ExpiresAt         time.Time
+	ID        string
+	User      *users.User
+	CreatedAt time.Time
+	ExpiresAt time.Time
 	// Impersonation fields
-	OriginalUser      *users.User // The admin who started impersonation
-	ImpersonatedUser  *users.User // The user being impersonated (if any)
-	IsImpersonating   bool        // Whether this session is currently impersonating
+	OriginalUser     *users.User // The admin who started impersonation
+	ImpersonatedUser *users.User // The user being impersonated (if any)
+	IsImpersonating  bool        // Whether this session is currently impersonating
 }
 
 // SessionManager manages user sessions
@@ -160,7 +160,7 @@ func (sm *SessionManager) cleanupExpiredSessions() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	//nolint:gosimple // for-select with single case is intentional for cleanup goroutine pattern
+	//nolint:gosimple,staticcheck // for-select with single case is intentional for cleanup goroutine pattern
 	for {
 		select {
 		case <-ticker.C:

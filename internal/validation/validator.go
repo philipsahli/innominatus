@@ -66,11 +66,11 @@ func (vs *ValidationSuite) ValidateAll() *ValidationSummary {
 
 // ValidationSummary provides a summary of all validation results
 type ValidationSummary struct {
-	SuiteName    string               `json:"suite_name"`
-	Valid        bool                 `json:"valid"`
-	ErrorCount   int                  `json:"error_count"`
-	WarningCount int                  `json:"warning_count"`
-	Results      []*ValidationResult  `json:"results"`
+	SuiteName    string              `json:"suite_name"`
+	Valid        bool                `json:"valid"`
+	ErrorCount   int                 `json:"error_count"`
+	WarningCount int                 `json:"warning_count"`
+	Results      []*ValidationResult `json:"results"`
 }
 
 // PrintSummary prints a formatted validation summary

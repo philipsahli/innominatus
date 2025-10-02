@@ -12,20 +12,20 @@ import (
 )
 
 type StoredSpec struct {
-	Spec *types.ScoreSpec `json:"spec"`
-	Team string           `json:"team"`
-	CreatedAt time.Time   `json:"created_at"`
-	CreatedBy string      `json:"created_by"`
+	Spec      *types.ScoreSpec `json:"spec"`
+	Team      string           `json:"team"`
+	CreatedAt time.Time        `json:"created_at"`
+	CreatedBy string           `json:"created_by"`
 }
 
 type Storage struct {
-	specs           map[string]*StoredSpec
-	environments    map[string]*Environment
+	specs             map[string]*StoredSpec
+	environments      map[string]*Environment
 	resourceInstances map[int64]*LocalResourceInstance
-	resourcesByApp  map[string][]int64 // application_name -> resource IDs
-	nextResourceID  int64
-	mu              sync.RWMutex
-	dataDir         string // Directory to store persistent data
+	resourcesByApp    map[string][]int64 // application_name -> resource IDs
+	nextResourceID    int64
+	mu                sync.RWMutex
+	dataDir           string // Directory to store persistent data
 }
 
 type Environment struct {
@@ -39,30 +39,30 @@ type Environment struct {
 
 // LocalResourceInstance represents a resource instance stored locally
 type LocalResourceInstance struct {
-	ID                  int64                  `json:"id"`
-	ApplicationName     string                 `json:"application_name"`
-	ResourceName        string                 `json:"resource_name"`
-	ResourceType        string                 `json:"resource_type"`
-	State               string                 `json:"state"`
-	HealthStatus        string                 `json:"health_status"`
-	Configuration       map[string]interface{} `json:"configuration"`
-	ProviderID          *string                `json:"provider_id,omitempty"`
-	ProviderMetadata    map[string]interface{} `json:"provider_metadata,omitempty"`
-	CreatedAt           time.Time              `json:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at"`
-	LastHealthCheck     *time.Time             `json:"last_health_check,omitempty"`
-	ErrorMessage        *string                `json:"error_message,omitempty"`
+	ID               int64                  `json:"id"`
+	ApplicationName  string                 `json:"application_name"`
+	ResourceName     string                 `json:"resource_name"`
+	ResourceType     string                 `json:"resource_type"`
+	State            string                 `json:"state"`
+	HealthStatus     string                 `json:"health_status"`
+	Configuration    map[string]interface{} `json:"configuration"`
+	ProviderID       *string                `json:"provider_id,omitempty"`
+	ProviderMetadata map[string]interface{} `json:"provider_metadata,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	LastHealthCheck  *time.Time             `json:"last_health_check,omitempty"`
+	ErrorMessage     *string                `json:"error_message,omitempty"`
 }
 
 func NewStorage() *Storage {
 	dataDir := "data"
 	storage := &Storage{
-		specs:           make(map[string]*StoredSpec),
-		environments:    make(map[string]*Environment),
+		specs:             make(map[string]*StoredSpec),
+		environments:      make(map[string]*Environment),
 		resourceInstances: make(map[int64]*LocalResourceInstance),
-		resourcesByApp:  make(map[string][]int64),
-		nextResourceID:  1,
-		dataDir:         dataDir,
+		resourcesByApp:    make(map[string][]int64),
+		nextResourceID:    1,
+		dataDir:           dataDir,
 	}
 
 	// Create data directory if it doesn't exist
@@ -133,11 +133,11 @@ func (s *Storage) AddSpec(name string, spec *types.ScoreSpec, team string, creat
 			ApplicationName: name,
 			ResourceName:    resourceName,
 			ResourceType:    resource.Type,
-			State:          "active",
-			HealthStatus:   "healthy",
-			Configuration:  config,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
+			State:           "active",
+			HealthStatus:    "healthy",
+			Configuration:   config,
+			CreatedAt:       time.Now(),
+			UpdatedAt:       time.Now(),
 		}
 
 		// Store the resource
@@ -242,7 +242,7 @@ func (s *Storage) DeleteSpec(name string) error {
 func (s *Storage) GetEnvironment(name string) (*Environment, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	env, exists := s.environments[name]
 	return env, exists
 }
@@ -261,11 +261,11 @@ func (s *Storage) ListEnvironments() map[string]*Environment {
 // Persistence methods
 
 type StorageData struct {
-	Specs             map[string]*StoredSpec                 `json:"specs"`
-	Environments      map[string]*Environment               `json:"environments"`
-	ResourceInstances map[int64]*LocalResourceInstance      `json:"resource_instances"`
-	ResourcesByApp    map[string][]int64                    `json:"resources_by_app"`
-	NextResourceID    int64                                 `json:"next_resource_id"`
+	Specs             map[string]*StoredSpec           `json:"specs"`
+	Environments      map[string]*Environment          `json:"environments"`
+	ResourceInstances map[int64]*LocalResourceInstance `json:"resource_instances"`
+	ResourcesByApp    map[string][]int64               `json:"resources_by_app"`
+	NextResourceID    int64                            `json:"next_resource_id"`
 }
 
 // saveToDisk saves the current storage state to disk
@@ -356,11 +356,11 @@ func (s *Storage) AddResource(appName, resourceName, resourceType string, config
 		ApplicationName: appName,
 		ResourceName:    resourceName,
 		ResourceType:    resourceType,
-		State:          "requested",
-		HealthStatus:   "unknown",
-		Configuration:  config,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		State:           "requested",
+		HealthStatus:    "unknown",
+		Configuration:   config,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	// Store the resource

@@ -274,10 +274,10 @@ func TestContainerVariables(t *testing.T) {
 	container := Container{
 		Image: "nginx:latest",
 		Variables: map[string]string{
-			"DB_HOST":     "${resources.db.host}",
-			"DB_PORT":     "5432",
-			"REDIS_URL":   "${resources.cache.url}",
-			"STATIC_VAR":  "static-value",
+			"DB_HOST":    "${resources.db.host}",
+			"DB_PORT":    "5432",
+			"REDIS_URL":  "${resources.cache.url}",
+			"STATIC_VAR": "static-value",
 		},
 	}
 
@@ -295,10 +295,10 @@ func TestResourceParams(t *testing.T) {
 	resource := Resource{
 		Type: "postgres",
 		Params: map[string]interface{}{
-			"version":    "13",
-			"size":       "small",
-			"backup":     true,
-			"replicas":   3,
+			"version":  "13",
+			"size":     "small",
+			"backup":   true,
+			"replicas": 3,
 			"config": map[string]interface{}{
 				"max_connections": 100,
 				"shared_buffers":  "256MB",
@@ -382,21 +382,21 @@ func TestWorkflowStepsCount(t *testing.T) {
 
 func TestStepOptionalFields(t *testing.T) {
 	step := Step{
-		Name:          "complex-step",
-		Type:          "gitea-repo",
-		RepoName:      "my-repo",
-		Description:   "Test repository",
-		Private:       true,
-		Owner:         "my-org",
-		AppName:       "my-app",
-		RepoURL:       "https://github.com/my-org/my-repo.git",
-		TargetPath:    "manifests/",
-		Project:       "default",
-		SyncPolicy:    "manual",
-		ManifestPath:  "k8s/",
-		GitBranch:     "develop",
-		Timeout:       300,
-		WaitForSync:   boolPtr(true),
+		Name:         "complex-step",
+		Type:         "gitea-repo",
+		RepoName:     "my-repo",
+		Description:  "Test repository",
+		Private:      true,
+		Owner:        "my-org",
+		AppName:      "my-app",
+		RepoURL:      "https://github.com/my-org/my-repo.git",
+		TargetPath:   "manifests/",
+		Project:      "default",
+		SyncPolicy:   "manual",
+		ManifestPath: "k8s/",
+		GitBranch:    "develop",
+		Timeout:      300,
+		WaitForSync:  boolPtr(true),
 	}
 
 	assert.Equal(t, "complex-step", step.Name)

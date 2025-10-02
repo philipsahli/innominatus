@@ -164,8 +164,8 @@ $$ language 'plpgsql';
 
 -- Update triggers
 DROP TRIGGER IF EXISTS update_workflow_executions_updated_at ON workflow_executions;
-CREATE TRIGGER update_workflow_executions_updated_at 
-    BEFORE UPDATE ON workflow_executions 
+CREATE TRIGGER update_workflow_executions_updated_at
+    BEFORE UPDATE ON workflow_executions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 DROP TRIGGER IF EXISTS update_workflow_step_executions_updated_at ON workflow_step_executions;

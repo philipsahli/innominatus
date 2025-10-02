@@ -93,7 +93,7 @@ func (gp *GiteaProvisioner) Provision(resource *database.ResourceInstance, confi
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -141,7 +141,7 @@ func (gp *GiteaProvisioner) Deprovision(resource *database.ResourceInstance) err
 	if err != nil {
 		return fmt.Errorf("failed to delete repository: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 204 && resp.StatusCode != 404 {
 		body, _ := io.ReadAll(resp.Body)
@@ -186,8 +186,9 @@ func (gp *GiteaProvisioner) GetStatus(resource *database.ResourceInstance) (map[
 		status["error"] = fmt.Sprintf("failed to check repository: %v", err)
 		return status, nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
+	//nolint:staticcheck // Simple if-else is clearer for HTTP status check - QF1003
 	if resp.StatusCode == 200 {
 		status["state"] = "active"
 		status["repository_url"] = fmt.Sprintf("%s/%s/%s", adminConfig.Gitea.URL, owner, repoName)

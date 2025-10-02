@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"innominatus/internal/users"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"innominatus/internal/users"
 )
 
 // Helper function to create an authenticated request with user context

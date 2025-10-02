@@ -675,7 +675,7 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute workflow: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -857,7 +857,11 @@ func (c *Client) DemoNukeCommand() error {
 		}
 		fmt.Printf("   To manually clean: psql -d %s -c \"TRUNCATE TABLE workflow_executions, resource_instances CASCADE;\"\n", dbName)
 	} else {
-		defer db.Close()
+		defer func() {
+			if err := db.Close(); err != nil {
+				fmt.Printf("⚠️  Warning: Failed to close database: %v\n", err)
+			}
+		}()
 		if err := db.CleanDatabase(); err != nil {
 			fmt.Printf("⚠️  Warning: Failed to clean database: %v\n", err)
 		} else {
@@ -1305,6 +1309,7 @@ func (c *Client) ListResourcesCommand(appName string) error {
 			// Determine status emoji based on state and health
 			statusEmoji := "❓"
 			switch resource.State {
+			//nolint:staticcheck // Simple if statement is more readable than tagged switch here
 			case "active":
 				if resource.HealthStatus == "healthy" {
 					statusEmoji = "✅"
@@ -1401,7 +1406,7 @@ func (c *Client) AnalyzeCommand(filename string) error {
 	}
 
 	if spec.Metadata.Name == "" {
-		return fmt.Errorf("Score specification must have metadata.name")
+		return fmt.Errorf("score specification must have metadata.name")
 	}
 
 	fmt.Printf("🔍 Analyzing workflow for '%s'...\n\n", spec.Metadata.Name)

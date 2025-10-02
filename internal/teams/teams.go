@@ -23,7 +23,7 @@ func NewTeamManager() *TeamManager {
 	tm := &TeamManager{
 		teams: make(map[string]*Team),
 	}
-	
+
 	// Create default team for dev mode
 	defaultTeam := &Team{
 		ID:          "default-team",
@@ -32,7 +32,7 @@ func NewTeamManager() *TeamManager {
 		CreatedAt:   time.Now(),
 		Members:     []string{},
 	}
-	
+
 	tm.teams[defaultTeam.ID] = defaultTeam
 	return tm
 }
@@ -47,7 +47,7 @@ func (tm *TeamManager) GetTeam(id string) (*Team, bool) {
 func (tm *TeamManager) ListTeams() []*Team {
 	tm.mutex.RLock()
 	defer tm.mutex.RUnlock()
-	
+
 	teams := make([]*Team, 0, len(tm.teams))
 	for _, team := range tm.teams {
 		teams = append(teams, team)
@@ -58,15 +58,15 @@ func (tm *TeamManager) ListTeams() []*Team {
 func (tm *TeamManager) CreateTeam(name, description string) (*Team, error) {
 	tm.mutex.Lock()
 	defer tm.mutex.Unlock()
-	
+
 	// Generate simple ID from name
 	id := generateTeamID(name)
-	
+
 	// Check if team already exists
 	if _, exists := tm.teams[id]; exists {
 		return nil, fmt.Errorf("team with ID '%s' already exists", id)
 	}
-	
+
 	team := &Team{
 		ID:          id,
 		Name:        name,
@@ -74,7 +74,7 @@ func (tm *TeamManager) CreateTeam(name, description string) (*Team, error) {
 		CreatedAt:   time.Now(),
 		Members:     []string{},
 	}
-	
+
 	tm.teams[id] = team
 	return team, nil
 }
@@ -82,16 +82,16 @@ func (tm *TeamManager) CreateTeam(name, description string) (*Team, error) {
 func (tm *TeamManager) DeleteTeam(id string) error {
 	tm.mutex.Lock()
 	defer tm.mutex.Unlock()
-	
+
 	// Don't allow deletion of default team
 	if id == "default-team" {
 		return fmt.Errorf("cannot delete default team")
 	}
-	
+
 	if _, exists := tm.teams[id]; !exists {
 		return fmt.Errorf("team with ID '%s' not found", id)
 	}
-	
+
 	delete(tm.teams, id)
 	return nil
 }
@@ -99,19 +99,19 @@ func (tm *TeamManager) DeleteTeam(id string) error {
 func (tm *TeamManager) AddMember(teamID, memberEmail string) error {
 	tm.mutex.Lock()
 	defer tm.mutex.Unlock()
-	
+
 	team, exists := tm.teams[teamID]
 	if !exists {
 		return fmt.Errorf("team with ID '%s' not found", teamID)
 	}
-	
+
 	// Check if member already exists
 	for _, member := range team.Members {
 		if member == memberEmail {
 			return fmt.Errorf("member '%s' already exists in team", memberEmail)
 		}
 	}
-	
+
 	team.Members = append(team.Members, memberEmail)
 	return nil
 }
@@ -119,12 +119,12 @@ func (tm *TeamManager) AddMember(teamID, memberEmail string) error {
 func (tm *TeamManager) RemoveMember(teamID, memberEmail string) error {
 	tm.mutex.Lock()
 	defer tm.mutex.Unlock()
-	
+
 	team, exists := tm.teams[teamID]
 	if !exists {
 		return fmt.Errorf("team with ID '%s' not found", teamID)
 	}
-	
+
 	// Find and remove member
 	for i, member := range team.Members {
 		if member == memberEmail {
@@ -132,7 +132,7 @@ func (tm *TeamManager) RemoveMember(teamID, memberEmail string) error {
 			return nil
 		}
 	}
-	
+
 	return fmt.Errorf("member '%s' not found in team", memberEmail)
 }
 
@@ -142,7 +142,7 @@ func (tm *TeamManager) PrintTeams() {
 		fmt.Println("No teams found")
 		return
 	}
-	
+
 	fmt.Println("Teams:")
 	for _, team := range teams {
 		fmt.Printf("  %s (%s)\n", team.Name, team.ID)

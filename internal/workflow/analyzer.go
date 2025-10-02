@@ -8,46 +8,46 @@ import (
 
 // WorkflowAnalysis represents the analysis of a workflow specification
 type WorkflowAnalysis struct {
-	Spec           *types.ScoreSpec      `json:"spec"`
-	Dependencies   []DependencyAnalysis  `json:"dependencies"`
-	ExecutionPlan  ExecutionPlan         `json:"executionPlan"`
-	EstimatedTime  time.Duration         `json:"estimatedTime"`
-	ResourceGraph  ResourceGraph         `json:"resourceGraph"`
-	Warnings       []string              `json:"warnings"`
+	Spec            *types.ScoreSpec     `json:"spec"`
+	Dependencies    []DependencyAnalysis `json:"dependencies"`
+	ExecutionPlan   ExecutionPlan        `json:"executionPlan"`
+	EstimatedTime   time.Duration        `json:"estimatedTime"`
+	ResourceGraph   ResourceGraph        `json:"resourceGraph"`
+	Warnings        []string             `json:"warnings"`
 	Recommendations []string             `json:"recommendations"`
-	Summary        AnalysisSummary       `json:"summary"`
+	Summary         AnalysisSummary      `json:"summary"`
 }
 
 // DependencyAnalysis represents dependencies between workflow steps
 type DependencyAnalysis struct {
-	StepName     string   `json:"stepName"`
-	StepType     string   `json:"stepType"`
-	DependsOn    []string `json:"dependsOn"`
-	Blocks       []string `json:"blocks"`
-	CanRunInParallel bool `json:"canRunInParallel"`
+	StepName          string        `json:"stepName"`
+	StepType          string        `json:"stepType"`
+	DependsOn         []string      `json:"dependsOn"`
+	Blocks            []string      `json:"blocks"`
+	CanRunInParallel  bool          `json:"canRunInParallel"`
 	EstimatedDuration time.Duration `json:"estimatedDuration"`
-	Phase        string   `json:"phase"`
+	Phase             string        `json:"phase"`
 }
 
 // ExecutionPlan represents the planned execution order and parallelization
 type ExecutionPlan struct {
-	Phases    []ExecutionPhase `json:"phases"`
-	TotalTime time.Duration    `json:"totalTime"`
-	MaxParallel int            `json:"maxParallel"`
+	Phases      []ExecutionPhase `json:"phases"`
+	TotalTime   time.Duration    `json:"totalTime"`
+	MaxParallel int              `json:"maxParallel"`
 }
 
 // ExecutionPhase represents a phase of execution with parallel groups
 type ExecutionPhase struct {
-	Name         string              `json:"name"`
-	Order        int                 `json:"order"`
-	ParallelGroups []ParallelGroup   `json:"parallelGroups"`
-	EstimatedTime time.Duration      `json:"estimatedTime"`
+	Name           string          `json:"name"`
+	Order          int             `json:"order"`
+	ParallelGroups []ParallelGroup `json:"parallelGroups"`
+	EstimatedTime  time.Duration   `json:"estimatedTime"`
 }
 
 // ParallelGroup represents steps that can run in parallel
 type ParallelGroup struct {
-	Steps         []StepExecution   `json:"steps"`
-	EstimatedTime time.Duration     `json:"estimatedTime"`
+	Steps         []StepExecution `json:"steps"`
+	EstimatedTime time.Duration   `json:"estimatedTime"`
 }
 
 // StepExecution represents a step in the execution plan
@@ -77,20 +77,20 @@ type ResourceNode struct {
 
 // ResourceEdge represents a dependency between resources
 type ResourceEdge struct {
-	From         string `json:"from"`
-	To           string `json:"to"`
+	From           string `json:"from"`
+	To             string `json:"to"`
 	DependencyType string `json:"dependencyType"`
 }
 
 // AnalysisSummary provides high-level summary of the analysis
 type AnalysisSummary struct {
-	TotalSteps       int           `json:"totalSteps"`
-	TotalResources   int           `json:"totalResources"`
-	ParallelSteps    int           `json:"parallelSteps"`
-	CriticalPath     []string      `json:"criticalPath"`
-	EstimatedTime    time.Duration `json:"estimatedTime"`
-	ComplexityScore  int           `json:"complexityScore"`
-	RiskLevel        string        `json:"riskLevel"`
+	TotalSteps      int           `json:"totalSteps"`
+	TotalResources  int           `json:"totalResources"`
+	ParallelSteps   int           `json:"parallelSteps"`
+	CriticalPath    []string      `json:"criticalPath"`
+	EstimatedTime   time.Duration `json:"estimatedTime"`
+	ComplexityScore int           `json:"complexityScore"`
+	RiskLevel       string        `json:"riskLevel"`
 }
 
 // WorkflowAnalyzer analyzes workflow specifications and builds dependency graphs
@@ -101,9 +101,9 @@ type WorkflowAnalyzer struct {
 
 // ResourceTypeInfo contains metadata about resource types
 type ResourceTypeInfo struct {
-	ProvisionTime  time.Duration
-	Dependencies   []string
-	Complexity     int
+	ProvisionTime time.Duration
+	Dependencies  []string
+	Complexity    int
 }
 
 // NewWorkflowAnalyzer creates a new workflow analyzer
@@ -168,9 +168,9 @@ func (a *WorkflowAnalyzer) analyzeResources(spec *types.ScoreSpec) (ResourceGrap
 	// Add application container as a node
 	nodeID++
 	appNode := ResourceNode{
-		ID:   fmt.Sprintf("app-%d", nodeID),
-		Name: spec.Metadata.Name,
-		Type: "application",
+		ID:    fmt.Sprintf("app-%d", nodeID),
+		Name:  spec.Metadata.Name,
+		Type:  "application",
 		Level: level,
 		Metadata: map[string]interface{}{
 			"containers": len(spec.Containers),
@@ -183,9 +183,9 @@ func (a *WorkflowAnalyzer) analyzeResources(spec *types.ScoreSpec) (ResourceGrap
 		nodeID++
 		level++
 		resourceNode := ResourceNode{
-			ID:   fmt.Sprintf("resource-%d", nodeID),
-			Name: resourceName,
-			Type: resource.Type,
+			ID:    fmt.Sprintf("resource-%d", nodeID),
+			Name:  resourceName,
+			Type:  resource.Type,
 			Level: level,
 			Metadata: map[string]interface{}{
 				"params": resource.Params,
@@ -555,10 +555,10 @@ func (a *WorkflowAnalyzer) getStepDependencies(step types.Step, previousSteps []
 
 	// Simple dependency rules based on step types
 	dependencyRules := map[string][]string{
-		"kubernetes":     {"terraform", "resource-provisioning"},
-		"monitoring":     {"kubernetes"},
-		"health-check":   {"kubernetes"},
-		"argocd-app":     {"gitea-repo", "git-commit-manifests"},
+		"kubernetes":   {"terraform", "resource-provisioning"},
+		"monitoring":   {"kubernetes"},
+		"health-check": {"kubernetes"},
+		"argocd-app":   {"gitea-repo", "git-commit-manifests"},
 	}
 
 	if stepDeps, exists := dependencyRules[step.Type]; exists {
@@ -579,10 +579,10 @@ func (a *WorkflowAnalyzer) getStepsBlocked(step types.Step, futureSteps []types.
 
 	// Steps that typically block others
 	blockingRules := map[string][]string{
-		"terraform":          {"kubernetes"},
+		"terraform":             {"kubernetes"},
 		"resource-provisioning": {"kubernetes"},
-		"gitea-repo":         {"git-commit-manifests", "argocd-app"},
-		"git-commit-manifests": {"argocd-app"},
+		"gitea-repo":            {"git-commit-manifests", "argocd-app"},
+		"git-commit-manifests":  {"argocd-app"},
 	}
 
 	if blockedTypes, exists := blockingRules[step.Type]; exists {
@@ -749,22 +749,22 @@ func (a *WorkflowAnalyzer) findCriticalPath(dependencies []DependencyAnalysis) [
 // Default configurations
 func getDefaultStepDurations() map[string]time.Duration {
 	return map[string]time.Duration{
-		"validation":             30 * time.Second,
-		"security":               2 * time.Minute,
-		"policy":                 1 * time.Minute,
-		"terraform":              5 * time.Minute,
-		"ansible":                3 * time.Minute,
-		"kubernetes":             3 * time.Minute,
-		"resource-provisioning":  4 * time.Minute,
-		"monitoring":             2 * time.Minute,
-		"health-check":           1 * time.Minute,
-		"gitea-repo":             30 * time.Second,
-		"git-commit-manifests":   1 * time.Minute,
-		"argocd-app":             2 * time.Minute,
-		"vault-setup":            2 * time.Minute,
-		"database-migration":     3 * time.Minute,
-		"cost-analysis":          2 * time.Minute,
-		"tagging":                1 * time.Minute,
+		"validation":            30 * time.Second,
+		"security":              2 * time.Minute,
+		"policy":                1 * time.Minute,
+		"terraform":             5 * time.Minute,
+		"ansible":               3 * time.Minute,
+		"kubernetes":            3 * time.Minute,
+		"resource-provisioning": 4 * time.Minute,
+		"monitoring":            2 * time.Minute,
+		"health-check":          1 * time.Minute,
+		"gitea-repo":            30 * time.Second,
+		"git-commit-manifests":  1 * time.Minute,
+		"argocd-app":            2 * time.Minute,
+		"vault-setup":           2 * time.Minute,
+		"database-migration":    3 * time.Minute,
+		"cost-analysis":         2 * time.Minute,
+		"tagging":               1 * time.Minute,
 	}
 }
 

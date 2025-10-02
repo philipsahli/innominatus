@@ -66,19 +66,19 @@ type LoginResponse struct {
 }
 
 type ResourceInstance struct {
-	ID                  int64                  `json:"id"`
-	ApplicationName     string                 `json:"application_name"`
-	ResourceName        string                 `json:"resource_name"`
-	ResourceType        string                 `json:"resource_type"`
-	State               string                 `json:"state"`
-	HealthStatus        string                 `json:"health_status"`
-	Configuration       map[string]interface{} `json:"configuration"`
-	ProviderID          *string                `json:"provider_id,omitempty"`
-	ProviderMetadata    map[string]interface{} `json:"provider_metadata,omitempty"`
-	CreatedAt           time.Time              `json:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at"`
-	LastHealthCheck     *time.Time             `json:"last_health_check,omitempty"`
-	ErrorMessage        *string                `json:"error_message,omitempty"`
+	ID               int64                  `json:"id"`
+	ApplicationName  string                 `json:"application_name"`
+	ResourceName     string                 `json:"resource_name"`
+	ResourceType     string                 `json:"resource_type"`
+	State            string                 `json:"state"`
+	HealthStatus     string                 `json:"health_status"`
+	Configuration    map[string]interface{} `json:"configuration"`
+	ProviderID       *string                `json:"provider_id,omitempty"`
+	ProviderMetadata map[string]interface{} `json:"provider_metadata,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	LastHealthCheck  *time.Time             `json:"last_health_check,omitempty"`
+	ErrorMessage     *string                `json:"error_message,omitempty"`
 }
 
 // Login authenticates with the server and stores the token
@@ -175,29 +175,29 @@ func (c *Client) DeprovisionApplication(name string) error {
 
 // WorkflowStepDetail represents a detailed workflow step with logs
 type WorkflowStepDetail struct {
-	ID              int64     `json:"id"`
-	StepNumber      int       `json:"step_number"`
-	StepName        string    `json:"step_name"`
-	StepType        string    `json:"step_type"`
-	Status          string    `json:"status"`
-	StartedAt       time.Time `json:"started_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	DurationMs      *int64    `json:"duration_ms,omitempty"`
-	ErrorMessage    *string   `json:"error_message,omitempty"`
-	OutputLogs      *string   `json:"output_logs,omitempty"`
+	ID           int64      `json:"id"`
+	StepNumber   int        `json:"step_number"`
+	StepName     string     `json:"step_name"`
+	StepType     string     `json:"step_type"`
+	Status       string     `json:"status"`
+	StartedAt    time.Time  `json:"started_at"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	DurationMs   *int64     `json:"duration_ms,omitempty"`
+	ErrorMessage *string    `json:"error_message,omitempty"`
+	OutputLogs   *string    `json:"output_logs,omitempty"`
 }
 
 // WorkflowExecutionDetail represents detailed workflow execution information
 type WorkflowExecutionDetail struct {
-	ID              int64                   `json:"id"`
-	ApplicationName string                  `json:"application_name"`
-	WorkflowName    string                  `json:"workflow_name"`
-	Status          string                  `json:"status"`
-	StartedAt       time.Time               `json:"started_at"`
-	CompletedAt     *time.Time              `json:"completed_at,omitempty"`
-	TotalSteps      int                     `json:"total_steps"`
-	ErrorMessage    *string                 `json:"error_message,omitempty"`
-	Steps           []WorkflowStepDetail    `json:"steps"`
+	ID              int64                `json:"id"`
+	ApplicationName string               `json:"application_name"`
+	WorkflowName    string               `json:"workflow_name"`
+	Status          string               `json:"status"`
+	StartedAt       time.Time            `json:"started_at"`
+	CompletedAt     *time.Time           `json:"completed_at,omitempty"`
+	TotalSteps      int                  `json:"total_steps"`
+	ErrorMessage    *string              `json:"error_message,omitempty"`
+	Steps           []WorkflowStepDetail `json:"steps"`
 }
 
 // GetWorkflowDetail retrieves detailed workflow execution information including step logs

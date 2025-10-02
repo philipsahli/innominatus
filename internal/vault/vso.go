@@ -1,8 +1,10 @@
 package vault
+
 // #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
 	"fmt"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,12 +65,12 @@ type VaultStaticSecret struct {
 		Namespace string `yaml:"namespace"`
 	} `yaml:"metadata"`
 	Spec struct {
-		VaultAuthRef       string `yaml:"vaultAuthRef"`
-		Mount              string `yaml:"mount"`
-		Type               string `yaml:"type"`
-		Path               string `yaml:"path"`
-		RefreshAfter       string `yaml:"refreshAfter"`
-		Destination        struct {
+		VaultAuthRef string `yaml:"vaultAuthRef"`
+		Mount        string `yaml:"mount"`
+		Type         string `yaml:"type"`
+		Path         string `yaml:"path"`
+		RefreshAfter string `yaml:"refreshAfter"`
+		Destination  struct {
 			Name   string            `yaml:"name"`
 			Create bool              `yaml:"create"`
 			Labels map[string]string `yaml:"labels,omitempty"`

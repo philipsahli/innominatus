@@ -201,9 +201,9 @@ func NewDemoEnvironment() *DemoEnvironment {
 						"method":    "kubernetes",
 						"mount":     "kubernetes",
 						"kubernetes": map[string]interface{}{
-							"role":                "vault-secrets-operator",
-							"serviceAccount":      "vault-secrets-operator",
-							"audiences":           []string{"vault"},
+							"role":                   "vault-secrets-operator",
+							"serviceAccount":         "vault-secrets-operator",
+							"audiences":              []string{"vault"},
 							"tokenExpirationSeconds": 600,
 						},
 					},
@@ -284,10 +284,10 @@ func NewDemoEnvironment() *DemoEnvironment {
 					"console":  "http://minio-console.localtest.me",
 				},
 				Values: map[string]interface{}{
-					"mode": "standalone",
-					"rootUser": "minioadmin",
+					"mode":         "standalone",
+					"rootUser":     "minioadmin",
 					"rootPassword": "minioadmin",
-					"replicas": 1,
+					"replicas":     1,
 					"persistence": map[string]interface{}{
 						"enabled": true,
 						"size":    "10Gi",
@@ -295,14 +295,14 @@ func NewDemoEnvironment() *DemoEnvironment {
 					"ingress": map[string]interface{}{
 						"enabled":          true,
 						"ingressClassName": "nginx",
-						"hosts": []string{"minio.localtest.me"},
-						"path": "/",
+						"hosts":            []string{"minio.localtest.me"},
+						"path":             "/",
 					},
 					"consoleIngress": map[string]interface{}{
 						"enabled":          true,
 						"ingressClassName": "nginx",
-						"hosts": []string{"minio-console.localtest.me"},
-						"path": "/",
+						"hosts":            []string{"minio-console.localtest.me"},
+						"path":             "/",
 					},
 					"resources": map[string]interface{}{
 						"requests": map[string]interface{}{

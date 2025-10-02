@@ -3,8 +3,8 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 )
 
 // Common errors

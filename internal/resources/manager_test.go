@@ -3,9 +3,10 @@ package resources
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"innominatus/internal/database"
 	"innominatus/internal/types"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewManager(t *testing.T) {
@@ -23,7 +24,7 @@ func TestManagerWithoutDatabase(t *testing.T) {
 
 	// Test with empty score spec
 	spec := &types.ScoreSpec{
-		Metadata: types.Metadata{Name: "test-app"},
+		Metadata:  types.Metadata{Name: "test-app"},
 		Resources: map[string]types.Resource{},
 	}
 
@@ -143,9 +144,9 @@ func TestResourceConfiguration(t *testing.T) {
 	resource := types.Resource{
 		Type: "postgres",
 		Params: map[string]interface{}{
-			"version":        "13",
-			"size":          "small",
-			"backup":        true,
+			"version":         "13",
+			"size":            "small",
+			"backup":          true,
 			"max_connections": 100,
 		},
 	}
@@ -181,13 +182,13 @@ func TestProvisioningLogic(t *testing.T) {
 func TestStateTransitionValidation(t *testing.T) {
 	// Create a mock resource instance for testing state transitions
 	resource := &database.ResourceInstance{
-		ID:             1,
+		ID:              1,
 		ApplicationName: "test-app",
-		ResourceName:   "test-resource",
-		ResourceType:   "postgres",
-		State:          database.ResourceStateRequested,
-		HealthStatus:   "unknown",
-		Configuration:  map[string]interface{}{},
+		ResourceName:    "test-resource",
+		ResourceType:    "postgres",
+		State:           database.ResourceStateRequested,
+		HealthStatus:    "unknown",
+		Configuration:   map[string]interface{}{},
 	}
 
 	// Test valid state transitions
@@ -209,24 +210,24 @@ func TestResourceTypes(t *testing.T) {
 	// Test different resource types and their handling
 	resourceTypes := map[string]map[string]interface{}{
 		"postgres": {
-			"version":     "13",
-			"size":       "small",
-			"backup":     true,
-			"replicas":   3,
+			"version":  "13",
+			"size":     "small",
+			"backup":   true,
+			"replicas": 3,
 		},
 		"redis": {
-			"version":    "6",
-			"memory":     "1Gi",
+			"version":     "6",
+			"memory":      "1Gi",
 			"persistence": true,
 		},
 		"volume": {
-			"size":        "10Gi",
-			"access_mode": "ReadWriteOnce",
+			"size":          "10Gi",
+			"access_mode":   "ReadWriteOnce",
 			"storage_class": "fast-ssd",
 		},
 		"vault-space": {
-			"path":        "/secrets/app",
-			"policies":    []string{"read", "write"},
+			"path":     "/secrets/app",
+			"policies": []string{"read", "write"},
 		},
 	}
 

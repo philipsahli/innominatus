@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"innominatus/internal/types"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"innominatus/internal/types"
 )
 
 func TestBuildResourceGraph(t *testing.T) {
@@ -233,14 +234,14 @@ func TestBuildGraph(t *testing.T) {
 		Containers: map[string]types.Container{
 			"web": {
 				Variables: map[string]string{
-					"DB_HOST": "${resources.db.host}",
-					"DB_PORT": "5432",
+					"DB_HOST":   "${resources.db.host}",
+					"DB_PORT":   "5432",
 					"CACHE_URL": "${resources.cache.url}",
 				},
 			},
 			"worker": {
 				Variables: map[string]string{
-					"REDIS_URL": "${resources.cache.url}",
+					"REDIS_URL":  "${resources.cache.url}",
 					"STATIC_VAR": "static_value",
 				},
 			},
@@ -303,7 +304,7 @@ func TestBuildGraphInvalidResourceReferences(t *testing.T) {
 		Containers: map[string]types.Container{
 			"web": {
 				Variables: map[string]string{
-					"DB_HOST": "${resources.nonexistent.host}",
+					"DB_HOST":   "${resources.nonexistent.host}",
 					"VALID_REF": "${resources.db.host}",
 				},
 			},
@@ -332,7 +333,7 @@ func TestGraphNodeStructure(t *testing.T) {
 		UpdatedAt:   time.Now(),
 		Description: "Test resource node",
 		Metadata: map[string]interface{}{
-			"type": "postgres",
+			"type":    "postgres",
 			"version": "13",
 		},
 	}

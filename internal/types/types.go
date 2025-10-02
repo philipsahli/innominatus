@@ -1,12 +1,12 @@
 package types
 
 type ScoreSpec struct {
-	APIVersion  string                 `yaml:"apiVersion"`
-	Metadata    Metadata               `yaml:"metadata"`
-	Containers  map[string]Container   `yaml:"containers"`
-	Resources   map[string]Resource    `yaml:"resources"`
-	Environment *Environment           `yaml:"environment,omitempty"`
-	Workflows   map[string]Workflow    `yaml:"workflows,omitempty"`
+	APIVersion  string               `yaml:"apiVersion"`
+	Metadata    Metadata             `yaml:"metadata"`
+	Containers  map[string]Container `yaml:"containers"`
+	Resources   map[string]Resource  `yaml:"resources"`
+	Environment *Environment         `yaml:"environment,omitempty"`
+	Workflows   map[string]Workflow  `yaml:"workflows,omitempty"`
 }
 
 type Metadata struct {
@@ -47,11 +47,11 @@ type WorkflowMetadata struct {
 }
 
 type Step struct {
-	Name          string `yaml:"name"`
-	Type          string `yaml:"type"`
-	Path          string `yaml:"path"`
-	Playbook      string `yaml:"playbook,omitempty"`
-	Namespace     string `yaml:"namespace,omitempty"`
+	Name      string `yaml:"name"`
+	Type      string `yaml:"type"`
+	Path      string `yaml:"path"`
+	Playbook  string `yaml:"playbook,omitempty"`
+	Namespace string `yaml:"namespace,omitempty"`
 	// New fields for TFE and Git workflows
 	Resource      string `yaml:"resource,omitempty"`      // For terraform-generate
 	OutputDir     string `yaml:"outputDir,omitempty"`     // For terraform-generate
@@ -65,11 +65,11 @@ type Step struct {
 	Private     bool   `yaml:"private,omitempty"`     // For gitea-repo
 	Owner       string `yaml:"owner,omitempty"`       // For gitea-repo
 	// New fields for argocd-app workflow
-	AppName     string `yaml:"appName,omitempty"`     // For argocd-app
-	RepoURL     string `yaml:"repoURL,omitempty"`     // For argocd-app
-	TargetPath  string `yaml:"targetPath,omitempty"`  // For argocd-app
-	Project     string `yaml:"project,omitempty"`     // For argocd-app
-	SyncPolicy  string `yaml:"syncPolicy,omitempty"`  // For argocd-app (manual/auto)
+	AppName    string `yaml:"appName,omitempty"`    // For argocd-app
+	RepoURL    string `yaml:"repoURL,omitempty"`    // For argocd-app
+	TargetPath string `yaml:"targetPath,omitempty"` // For argocd-app
+	Project    string `yaml:"project,omitempty"`    // For argocd-app
+	SyncPolicy string `yaml:"syncPolicy,omitempty"` // For argocd-app (manual/auto)
 	// New fields for git-commit-manifests workflow
 	ManifestPath string `yaml:"manifestPath,omitempty"` // For git-commit-manifests
 	GitBranch    string `yaml:"gitBranch,omitempty"`    // For git-commit-manifests

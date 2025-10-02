@@ -1,4 +1,5 @@
 package vault
+
 // #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
@@ -70,9 +71,9 @@ func (c *Client) CreateKubernetesAuthMethod(namespace, mountPath string) error {
 	// Configure auth method
 	configPath := fmt.Sprintf("/v1/auth/%s/config", mountPath)
 	configData := map[string]interface{}{
-		"kubernetes_host":     "https://kubernetes.default.svc",
-		"kubernetes_ca_cert":  "", // Will be auto-detected in cluster
-		"token_reviewer_jwt":  "", // Will use service account token
+		"kubernetes_host":    "https://kubernetes.default.svc",
+		"kubernetes_ca_cert": "", // Will be auto-detected in cluster
+		"token_reviewer_jwt": "", // Will use service account token
 	}
 
 	return c.makeRequest("POST", configPath, configData, nil)
@@ -120,8 +121,8 @@ func (c *Client) CreateKubernetesRole(mountPath, roleName, namespace, serviceAcc
 		"bound_service_account_names":      []string{serviceAccount},
 		"bound_service_account_namespaces": []string{namespace},
 		"policies":                         policies,
-		"ttl":                             "1h",
-		"max_ttl":                         "24h",
+		"ttl":                              "1h",
+		"max_ttl":                          "24h",
 	}
 
 	return c.makeRequest("POST", path, data, nil)
@@ -214,7 +215,7 @@ func (c *Client) makeRequest(method, path string, data interface{}, result inter
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
@@ -285,7 +286,7 @@ func (c *Client) SetupKubernetesRole(appName, namespace, serviceAccount string) 
 		"bound_service_account_names":      []string{serviceAccount},
 		"bound_service_account_namespaces": []string{namespace},
 		"policies":                         []string{fmt.Sprintf("%s-policy", appName)},
-		"ttl":                             "1h",
+		"ttl":                              "1h",
 	}
 
 	err := c.makeRequest("POST", "/v1/auth/kubernetes/role/vault-secrets-operator", roleData, nil)

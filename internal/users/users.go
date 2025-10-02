@@ -15,11 +15,11 @@ import (
 )
 
 type APIKey struct {
-	Key         string    `yaml:"key"`
-	Name        string    `yaml:"name"`
-	CreatedAt   time.Time `yaml:"created_at"`
-	LastUsedAt  time.Time `yaml:"last_used_at,omitempty"`
-	ExpiresAt   time.Time `yaml:"expires_at"`
+	Key        string    `yaml:"key"`
+	Name       string    `yaml:"name"`
+	CreatedAt  time.Time `yaml:"created_at"`
+	LastUsedAt time.Time `yaml:"last_used_at,omitempty"`
+	ExpiresAt  time.Time `yaml:"expires_at"`
 }
 
 type User struct {

@@ -1,4 +1,5 @@
 package demo
+
 // #nosec G204 - Demo/vault components execute commands with controlled parameters
 
 import (
@@ -13,12 +14,12 @@ import (
 
 // HealthStatus represents the health status of a component
 type HealthStatus struct {
-	Name      string
-	Host      string
-	Healthy   bool
-	Status    string
-	Error     string
-	Latency   time.Duration
+	Name    string
+	Host    string
+	Healthy bool
+	Status  string
+	Error   string
+	Latency time.Duration
 }
 
 // HealthChecker performs health checks on demo components
@@ -80,7 +81,7 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status.Error = fmt.Sprintf("Request failed: %v", err)
 		return status
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	status.Latency = time.Since(start)
 
@@ -251,6 +252,7 @@ func (h *HealthChecker) GetHealthSummary(results []HealthStatus) (int, int, stri
 	}
 
 	var status string
+	//nolint:staticcheck // Simple if-else is more readable for this binary check - QF1003
 	if healthy == total {
 		status = "All services healthy"
 	} else if healthy == 0 {
@@ -267,7 +269,7 @@ func (h *HealthChecker) checkVaultSecretsOperator(component DemoComponent, statu
 	start := time.Now()
 
 	// Check if VSO pods are running
-	cmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "-l", "app.kubernetes.io/name=vault-secrets-operator", "-o", "jsonpath={.items[*].status.phase}")  // #nosec G204 - curl command for health check
+	cmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "-l", "app.kubernetes.io/name=vault-secrets-operator", "-o", "jsonpath={.items[*].status.phase}") // #nosec G204 - curl command for health check
 	output, err := cmd.Output()
 
 	status.Latency = time.Since(start)

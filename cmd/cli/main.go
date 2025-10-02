@@ -3,11 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"strings"
 	"innominatus/internal/cli"
 	"innominatus/internal/users"
 	"innominatus/internal/validation"
+	"os"
+	"strings"
 )
 
 func main() {

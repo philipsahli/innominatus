@@ -2,8 +2,8 @@ package validation
 
 import (
 	"fmt"
-	"net/http"
 	"innominatus/internal/admin"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -213,10 +213,10 @@ func (v *AdminConfigValidator) testGiteaConnectivity() error {
 	if err != nil {
 		return fmt.Errorf("cannot reach Gitea API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("Gitea API returned status %d", resp.StatusCode)
+		return fmt.Errorf("gitea API returned status %d", resp.StatusCode)
 	}
 
 	return nil
@@ -230,7 +230,7 @@ func (v *AdminConfigValidator) testArgoCDConnectivity() error {
 	if err != nil {
 		return fmt.Errorf("cannot reach ArgoCD API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// ArgoCD might return 401 for unauthenticated version endpoint, which is fine
 	if resp.StatusCode >= 500 {
