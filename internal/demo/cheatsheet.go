@@ -150,12 +150,17 @@ func (c *CheatSheet) PrintQuickStart() {
 	fmt.Println("   • Login: minioadmin / minioadmin")
 	fmt.Println("   • S3-compatible object storage for applications")
 	fmt.Println()
-	fmt.Println("5. Access Kubernetes Dashboard:")
+	fmt.Println("5. Access Backstage (Developer Portal):")
+	fmt.Println("   • URL: http://backstage.localtest.me")
+	fmt.Println("   • Demo mode - no authentication required")
+	fmt.Println("   • Software catalog and developer portal")
+	fmt.Println()
+	fmt.Println("6. Access Kubernetes Dashboard:")
 	fmt.Println("   • URL: http://k8s.localtest.me")
 	fmt.Println("   • Login token: kubectl -n kubernetes-dashboard create token admin-user")
 	fmt.Println("   • View cluster resources and workloads")
 	fmt.Println()
-	fmt.Println("6. Access Demo Application:")
+	fmt.Println("7. Access Demo Application:")
 	fmt.Println("   • URL: http://demo.localtest.me")
 	fmt.Println("   • Sample app deployed via Score spec")
 	fmt.Println()
@@ -294,6 +299,10 @@ func (c *CheatSheet) formatServiceName(name string) string {
 		return "Ingress"
 	case "kubernetes-dashboard":
 		return "K8s Dashboard"
+	case "backstage":
+		return "Backstage"
+	case "minio":
+		return "Minio"
 	default:
 		return toTitle(name)
 	}

@@ -314,6 +314,63 @@ func NewDemoEnvironment() *DemoEnvironment {
 				Port:       9000,
 			},
 			{
+				Name:        "backstage",
+				Namespace:   "backstage",
+				Chart:       "backstage",
+				Repo:        "https://backstage.github.io/charts",
+				Version:     "2.6.1",
+				IngressHost: "backstage.localtest.me",
+				Credentials: map[string]string{
+					"info": "Demo mode - no authentication required",
+				},
+				Values: map[string]interface{}{
+					"backstage": map[string]interface{}{
+						"image": map[string]interface{}{
+							"pullPolicy": "IfNotPresent",
+						},
+						"appConfig": map[string]interface{}{
+							"app": map[string]interface{}{
+								"baseUrl": "http://backstage.localtest.me",
+								"title":   "OpenAlps Developer Portal",
+							},
+							"backend": map[string]interface{}{
+								"baseUrl": "http://backstage.localtest.me",
+								"cors": map[string]interface{}{
+									"origin": "http://backstage.localtest.me",
+								},
+							},
+							"organization": map[string]interface{}{
+								"name": "OpenAlps Demo",
+							},
+						},
+					},
+					"ingress": map[string]interface{}{
+						"enabled":   true,
+						"className": "nginx",
+						"host":      "backstage.localtest.me",
+						"annotations": map[string]string{
+							"nginx.ingress.kubernetes.io/ssl-redirect": "false",
+						},
+					},
+					"postgresql": map[string]interface{}{
+						"enabled": true,
+						"auth": map[string]interface{}{
+							"username": "backstage",
+							"password": "backstage123",
+							"database": "backstage",
+						},
+					},
+					"service": map[string]interface{}{
+						"type": "ClusterIP",
+						"ports": map[string]interface{}{
+							"backend": 7007,
+						},
+					},
+				},
+				HealthPath: "/healthcheck",
+				Port:       7007,
+			},
+			{
 				Name:        "demo-app",
 				Namespace:   "demo",
 				Chart:       "", // Will be deployed via kubectl

@@ -105,6 +105,8 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkVaultSecretsOperator(component, status)
 	case "minio":
 		status = h.checkMinio(resp, status)
+	case "backstage":
+		status = h.checkBackstage(resp, status)
 	default:
 		status = h.checkGeneric(resp, status)
 	}
@@ -312,6 +314,17 @@ func (h *HealthChecker) checkMinio(resp *http.Response, status HealthStatus) Hea
 	if resp.StatusCode == 200 {
 		status.Healthy = true
 		status.Status = "Live"
+	} else {
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return status
+}
+
+// checkBackstage performs Backstage-specific health check
+func (h *HealthChecker) checkBackstage(resp *http.Response, status HealthStatus) HealthStatus {
+	if resp.StatusCode == 200 {
+		status.Healthy = true
+		status.Status = "Available"
 	} else {
 		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
 	}

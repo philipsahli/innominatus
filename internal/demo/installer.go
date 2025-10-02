@@ -532,7 +532,7 @@ data:
                 <a href="http://argocd.localtest.me" class="link">🔄 ArgoCD</a>
                 <a href="http://vault.localtest.me" class="link">🔒 Vault</a>
                 <a href="http://grafana.localtest.me" class="link">📊 Grafana</a>
-                <a href="http://prometheus.localtest.me" class="link">📈 Prometheus</a>
+                <a href="http://backstage.localtest.me" class="link">🚪 Backstage</a>
                 <a href="http://k8s.localtest.me" class="link">🎛️ Dashboard</a>
             </div>
         </div>
