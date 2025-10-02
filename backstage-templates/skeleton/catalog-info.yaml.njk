@@ -1,0 +1,134 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  {%- if values.description %}
+  description: ${{ values.description }}
+  {%- endif %}
+  annotations:
+    # innominatus orchestrator annotations
+    innominatus.io/app-name: ${{ values.name }}
+    innominatus.io/environment: ${{ values.environment }}
+    innominatus.io/managed: "true"
+    # Links to external systems
+    {%- if 'setup-gitops' in values.workflowSteps %}
+    argocd/app-name: ${{ values.name }}
+    {%- endif %}
+    {%- if 'create-repository' in values.workflowSteps %}
+    gitea.com/project-slug: giteaadmin/${{ values.name }}
+    {%- endif %}
+    # Kubernetes annotations
+    kubernetes.io/namespace: ${{ values.environment }}
+  tags:
+    - score
+    - innominatus
+    - ${{ values.environment }}
+    {%- if values.enableS3 %}
+    - s3
+    {%- endif %}
+    {%- if values.enableDatabase %}
+    - database
+    - ${{ values.databaseType }}
+    {%- endif %}
+  links:
+    - url: http://innominatus.localtest.me
+      title: innominatus Orchestrator
+      icon: dashboard
+    {%- if 'setup-gitops' in values.workflowSteps %}
+    - url: http://argocd.localtest.me/applications/${{ values.name }}
+      title: ArgoCD Application
+      icon: deployment
+    {%- endif %}
+    {%- if 'create-repository' in values.workflowSteps %}
+    - url: http://gitea.localtest.me/giteaadmin/${{ values.name }}
+      title: Git Repository
+      icon: github
+    {%- endif %}
+    - url: http://grafana.localtest.me
+      title: Grafana Dashboards
+      icon: monitoring
+
+spec:
+  type: service
+  lifecycle: ${{ values.environment }}
+  owner: ${{ values.owner }}
+  system: platform
+
+  # Dependency relationships
+  {%- if values.enableS3 or values.enableDatabase %}
+  dependsOn:
+    {%- if values.enableS3 %}
+    - resource:${{ values.name }}-storage
+    {%- endif %}
+    {%- if values.enableDatabase %}
+    - resource:${{ values.name }}-database
+    {%- endif %}
+  {%- endif %}
+
+  # Resource definitions
+  {%- if values.enableS3 or values.enableDatabase %}
+  providesApis:
+    - ${{ values.name }}-api
+  {%- endif %}
+
+---
+{%- if values.enableS3 %}
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: ${{ values.name }}-storage
+  description: S3 bucket for ${{ values.name }}
+  annotations:
+    innominatus.io/resource-type: minio-s3-bucket
+spec:
+  type: s3-bucket
+  owner: ${{ values.owner }}
+  system: platform
+  dependencyOf:
+    - component:${{ values.name }}
+
+---
+{%- endif %}
+{%- if values.enableDatabase %}
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: ${{ values.name }}-database
+  description: ${{ values.databaseType | title }} database for ${{ values.name }}
+  annotations:
+    innominatus.io/resource-type: ${{ values.databaseType }}
+    innominatus.io/storage-size: ${{ values.databaseSize }}
+spec:
+  type: database
+  owner: ${{ values.owner }}
+  system: platform
+  dependencyOf:
+    - component:${{ values.name }}
+
+---
+{%- endif %}
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: ${{ values.name }}-api
+  description: API for ${{ values.name }}
+spec:
+  type: openapi
+  lifecycle: ${{ values.environment }}
+  owner: ${{ values.owner }}
+  system: platform
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: ${{ values.name }} API
+      version: 1.0.0
+      description: ${{ values.description | default('API for ' + values.name) }}
+    servers:
+      - url: http://${{ values.name }}.${{ values.environment }}.svc.cluster.local:${{ values.containerPort }}
+    paths:
+      /health:
+        get:
+          summary: Health check endpoint
+          responses:
+            '200':
+              description: Service is healthy
