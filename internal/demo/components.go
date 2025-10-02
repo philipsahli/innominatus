@@ -342,6 +342,15 @@ func NewDemoEnvironment() *DemoEnvironment {
 							"organization": map[string]interface{}{
 								"name": "OpenAlps Demo",
 							},
+							"techdocs": map[string]interface{}{
+								"builder": "local",
+								"generator": map[string]interface{}{
+									"runIn": "local",
+								},
+								"publisher": map[string]interface{}{
+									"type": "local",
+								},
+							},
 						},
 					},
 					"ingress": map[string]interface{}{
@@ -354,6 +363,11 @@ func NewDemoEnvironment() *DemoEnvironment {
 					},
 					"postgresql": map[string]interface{}{
 						"enabled": true,
+						"image": map[string]interface{}{
+							"registry":   "docker.io",
+							"repository": "bitnami/postgresql",
+							"tag":        "15",
+						},
 						"auth": map[string]interface{}{
 							"username": "backstage",
 							"password": "backstage123",
