@@ -362,16 +362,12 @@ func NewDemoEnvironment() *DemoEnvironment {
 						},
 					},
 					"postgresql": map[string]interface{}{
-						"enabled": true,
-						"image": map[string]interface{}{
-							"registry":   "docker.io",
-							"repository": "bitnami/postgresql",
-							"tag":        "15",
-						},
-						"auth": map[string]interface{}{
-							"username": "backstage",
-							"password": "backstage123",
-							"database": "backstage",
+						"enabled": false,
+					},
+					"database": map[string]interface{}{
+						"client": "better-sqlite3",
+						"connection": map[string]interface{}{
+							"filename": ":memory:",
 						},
 					},
 					"service": map[string]interface{}{
