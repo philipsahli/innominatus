@@ -1,10 +1,10 @@
-"use client"
+'use client';
 
-import React, { useState } from 'react'
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import React, { useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import {
   Home,
   Network,
@@ -21,111 +21,105 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
-  BookOpen
-} from "lucide-react"
-import { useTheme } from "next-themes"
-import {
-  Sheet,
-  SheetContent,
-  SheetTrigger,
-} from "@/components/ui/sheet"
-import { useAuth } from "@/contexts/auth-context"
+  BookOpen,
+} from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { useAuth } from '@/contexts/auth-context';
 
 interface NavSubItem {
-  href: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  external?: boolean
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  external?: boolean;
 }
 
 interface NavItem {
-  href?: string
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  children?: NavSubItem[]
+  href?: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children?: NavSubItem[];
 }
 
 const navigation: NavItem[] = [
   {
-    href: "/dashboard",
-    label: "Dashboard",
+    href: '/dashboard',
+    label: 'Dashboard',
     icon: Home,
   },
   {
-    label: "Workflows",
+    label: 'Workflows',
     icon: Activity,
     children: [
       {
-        href: "/workflows",
-        label: "Workflow Executions",
+        href: '/workflows',
+        label: 'Workflow Executions',
         icon: Activity,
       },
       {
-        href: "/workflows/analyze",
-        label: "Workflow Analysis",
+        href: '/workflows/analyze',
+        label: 'Workflow Analysis',
         icon: Network,
       },
     ],
   },
   {
-    label: "Resources",
+    label: 'Resources',
     icon: Package,
     children: [
       {
-        href: "/resources",
-        label: "Resource Management",
+        href: '/resources',
+        label: 'Resource Management',
         icon: Package,
       },
       {
-        href: "http://localhost:8081/swagger",
-        label: "API Documentation",
+        href: 'http://localhost:8081/swagger',
+        label: 'API Documentation',
         icon: FileText,
         external: true,
       },
     ],
   },
   {
-    href: "/graph",
-    label: "Resource Graph",
+    href: '/graph',
+    label: 'Resource Graph',
     icon: Network,
   },
   {
-    href: "/docs",
-    label: "Documentation",
+    href: '/docs',
+    label: 'Documentation',
     icon: BookOpen,
   },
   {
-    href: "/demo",
-    label: "Demo Environment",
+    href: '/demo',
+    label: 'Demo Environment',
     icon: Monitor,
   },
   {
-    href: "/users",
-    label: "Users",
+    href: '/users',
+    label: 'Users',
     icon: Users,
   },
   {
-    href: "/settings",
-    label: "Settings",
+    href: '/settings',
+    label: 'Settings',
     icon: Settings,
   },
-]
+];
 
 export function Navigation() {
-  const pathname = usePathname()
-  const { theme, setTheme } = useTheme()
-  const { logout } = useAuth()
-  const [expandedItems, setExpandedItems] = useState<string[]>([])
+  const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
+  const { logout } = useAuth();
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const toggleExpanded = (label: string) => {
-    setExpandedItems(prev =>
-      prev.includes(label)
-        ? prev.filter(item => item !== label)
-        : [...prev, label]
-    )
-  }
+    setExpandedItems((prev) =>
+      prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label]
+    );
+  };
 
-  const isExpanded = (label: string) => expandedItems.includes(label)
+  const isExpanded = (label: string) => expandedItems.includes(label);
 
   const NavContent = () => (
     <div className="h-full flex flex-col bg-gray-800 text-white dark:bg-gray-900">
@@ -136,10 +130,10 @@ export function Navigation() {
       <nav className="flex-1 p-4">
         <ul className="space-y-2">
           {navigation.map((item) => {
-            const Icon = item.icon
-            const isActive = pathname === item.href
-            const hasChildren = item.children && item.children.length > 0
-            const expanded = isExpanded(item.label)
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            const hasChildren = item.children && item.children.length > 0;
+            const expanded = isExpanded(item.label);
 
             return (
               <li key={item.label}>
@@ -148,8 +142,8 @@ export function Navigation() {
                     <button
                       onClick={() => toggleExpanded(item.label)}
                       className={cn(
-                        "flex items-center justify-between w-full gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600",
-                        "text-gray-100 hover:text-white dark:text-gray-200"
+                        'flex items-center justify-between w-full gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                        'text-gray-100 hover:text-white dark:text-gray-200'
                       )}
                     >
                       <div className="flex items-center gap-3">
@@ -165,8 +159,8 @@ export function Navigation() {
                     {expanded && item.children && (
                       <ul className="ml-4 mt-2 space-y-1">
                         {item.children.map((subItem) => {
-                          const SubIcon = subItem.icon
-                          const isSubActive = pathname === subItem.href
+                          const SubIcon = subItem.icon;
+                          const isSubActive = pathname === subItem.href;
 
                           return (
                             <li key={subItem.href}>
@@ -176,8 +170,8 @@ export function Navigation() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className={cn(
-                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600",
-                                    "text-gray-100 hover:text-white dark:text-gray-200"
+                                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                                    'text-gray-100 hover:text-white dark:text-gray-200'
                                   )}
                                 >
                                   <SubIcon className="w-4 h-4" />
@@ -188,8 +182,10 @@ export function Navigation() {
                                 <Link
                                   href={subItem.href}
                                   className={cn(
-                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600",
-                                    isSubActive ? "bg-gray-700 text-white dark:bg-gray-600" : "text-gray-100 hover:text-white dark:text-gray-200"
+                                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                                    isSubActive
+                                      ? 'bg-gray-700 text-white dark:bg-gray-600'
+                                      : 'text-gray-100 hover:text-white dark:text-gray-200'
                                   )}
                                 >
                                   <SubIcon className="w-4 h-4" />
@@ -197,7 +193,7 @@ export function Navigation() {
                                 </Link>
                               )}
                             </li>
-                          )
+                          );
                         })}
                       </ul>
                     )}
@@ -206,8 +202,10 @@ export function Navigation() {
                   <Link
                     href={item.href!}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600",
-                      isActive ? "bg-gray-700 text-white dark:bg-gray-600" : "text-gray-100 hover:text-white dark:text-gray-200"
+                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                      isActive
+                        ? 'bg-gray-700 text-white dark:bg-gray-600'
+                        : 'text-gray-100 hover:text-white dark:text-gray-200'
                     )}
                   >
                     <Icon className="w-4 h-4" />
@@ -215,7 +213,7 @@ export function Navigation() {
                   </Link>
                 )}
               </li>
-            )
+            );
           })}
         </ul>
       </nav>
@@ -224,14 +222,10 @@ export function Navigation() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           className="w-full justify-start text-gray-100 hover:text-white hover:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
         >
-          {theme === "dark" ? (
-            <Sun className="w-4 h-4 mr-2" />
-          ) : (
-            <Moon className="w-4 h-4 mr-2" />
-          )}
+          {theme === 'dark' ? <Sun className="w-4 h-4 mr-2" /> : <Moon className="w-4 h-4 mr-2" />}
           Toggle theme
         </Button>
         <Button
@@ -245,7 +239,7 @@ export function Navigation() {
         </Button>
       </div>
     </div>
-  )
+  );
 
   return (
     <>
@@ -270,5 +264,5 @@ export function Navigation() {
         </div>
       </div>
     </>
-  )
+  );
 }

@@ -1,8 +1,8 @@
-import { getAllDocs } from '@/lib/docs'
-import { DocsIndexClient } from '@/components/DocsIndexClient'
+import { getAllDocs } from '@/lib/docs';
+import { DocsIndexClient } from '@/components/DocsIndexClient';
 
 export default function DocsIndexPage() {
-  const allDocs = getAllDocs()
+  const allDocs = getAllDocs();
 
-  return <DocsIndexClient allDocs={allDocs} />
+  return <DocsIndexClient allDocs={allDocs} />;
 }

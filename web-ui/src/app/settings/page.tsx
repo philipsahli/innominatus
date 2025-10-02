@@ -1,13 +1,11 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function SettingsPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground">
-          Configure platform settings and preferences
-        </p>
+        <p className="text-muted-foreground">Configure platform settings and preferences</p>
       </div>
 
       <Card>
@@ -21,5 +19,5 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

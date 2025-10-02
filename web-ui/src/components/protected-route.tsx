@@ -1,24 +1,24 @@
-'use client'
+'use client';
 
-import { useAuth } from '@/contexts/auth-context'
-import { useRouter } from 'next/navigation'
-import { useEffect, ReactNode } from 'react'
+import { useAuth } from '@/contexts/auth-context';
+import { useRouter } from 'next/navigation';
+import { useEffect, ReactNode } from 'react';
 
 interface ProtectedRouteProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated } = useAuth()
-  const router = useRouter()
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
     // Only redirect if we're explicitly not authenticated
     // This prevents premature redirects during authentication loading
     if (isAuthenticated === false) {
-      router.push('/login')
+      router.push('/login');
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, router]);
 
   if (!isAuthenticated) {
     return (
@@ -28,8 +28,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
           <p className="text-muted-foreground">Checking authentication...</p>
         </div>
       </div>
-    )
+    );
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }

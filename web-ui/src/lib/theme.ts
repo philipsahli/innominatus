@@ -7,27 +7,27 @@ export const theme = {
 
     // Status colors with semantic meaning
     status: {
-      success: '#16a34a',    // Green - operations completed successfully
-      warning: '#f59e0b',    // Amber - attention needed
-      error: '#ef4444',      // Red - failures or critical issues
-      info: '#3b82f6',       // Blue - informational states
-      pending: '#6b7280',    // Gray - waiting or queued states
+      success: '#16a34a', // Green - operations completed successfully
+      warning: '#f59e0b', // Amber - attention needed
+      error: '#ef4444', // Red - failures or critical issues
+      info: '#3b82f6', // Blue - informational states
+      pending: '#6b7280', // Gray - waiting or queued states
     },
 
     // IDP-specific workflow states
     workflow: {
-      running: '#f59e0b',     // Amber - actively executing
-      completed: '#16a34a',   // Green - finished successfully
-      failed: '#ef4444',      // Red - execution failed
-      pending: '#6b7280',     // Gray - queued for execution
+      running: '#f59e0b', // Amber - actively executing
+      completed: '#16a34a', // Green - finished successfully
+      failed: '#ef4444', // Red - execution failed
+      pending: '#6b7280', // Gray - queued for execution
     },
 
     // IDP-specific resource states
     resource: {
-      active: '#16a34a',      // Green - healthy and operational
+      active: '#16a34a', // Green - healthy and operational
       provisioning: '#3b82f6', // Blue - being created/configured
-      degraded: '#f59e0b',    // Amber - operational but impaired
-      terminated: '#6b7280',  // Gray - decommissioned
+      degraded: '#f59e0b', // Amber - operational but impaired
+      terminated: '#6b7280', // Gray - decommissioned
     },
 
     // Neutral palette
@@ -78,53 +78,53 @@ export const theme = {
     normal: '200ms',
     slow: '300ms',
   },
-} as const
+} as const;
 
 // Type definitions for better TypeScript support
-export type ThemeColors = typeof theme.colors
-export type StatusColors = typeof theme.colors.status
-export type WorkflowColors = typeof theme.colors.workflow
-export type ResourceColors = typeof theme.colors.resource
+export type ThemeColors = typeof theme.colors;
+export type StatusColors = typeof theme.colors.status;
+export type WorkflowColors = typeof theme.colors.workflow;
+export type ResourceColors = typeof theme.colors.resource;
 
 // Utility function to get status colors
 export function getStatusColor(status: keyof StatusColors): string {
-  return theme.colors.status[status]
+  return theme.colors.status[status];
 }
 
 // Utility function to get workflow status colors
 export function getWorkflowStatusColor(status: keyof WorkflowColors): string {
-  return theme.colors.workflow[status]
+  return theme.colors.workflow[status];
 }
 
 // Utility function to get resource status colors
 export function getResourceStatusColor(status: keyof ResourceColors): string {
-  return theme.colors.resource[status]
+  return theme.colors.resource[status];
 }
 
 // Utility function to get status badge class names
 export function getStatusBadgeClass(status: string): string {
   switch (status.toLowerCase()) {
     case 'running':
-      return 'workflow-running'
+      return 'workflow-running';
     case 'completed':
     case 'success':
-      return 'workflow-completed'
+      return 'workflow-completed';
     case 'failed':
     case 'error':
-      return 'workflow-failed'
+      return 'workflow-failed';
     case 'pending':
-      return 'workflow-pending'
+      return 'workflow-pending';
     case 'active':
-      return 'status-success'
+      return 'status-success';
     case 'provisioning':
-      return 'status-info'
+      return 'status-info';
     case 'degraded':
     case 'warning':
-      return 'status-warning'
+      return 'status-warning';
     case 'terminated':
-      return 'workflow-pending'
+      return 'workflow-pending';
     default:
-      return 'workflow-pending'
+      return 'workflow-pending';
   }
 }
 
@@ -132,48 +132,48 @@ export function getStatusBadgeClass(status: string): string {
 export function getStatusIconName(status: string): string {
   switch (status.toLowerCase()) {
     case 'running':
-      return 'Zap'
+      return 'Zap';
     case 'completed':
     case 'success':
     case 'active':
-      return 'CheckCircle'
+      return 'CheckCircle';
     case 'failed':
     case 'error':
-      return 'XCircle'
+      return 'XCircle';
     case 'pending':
     case 'terminated':
-      return 'Clock'
+      return 'Clock';
     case 'provisioning':
-      return 'Loader'
+      return 'Loader';
     case 'degraded':
     case 'warning':
-      return 'AlertTriangle'
+      return 'AlertTriangle';
     default:
-      return 'Clock'
+      return 'Clock';
   }
 }
 
 // CSS-in-JS style generators for dynamic theming
 export function generateCardGradient(type: keyof typeof theme.colors.cards): string {
-  const cardColors = theme.colors.cards[type]
-  return `bg-gradient-to-br from-${cardColors.from} to-${cardColors.to}`
+  const cardColors = theme.colors.cards[type];
+  return `bg-gradient-to-br from-${cardColors.from} to-${cardColors.to}`;
 }
 
 export function generateBackgroundGradient(): string {
-  const bg = theme.colors.background
-  return `bg-gradient-to-br from-${bg.from} via-${bg.via} to-${bg.to}`
+  const bg = theme.colors.background;
+  return `bg-gradient-to-br from-${bg.from} via-${bg.via} to-${bg.to}`;
 }
 
 // Accessibility helpers
 export function getContrastTextColor(bgColor: string): 'text-white' | 'text-black' {
   // Simple heuristic for contrast - in a real app you'd use a proper contrast calculation
-  const lightColors = ['yellow', 'lime', 'amber', 'orange', 'cyan']
-  const isLight = lightColors.some(color => bgColor.includes(color))
-  return isLight ? 'text-black' : 'text-white'
+  const lightColors = ['yellow', 'lime', 'amber', 'orange', 'cyan'];
+  const isLight = lightColors.some((color) => bgColor.includes(color));
+  return isLight ? 'text-black' : 'text-white';
 }
 
 // Theme validation
 export function validateThemeColors(colors: Record<string, string>): boolean {
-  const requiredColors = ['primary', 'success', 'warning', 'error', 'info']
-  return requiredColors.every(color => color in colors)
+  const requiredColors = ['primary', 'success', 'warning', 'error', 'info'];
+  return requiredColors.every((color) => color in colors);
 }

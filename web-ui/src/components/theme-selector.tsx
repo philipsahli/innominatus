@@ -1,8 +1,8 @@
-"use client"
+'use client';
 
-import { useState } from 'react'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Sheet,
   SheetContent,
@@ -10,19 +10,19 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@/components/ui/sheet"
-import { Badge } from "@/components/ui/badge"
-import { Palette, Check, Sparkles } from "lucide-react"
-import { useCustomTheme } from "@/contexts/theme-context"
+} from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
+import { Palette, Check, Sparkles } from 'lucide-react';
+import { useCustomTheme } from '@/contexts/theme-context';
 
 export function ThemeSelector() {
-  const { currentTheme, setTheme, themes } = useCustomTheme()
-  const [isOpen, setIsOpen] = useState(false)
+  const { currentTheme, setTheme, themes } = useCustomTheme();
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleThemeChange = (themeId: string) => {
-    setTheme(themeId)
-    setIsOpen(false)
-  }
+    setTheme(themeId);
+    setIsOpen(false);
+  };
 
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
@@ -74,9 +74,7 @@ export function ThemeSelector() {
                           <Check className="w-4 h-4 text-green-600" />
                         )}
                       </CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {theme.description}
-                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">{theme.description}</p>
                     </div>
                   </div>
                 </CardHeader>
@@ -84,16 +82,26 @@ export function ThemeSelector() {
                   {/* Theme Preview */}
                   <div className="space-y-3">
                     {/* Background Preview */}
-                    <div className={`h-8 rounded-lg bg-gradient-to-r from-${theme.colors.background.from} via-${theme.colors.background.via} to-${theme.colors.background.to} border`}>
+                    <div
+                      className={`h-8 rounded-lg bg-gradient-to-r from-${theme.colors.background.from} via-${theme.colors.background.via} to-${theme.colors.background.to} border`}
+                    >
                       <div className="h-full w-full rounded-lg bg-gradient-to-r opacity-80" />
                     </div>
 
                     {/* Cards Preview */}
                     <div className="grid grid-cols-4 gap-2">
-                      <div className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.applications.from} to-${theme.colors.cards.applications.to}`} />
-                      <div className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.workflows.from} to-${theme.colors.cards.workflows.to}`} />
-                      <div className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.resources.from} to-${theme.colors.cards.resources.to}`} />
-                      <div className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.users.from} to-${theme.colors.cards.users.to}`} />
+                      <div
+                        className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.applications.from} to-${theme.colors.cards.applications.to}`}
+                      />
+                      <div
+                        className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.workflows.from} to-${theme.colors.cards.workflows.to}`}
+                      />
+                      <div
+                        className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.resources.from} to-${theme.colors.cards.resources.to}`}
+                      />
+                      <div
+                        className={`h-6 rounded bg-gradient-to-br from-${theme.colors.cards.users.from} to-${theme.colors.cards.users.to}`}
+                      />
                     </div>
                   </div>
                 </CardContent>
@@ -109,5 +117,5 @@ export function ThemeSelector() {
         </div>
       </SheetContent>
     </Sheet>
-  )
+  );
 }

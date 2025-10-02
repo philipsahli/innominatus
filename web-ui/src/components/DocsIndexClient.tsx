@@ -1,60 +1,65 @@
-'use client'
+'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { ProtectedRoute } from '@/components/protected-route'
-import { BookOpen, FileText, ArrowUpRight, Search } from 'lucide-react'
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
-import { Input } from '@/components/ui/input'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ProtectedRoute } from '@/components/protected-route';
+import { BookOpen, FileText, ArrowUpRight, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Input } from '@/components/ui/input';
 
 interface Doc {
-  slug: string
-  content: string
+  slug: string;
+  content: string;
   metadata: {
-    title: string
-    description?: string
-  }
+    title: string;
+    description?: string;
+  };
 }
 
 interface DocsIndexClientProps {
-  allDocs: Doc[]
+  allDocs: Doc[];
 }
 
 export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
-  const router = useRouter()
-  const [searchTerm, setSearchTerm] = useState('')
+  const router = useRouter();
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Group docs by category
-  const categories: Record<string, typeof allDocs> = {}
-  allDocs.forEach(doc => {
-    const category = doc.slug.includes('/') ? doc.slug.split('/')[0] : 'General'
+  const categories: Record<string, typeof allDocs> = {};
+  allDocs.forEach((doc) => {
+    const category = doc.slug.includes('/') ? doc.slug.split('/')[0] : 'General';
     if (!categories[category]) {
-      categories[category] = []
+      categories[category] = [];
     }
-    categories[category].push(doc)
-  })
+    categories[category].push(doc);
+  });
 
   // Filter docs based on search
-  const filteredCategories = Object.entries(categories).reduce((acc, [category, docs]) => {
-    const filteredDocs = docs.filter(doc =>
-      doc.metadata.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (doc.metadata.description && doc.metadata.description.toLowerCase().includes(searchTerm.toLowerCase()))
-    )
-    if (filteredDocs.length > 0) {
-      acc[category] = filteredDocs
-    }
-    return acc
-  }, {} as Record<string, typeof allDocs>)
+  const filteredCategories = Object.entries(categories).reduce(
+    (acc, [category, docs]) => {
+      const filteredDocs = docs.filter(
+        (doc) =>
+          doc.metadata.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (doc.metadata.description &&
+            doc.metadata.description.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+      if (filteredDocs.length > 0) {
+        acc[category] = filteredDocs;
+      }
+      return acc;
+    },
+    {} as Record<string, typeof allDocs>
+  );
 
   const categoryTitles: Record<string, string> = {
     'getting-started': 'Getting Started',
-    'guides': 'Guides',
-    'features': 'Features',
-    'cli': 'CLI Reference',
-    'api': 'API Reference',
-    'General': 'General Documentation'
-  }
+    guides: 'Guides',
+    features: 'Features',
+    cli: 'CLI Reference',
+    api: 'API Reference',
+    General: 'General Documentation',
+  };
 
   return (
     <ProtectedRoute>
@@ -73,7 +78,8 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                   </h1>
                 </div>
                 <p className="text-lg text-gray-600 dark:text-gray-400 max-w-2xl">
-                  Learn about innominatus - Score-based platform orchestration, workflows, golden paths, and more
+                  Learn about innominatus - Score-based platform orchestration, workflows, golden
+                  paths, and more
                 </p>
               </div>
             </div>
@@ -161,7 +167,9 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                 >
                   <div className="text-left">
                     <div className="font-semibold">Quick Start Guide</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Get started in 5 minutes</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Get started in 5 minutes
+                    </div>
                   </div>
                 </Button>
                 <Button
@@ -171,7 +179,9 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                 >
                   <div className="text-left">
                     <div className="font-semibold">Core Concepts</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Understand the architecture</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Understand the architecture
+                    </div>
                   </div>
                 </Button>
               </div>
@@ -180,5 +190,5 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

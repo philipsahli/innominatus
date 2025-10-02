@@ -1,48 +1,47 @@
-'use client'
+'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { ExternalLink, Play, Trash2, RefreshCw } from "lucide-react"
-import { ProtectedRoute } from "@/components/protected-route"
-import { useDemoStatus, useDemoActions } from "@/hooks/use-api"
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ExternalLink, Play, Trash2, RefreshCw } from 'lucide-react';
+import { ProtectedRoute } from '@/components/protected-route';
+import { useDemoStatus, useDemoActions } from '@/hooks/use-api';
 
 export default function DemoEnvironmentPage() {
-
   // API hooks
-  const { data: demoData, loading: statusLoading, error: statusError, refetch } = useDemoStatus()
-  const { runDemoTime, runDemoNuke } = useDemoActions()
+  const { data: demoData, loading: statusLoading, error: statusError, refetch } = useDemoStatus();
+  const { runDemoTime, runDemoNuke } = useDemoActions();
 
-  const components = demoData?.components || []
+  const components = demoData?.components || [];
 
   const handleDemoTime = async () => {
-    const result = await runDemoTime.mutate(undefined)
+    const result = await runDemoTime.mutate(undefined);
     if (result.success) {
-      console.log('Demo time completed successfully')
-      refetch() // Refresh status after action
+      console.log('Demo time completed successfully');
+      refetch(); // Refresh status after action
     }
-  }
+  };
 
   const handleDemoNuke = async () => {
-    const result = await runDemoNuke.mutate(undefined)
+    const result = await runDemoNuke.mutate(undefined);
     if (result.success) {
-      console.log('Demo nuke completed successfully')
-      refetch() // Refresh status after action
+      console.log('Demo nuke completed successfully');
+      refetch(); // Refresh status after action
     }
-  }
+  };
 
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-white dark:bg-gray-900 p-6">
-
         <div className="relative space-y-6">
           {/* Header */}
           <div className="space-y-4">
-            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Demo Environment</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+              Demo Environment
+            </h1>
             <p className="text-gray-600 dark:text-gray-400 text-lg">
-              Manage and monitor your local development platform components. This demo environment includes
-              all the tools needed for a complete development workflow.
+              Manage and monitor your local development platform components. This demo environment
+              includes all the tools needed for a complete development workflow.
             </p>
           </div>
 
@@ -162,9 +161,7 @@ export default function DemoEnvironmentPage() {
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
             <CardHeader>
               <CardTitle>Demo Environment Actions</CardTitle>
-              <CardDescription>
-                Manage your demo environment setup and cleanup
-              </CardDescription>
+              <CardDescription>Manage your demo environment setup and cleanup</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex gap-4 flex-wrap">
@@ -219,11 +216,22 @@ export default function DemoEnvironmentPage() {
                 <div className="flex items-start gap-3">
                   <div className="w-5 h-5 rounded-full bg-gray-500 flex-shrink-0 mt-0.5"></div>
                   <div className="space-y-2">
-                    <p className="font-semibold text-gray-900 dark:text-gray-100">Demo Environment Information</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100">
+                      Demo Environment Information
+                    </p>
                     <div className="text-sm text-gray-800 dark:text-gray-200 space-y-1">
-                      <p><strong>Demo Time:</strong> Install/reconcile the complete demo environment with all components</p>
-                      <p><strong>Demo Nuke:</strong> Completely remove the demo environment and clean up all resources</p>
-                      <p><strong>Prerequisites:</strong> Docker Desktop with Kubernetes enabled, kubectl, and helm installed</p>
+                      <p>
+                        <strong>Demo Time:</strong> Install/reconcile the complete demo environment
+                        with all components
+                      </p>
+                      <p>
+                        <strong>Demo Nuke:</strong> Completely remove the demo environment and clean
+                        up all resources
+                      </p>
+                      <p>
+                        <strong>Prerequisites:</strong> Docker Desktop with Kubernetes enabled,
+                        kubectl, and helm installed
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -233,5 +241,5 @@ export default function DemoEnvironmentPage() {
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

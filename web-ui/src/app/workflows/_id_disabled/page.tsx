@@ -1,8 +1,8 @@
-'use client'
+'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Activity,
   RefreshCw,
@@ -14,107 +14,125 @@ import {
   Calendar,
   Timer,
   Play,
-  FileText
-} from "lucide-react"
-import { ProtectedRoute } from "@/components/protected-route"
-import { useWorkflow } from "@/hooks/use-api"
-import { useParams, useRouter } from "next/navigation"
-
+  FileText,
+} from 'lucide-react';
+import { ProtectedRoute } from '@/components/protected-route';
+import { useWorkflow } from '@/hooks/use-api';
+import { useParams, useRouter } from 'next/navigation';
 
 function getStatusBadge(status: string) {
   switch (status) {
     case 'completed':
-      return <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-        <CheckCircle className="w-3 h-3 mr-1" />
-        Completed
-      </Badge>
+      return (
+        <Badge
+          variant="default"
+          className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+        >
+          <CheckCircle className="w-3 h-3 mr-1" />
+          Completed
+        </Badge>
+      );
     case 'running':
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-        <Zap className="w-3 h-3 mr-1" />
-        Running
-      </Badge>
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+        >
+          <Zap className="w-3 h-3 mr-1" />
+          Running
+        </Badge>
+      );
     case 'failed':
-      return <Badge variant="destructive">
-        <XCircle className="w-3 h-3 mr-1" />
-        Failed
-      </Badge>
+      return (
+        <Badge variant="destructive">
+          <XCircle className="w-3 h-3 mr-1" />
+          Failed
+        </Badge>
+      );
     case 'pending':
-      return <Badge variant="outline">
-        <Clock className="w-3 h-3 mr-1" />
-        Pending
-      </Badge>
+      return (
+        <Badge variant="outline">
+          <Clock className="w-3 h-3 mr-1" />
+          Pending
+        </Badge>
+      );
     default:
-      return <Badge variant="outline">
-        <Clock className="w-3 h-3 mr-1" />
-        {status}
-      </Badge>
+      return (
+        <Badge variant="outline">
+          <Clock className="w-3 h-3 mr-1" />
+          {status}
+        </Badge>
+      );
   }
 }
 
 function getStepStatusIcon(status: string) {
   switch (status) {
     case 'completed':
-      return <CheckCircle className="w-4 h-4 text-green-500" />
+      return <CheckCircle className="w-4 h-4 text-green-500" />;
     case 'running':
-      return <Zap className="w-4 h-4 text-blue-500" />
+      return <Zap className="w-4 h-4 text-blue-500" />;
     case 'failed':
-      return <XCircle className="w-4 h-4 text-red-500" />
+      return <XCircle className="w-4 h-4 text-red-500" />;
     case 'pending':
-      return <Clock className="w-4 h-4 text-gray-400" />
+      return <Clock className="w-4 h-4 text-gray-400" />;
     default:
-      return <Clock className="w-4 h-4 text-gray-400" />
+      return <Clock className="w-4 h-4 text-gray-400" />;
   }
 }
 
 function formatTimestamp(timestamp: string) {
-  return new Date(timestamp).toLocaleString()
+  return new Date(timestamp).toLocaleString();
 }
 
 function formatDuration(startedAt: string, completedAt?: string) {
   if (!completedAt) {
-    const now = new Date()
-    const start = new Date(startedAt)
-    const diffMs = now.getTime() - start.getTime()
-    const diffSeconds = Math.floor(diffMs / 1000)
-    const diffMinutes = Math.floor(diffSeconds / 60)
-    const remainingSeconds = diffSeconds % 60
+    const now = new Date();
+    const start = new Date(startedAt);
+    const diffMs = now.getTime() - start.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const remainingSeconds = diffSeconds % 60;
 
     if (diffMinutes > 0) {
-      return `${diffMinutes}m ${remainingSeconds}s (running)`
+      return `${diffMinutes}m ${remainingSeconds}s (running)`;
     } else {
-      return `${diffSeconds}s (running)`
+      return `${diffSeconds}s (running)`;
     }
   }
 
-  const start = new Date(startedAt)
-  const end = new Date(completedAt)
-  const diffMs = end.getTime() - start.getTime()
-  const diffSeconds = Math.floor(diffMs / 1000)
-  const diffMinutes = Math.floor(diffSeconds / 60)
-  const remainingSeconds = diffSeconds % 60
+  const start = new Date(startedAt);
+  const end = new Date(completedAt);
+  const diffMs = end.getTime() - start.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const remainingSeconds = diffSeconds % 60;
 
   if (diffMinutes > 0) {
-    return `${diffMinutes}m ${remainingSeconds}s`
+    return `${diffMinutes}m ${remainingSeconds}s`;
   } else {
-    return `${diffSeconds}s`
+    return `${diffSeconds}s`;
   }
 }
 
-
-
 export default function WorkflowExecutionDetailsPage() {
-  const params = useParams()
-  const router = useRouter()
-  const workflowId = params.id as string
-  const { data: workflowDetail, loading: workflowLoading, error: workflowError, refetch: refetchWorkflow } = useWorkflow(workflowId)
+  const params = useParams();
+  const router = useRouter();
+  const workflowId = params.id as string;
+  const {
+    data: workflowDetail,
+    loading: workflowLoading,
+    error: workflowError,
+    refetch: refetchWorkflow,
+  } = useWorkflow(workflowId);
 
   const handleRefresh = () => {
-    refetchWorkflow()
-  }
+    refetchWorkflow();
+  };
 
   const handleBack = () => {
-    router.push('/workflows')
-  }
+    router.push('/workflows');
+  };
 
   if (workflowLoading) {
     return (
@@ -126,7 +144,7 @@ export default function WorkflowExecutionDetailsPage() {
           </div>
         </div>
       </ProtectedRoute>
-    )
+    );
   }
 
   if (workflowError || !workflowDetail) {
@@ -150,7 +168,7 @@ export default function WorkflowExecutionDetailsPage() {
           </div>
         </div>
       </ProtectedRoute>
-    )
+    );
   }
 
   return (
@@ -164,11 +182,7 @@ export default function WorkflowExecutionDetailsPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Workflows
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleRefresh}
-                disabled={workflowLoading}
-              >
+              <Button variant="outline" onClick={handleRefresh} disabled={workflowLoading}>
                 <RefreshCw className={`w-4 h-4 mr-2 ${workflowLoading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
@@ -183,7 +197,8 @@ export default function WorkflowExecutionDetailsPage() {
                   {workflowDetail.workflow_name}
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400">
-                  Workflow execution #{workflowDetail.id} {workflowDetail.application_name && `for ${workflowDetail.application_name}`}
+                  Workflow execution #{workflowDetail.id}{' '}
+                  {workflowDetail.application_name && `for ${workflowDetail.application_name}`}
                 </p>
               </div>
             </div>
@@ -196,9 +211,7 @@ export default function WorkflowExecutionDetailsPage() {
                 <CardTitle className="text-sm font-medium">Status</CardTitle>
                 <Activity className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
-                {getStatusBadge(workflowDetail.status)}
-              </CardContent>
+              <CardContent>{getStatusBadge(workflowDetail.status)}</CardContent>
             </Card>
 
             <Card>
@@ -207,7 +220,9 @@ export default function WorkflowExecutionDetailsPage() {
                 <Timer className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-lg font-semibold">{formatDuration(workflowDetail.started_at, workflowDetail.completed_at)}</div>
+                <div className="text-lg font-semibold">
+                  {formatDuration(workflowDetail.started_at, workflowDetail.completed_at)}
+                </div>
               </CardContent>
             </Card>
 
@@ -241,9 +256,7 @@ export default function WorkflowExecutionDetailsPage() {
                   <Play className="w-4 h-4" />
                   Execution Steps
                 </CardTitle>
-                <CardDescription>
-                  Step-by-step progress of the workflow execution
-                </CardDescription>
+                <CardDescription>Step-by-step progress of the workflow execution</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -256,9 +269,7 @@ export default function WorkflowExecutionDetailsPage() {
                             <h4 className="font-medium">
                               Step {step.step_number}: {step.step_name}
                             </h4>
-                            <p className="text-sm text-muted-foreground">
-                              Type: {step.step_type}
-                            </p>
+                            <p className="text-sm text-muted-foreground">Type: {step.step_type}</p>
                           </div>
                         </div>
                         <div className="text-right">
@@ -321,7 +332,9 @@ export default function WorkflowExecutionDetailsPage() {
                 {workflowDetail.completed_at && (
                   <div className="grid gap-2">
                     <label className="text-sm font-medium">Completed At</label>
-                    <div className="text-sm text-muted-foreground">{formatTimestamp(workflowDetail.completed_at)}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {formatTimestamp(workflowDetail.completed_at)}
+                    </div>
                   </div>
                 )}
                 {workflowDetail.error_message && (
@@ -336,5 +349,5 @@ export default function WorkflowExecutionDetailsPage() {
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

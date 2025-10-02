@@ -1,35 +1,35 @@
-'use client'
+'use client';
 
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { ProtectedRoute } from '@/components/protected-route'
-import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
-import rehypeSlug from 'rehype-slug'
-import rehypeAutolinkHeadings from 'rehype-autolink-headings'
-import { ComponentPropsWithoutRef } from 'react'
-import { useRouter } from 'next/navigation'
-import 'highlight.js/styles/github-dark.css'
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { ProtectedRoute } from '@/components/protected-route';
+import { BookOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeSlug from 'rehype-slug';
+import rehypeAutolinkHeadings from 'rehype-autolink-headings';
+import { ComponentPropsWithoutRef } from 'react';
+import { useRouter } from 'next/navigation';
+import 'highlight.js/styles/github-dark.css';
 
 interface Doc {
-  slug: string
-  content: string
+  slug: string;
+  content: string;
   metadata: {
-    title: string
-    description?: string
-  }
+    title: string;
+    description?: string;
+  };
 }
 
 interface DocPageClientProps {
-  doc: Doc
-  prevDoc: Doc | null
-  nextDoc: Doc | null
+  doc: Doc;
+  prevDoc: Doc | null;
+  nextDoc: Doc | null;
 }
 
 export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
-  const router = useRouter()
+  const router = useRouter();
 
   return (
     <ProtectedRoute>
@@ -65,14 +65,16 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
           {/* Content Card */}
           <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
             <CardContent className="pt-8 px-8 pb-8">
-              <div className="prose prose-slate dark:prose-invert max-w-none
+              <div
+                className="prose prose-slate dark:prose-invert max-w-none
                 prose-headings:text-gray-900 dark:prose-headings:text-gray-100
                 prose-p:text-gray-700 dark:prose-p:text-gray-300
                 prose-li:text-gray-700 dark:prose-li:text-gray-300
                 prose-strong:text-gray-900 dark:prose-strong:text-gray-100
                 prose-code:text-indigo-600 dark:prose-code:text-indigo-400
                 prose-pre:bg-gray-900 dark:prose-pre:bg-gray-950
-                prose-a:text-indigo-600 dark:prose-a:text-indigo-400">
+                prose-a:text-indigo-600 dark:prose-a:text-indigo-400"
+              >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[
@@ -81,16 +83,24 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                     [rehypeAutolinkHeadings, { behavior: 'wrap' }],
                   ]}
                   components={{
-                    code({ inline, className, children, ...props }: ComponentPropsWithoutRef<'code'> & { inline?: boolean }) {
-                      const match = /language-(\w+)/.exec(className || '')
-                      const lang = match ? match[1] : ''
+                    code({
+                      inline,
+                      className,
+                      children,
+                      ...props
+                    }: ComponentPropsWithoutRef<'code'> & { inline?: boolean }) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      const lang = match ? match[1] : '';
 
                       if (inline) {
                         return (
-                          <code className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 text-sm font-mono" {...props}>
+                          <code
+                            className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 text-sm font-mono"
+                            {...props}
+                          >
                             {children}
                           </code>
-                        )
+                        );
                       }
 
                       return (
@@ -106,15 +116,15 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                             </code>
                           </pre>
                         </div>
-                      )
+                      );
                     },
 
                     pre({ children }) {
-                      return <>{children}</>
+                      return <>{children}</>;
                     },
 
                     a({ children, href, ...props }) {
-                      const isExternal = href?.startsWith('http')
+                      const isExternal = href?.startsWith('http');
                       return (
                         <a
                           href={href}
@@ -125,7 +135,7 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                         >
                           {children}
                         </a>
-                      )
+                      );
                     },
 
                     blockquote({ children, ...props }) {
@@ -136,17 +146,20 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                         >
                           {children}
                         </blockquote>
-                      )
+                      );
                     },
 
                     table({ children, ...props }) {
                       return (
                         <div className="overflow-x-auto my-6 rounded-lg border border-gray-200 dark:border-gray-700">
-                          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700" {...props}>
+                          <table
+                            className="min-w-full divide-y divide-gray-200 dark:divide-gray-700"
+                            {...props}
+                          >
                             {children}
                           </table>
                         </div>
-                      )
+                      );
                     },
 
                     th({ children, ...props }) {
@@ -157,15 +170,18 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                         >
                           {children}
                         </th>
-                      )
+                      );
                     },
 
                     td({ children, ...props }) {
                       return (
-                        <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300" {...props}>
+                        <td
+                          className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300"
+                          {...props}
+                        >
                           {children}
                         </td>
-                      )
+                      );
                     },
                   }}
                 >
@@ -213,5 +229,5 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

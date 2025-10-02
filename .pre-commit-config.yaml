@@ -1,0 +1,55 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  # General hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--unsafe']  # Allow custom YAML tags
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: mixed-line-ending
+
+  # Go hooks
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet
+      - id: go-imports
+      - id: go-mod-tidy
+      - id: golangci-lint
+        args: ['--timeout=5m']
+
+  # Security and local hooks
+  - repo: local
+    hooks:
+      # Go security scan
+      - id: gosec
+        name: gosec (Go security scanner)
+        entry: gosec
+        args: ['-exclude-dir=web-ui', './...']
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      # NPM lint for web-ui
+      - id: npm-lint
+        name: npm lint (web-ui)
+        entry: bash -c 'cd web-ui && npm run lint'
+        language: system
+        files: ^web-ui/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
+
+      # NPM format check for web-ui
+      - id: npm-format-check
+        name: npm format check (web-ui)
+        entry: bash -c 'cd web-ui && npm run format:check'
+        language: system
+        files: ^web-ui/.*\.(js|jsx|ts|tsx|json|css)$
+        pass_filenames: false

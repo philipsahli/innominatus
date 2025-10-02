@@ -1,60 +1,62 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Lock, User, Zap } from "lucide-react"
-import { useCustomTheme } from "@/contexts/theme-context"
-import { useAuth } from "@/contexts/auth-context"
-import { api } from "@/lib/api"
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Eye, EyeOff, Lock, User, Zap } from 'lucide-react';
+import { useCustomTheme } from '@/contexts/theme-context';
+import { useAuth } from '@/contexts/auth-context';
+import { api } from '@/lib/api';
 
 export default function LoginPage() {
-  const router = useRouter()
-  const { currentTheme } = useCustomTheme()
-  const { login } = useAuth()
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const router = useRouter();
+  const { currentTheme } = useCustomTheme();
+  const { login } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     username: '',
-    password: ''
-  })
+    password: '',
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    setLoading(true);
+    setError('');
 
     try {
-      const response = await api.login(formData.username, formData.password)
+      const response = await api.login(formData.username, formData.password);
 
       if (response.success && response.data) {
-        login(response.data.token)
-        router.push('/dashboard/')
+        login(response.data.token);
+        router.push('/dashboard/');
       } else {
-        setError(response.error || 'Login failed')
+        setError(response.error || 'Login failed');
       }
     } catch (error) {
-      console.error('Login error:', error)
-      setError('Network error. Please try again.')
+      console.error('Login error:', error);
+      setError('Network error. Please try again.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
-    })
-  }
+      [e.target.name]: e.target.value,
+    });
+  };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-${currentTheme.colors.background.from} via-${currentTheme.colors.background.via} to-${currentTheme.colors.background.to} dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-4`}>
+    <div
+      className={`min-h-screen bg-gradient-to-br from-${currentTheme.colors.background.from} via-${currentTheme.colors.background.via} to-${currentTheme.colors.background.to} dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-4`}
+    >
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full blur-3xl"></div>
@@ -117,7 +119,7 @@ export default function LoginPage() {
                   <Input
                     id="password"
                     name="password"
-                    type={showPassword ? "text" : "password"}
+                    type={showPassword ? 'text' : 'password'}
                     value={formData.password}
                     onChange={handleInputChange}
                     className="pl-10 pr-10 bg-white/50 dark:bg-slate-800/50 border-white/20"
@@ -129,11 +131,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
@@ -170,5 +168,5 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

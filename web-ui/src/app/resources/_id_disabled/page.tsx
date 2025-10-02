@@ -1,8 +1,8 @@
-'use client'
+'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Package,
   RefreshCw,
@@ -20,67 +20,97 @@ import {
   Zap,
   Settings,
   Eye,
-  History
-} from "lucide-react"
-import { ProtectedRoute } from "@/components/protected-route"
-import { useResource } from "@/hooks/use-api"
-import { useParams, useRouter } from "next/navigation"
+  History,
+} from 'lucide-react';
+import { ProtectedRoute } from '@/components/protected-route';
+import { useResource } from '@/hooks/use-api';
+import { useParams, useRouter } from 'next/navigation';
 
 function getStatusBadge(state: string, healthStatus: string) {
-  const isHealthy = healthStatus === 'healthy'
-  const isDegraded = healthStatus === 'degraded'
+  const isHealthy = healthStatus === 'healthy';
+  const isDegraded = healthStatus === 'degraded';
 
   switch (state) {
     case 'active':
       if (isHealthy) {
-        return <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Active
-        </Badge>
+        return (
+          <Badge
+            variant="default"
+            className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+          >
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Active
+          </Badge>
+        );
       } else if (isDegraded) {
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-          <AlertTriangle className="w-3 h-3 mr-1" />
-          Degraded
-        </Badge>
+        return (
+          <Badge
+            variant="secondary"
+            className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+          >
+            <AlertTriangle className="w-3 h-3 mr-1" />
+            Degraded
+          </Badge>
+        );
       } else {
-        return <Badge variant="destructive">
-          <XCircle className="w-3 h-3 mr-1" />
-          Unhealthy
-        </Badge>
+        return (
+          <Badge variant="destructive">
+            <XCircle className="w-3 h-3 mr-1" />
+            Unhealthy
+          </Badge>
+        );
       }
     case 'provisioning':
     case 'scaling':
     case 'updating':
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-        <Zap className="w-3 h-3 mr-1" />
-        {state.charAt(0).toUpperCase() + state.slice(1)}
-      </Badge>
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+        >
+          <Zap className="w-3 h-3 mr-1" />
+          {state.charAt(0).toUpperCase() + state.slice(1)}
+        </Badge>
+      );
     case 'requested':
     case 'pending':
-      return <Badge variant="outline">
-        <Clock className="w-3 h-3 mr-1" />
-        Pending
-      </Badge>
+      return (
+        <Badge variant="outline">
+          <Clock className="w-3 h-3 mr-1" />
+          Pending
+        </Badge>
+      );
     case 'terminating':
-      return <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
-        <Trash2 className="w-3 h-3 mr-1" />
-        Terminating
-      </Badge>
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+        >
+          <Trash2 className="w-3 h-3 mr-1" />
+          Terminating
+        </Badge>
+      );
     case 'terminated':
-      return <Badge variant="outline" className="text-gray-500">
-        <XCircle className="w-3 h-3 mr-1" />
-        Terminated
-      </Badge>
+      return (
+        <Badge variant="outline" className="text-gray-500">
+          <XCircle className="w-3 h-3 mr-1" />
+          Terminated
+        </Badge>
+      );
     case 'failed':
-      return <Badge variant="destructive">
-        <XCircle className="w-3 h-3 mr-1" />
-        Failed
-      </Badge>
+      return (
+        <Badge variant="destructive">
+          <XCircle className="w-3 h-3 mr-1" />
+          Failed
+        </Badge>
+      );
     default:
-      return <Badge variant="outline">
-        <Clock className="w-3 h-3 mr-1" />
-        {state}
-      </Badge>
+      return (
+        <Badge variant="outline">
+          <Clock className="w-3 h-3 mr-1" />
+          {state}
+        </Badge>
+      );
   }
 }
 
@@ -89,36 +119,40 @@ function getResourceTypeIcon(type: string) {
     case 'postgres':
     case 'postgresql':
     case 'database':
-      return <Database className="w-6 h-6" />
+      return <Database className="w-6 h-6" />;
     case 'redis':
     case 'cache':
-      return <Server className="w-6 h-6" />
+      return <Server className="w-6 h-6" />;
     case 'volume':
     case 'storage':
-      return <HardDrive className="w-6 h-6" />
+      return <HardDrive className="w-6 h-6" />;
     default:
-      return <Package className="w-6 h-6" />
+      return <Package className="w-6 h-6" />;
   }
 }
 
 function formatTimestamp(timestamp: string) {
-  return new Date(timestamp).toLocaleString()
+  return new Date(timestamp).toLocaleString();
 }
 
-
 export default function ResourceDetailsPage() {
-  const params = useParams()
-  const router = useRouter()
-  const resourceId = params.id ? parseInt(params.id as string) : null
-  const { data: resource, loading: resourceLoading, error: resourceError, refetch: refetchResource } = useResource(resourceId)
+  const params = useParams();
+  const router = useRouter();
+  const resourceId = params.id ? parseInt(params.id as string) : null;
+  const {
+    data: resource,
+    loading: resourceLoading,
+    error: resourceError,
+    refetch: refetchResource,
+  } = useResource(resourceId);
 
   const handleRefresh = () => {
-    refetchResource()
-  }
+    refetchResource();
+  };
 
   const handleBack = () => {
-    router.push('/resources')
-  }
+    router.push('/resources');
+  };
 
   if (resourceLoading) {
     return (
@@ -130,7 +164,7 @@ export default function ResourceDetailsPage() {
           </div>
         </div>
       </ProtectedRoute>
-    )
+    );
   }
 
   if (resourceError || !resource) {
@@ -154,7 +188,7 @@ export default function ResourceDetailsPage() {
           </div>
         </div>
       </ProtectedRoute>
-    )
+    );
   }
 
   return (
@@ -168,11 +202,7 @@ export default function ResourceDetailsPage() {
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Resources
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleRefresh}
-                disabled={resourceLoading}
-              >
+              <Button variant="outline" onClick={handleRefresh} disabled={resourceLoading}>
                 <RefreshCw className={`w-4 h-4 mr-2 ${resourceLoading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
@@ -200,9 +230,7 @@ export default function ResourceDetailsPage() {
                 <CardTitle className="text-sm font-medium">State</CardTitle>
                 <Activity className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
-              <CardContent>
-                {getStatusBadge(resource.state, resource.health_status)}
-              </CardContent>
+              <CardContent>{getStatusBadge(resource.state, resource.health_status)}</CardContent>
             </Card>
 
             <Card>
@@ -268,13 +296,17 @@ export default function ResourceDetailsPage() {
                 {resource.provider_id && (
                   <div className="grid gap-2">
                     <label className="text-sm font-medium">Provider ID</label>
-                    <div className="text-sm text-muted-foreground font-mono">{resource.provider_id}</div>
+                    <div className="text-sm text-muted-foreground font-mono">
+                      {resource.provider_id}
+                    </div>
                   </div>
                 )}
                 {resource.last_health_check && (
                   <div className="grid gap-2">
                     <label className="text-sm font-medium">Last Health Check</label>
-                    <div className="text-sm text-muted-foreground">{formatTimestamp(resource.last_health_check)}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {formatTimestamp(resource.last_health_check)}
+                    </div>
                   </div>
                 )}
                 {resource.error_message && (
@@ -324,9 +356,7 @@ export default function ResourceDetailsPage() {
                     <Server className="w-4 h-4" />
                     Provider Metadata
                   </CardTitle>
-                  <CardDescription>
-                    Information from the resource provider
-                  </CardDescription>
+                  <CardDescription>Information from the resource provider</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-2 md:grid-cols-2">
@@ -346,5 +376,5 @@ export default function ResourceDetailsPage() {
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

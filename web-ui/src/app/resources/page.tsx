@@ -1,9 +1,9 @@
-'use client'
+'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -11,7 +11,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
+} from '@/components/ui/table';
 import {
   Package,
   RefreshCw,
@@ -27,69 +27,99 @@ import {
   Trash2,
   ArrowUpRight,
   Calendar,
-  Zap
-} from "lucide-react"
-import { ProtectedRoute } from "@/components/protected-route"
-import { useResources } from "@/hooks/use-api"
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import type { ResourceInstance } from "@/lib/api"
+  Zap,
+} from 'lucide-react';
+import { ProtectedRoute } from '@/components/protected-route';
+import { useResources } from '@/hooks/use-api';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import type { ResourceInstance } from '@/lib/api';
 
 function getStatusBadge(state: string, healthStatus: string) {
-  const isHealthy = healthStatus === 'healthy'
-  const isDegraded = healthStatus === 'degraded'
+  const isHealthy = healthStatus === 'healthy';
+  const isDegraded = healthStatus === 'degraded';
 
   switch (state) {
     case 'active':
       if (isHealthy) {
-        return <Badge variant="default" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          Active
-        </Badge>
+        return (
+          <Badge
+            variant="default"
+            className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+          >
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Active
+          </Badge>
+        );
       } else if (isDegraded) {
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-          <AlertTriangle className="w-3 h-3 mr-1" />
-          Degraded
-        </Badge>
+        return (
+          <Badge
+            variant="secondary"
+            className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+          >
+            <AlertTriangle className="w-3 h-3 mr-1" />
+            Degraded
+          </Badge>
+        );
       } else {
-        return <Badge variant="destructive">
-          <XCircle className="w-3 h-3 mr-1" />
-          Unhealthy
-        </Badge>
+        return (
+          <Badge variant="destructive">
+            <XCircle className="w-3 h-3 mr-1" />
+            Unhealthy
+          </Badge>
+        );
       }
     case 'provisioning':
     case 'scaling':
     case 'updating':
-      return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-        <Zap className="w-3 h-3 mr-1" />
-        {state.charAt(0).toUpperCase() + state.slice(1)}
-      </Badge>
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+        >
+          <Zap className="w-3 h-3 mr-1" />
+          {state.charAt(0).toUpperCase() + state.slice(1)}
+        </Badge>
+      );
     case 'requested':
     case 'pending':
-      return <Badge variant="outline">
-        <Clock className="w-3 h-3 mr-1" />
-        Pending
-      </Badge>
+      return (
+        <Badge variant="outline">
+          <Clock className="w-3 h-3 mr-1" />
+          Pending
+        </Badge>
+      );
     case 'terminating':
-      return <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
-        <Trash2 className="w-3 h-3 mr-1" />
-        Terminating
-      </Badge>
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+        >
+          <Trash2 className="w-3 h-3 mr-1" />
+          Terminating
+        </Badge>
+      );
     case 'terminated':
-      return <Badge variant="outline" className="text-gray-500">
-        <XCircle className="w-3 h-3 mr-1" />
-        Terminated
-      </Badge>
+      return (
+        <Badge variant="outline" className="text-gray-500">
+          <XCircle className="w-3 h-3 mr-1" />
+          Terminated
+        </Badge>
+      );
     case 'failed':
-      return <Badge variant="destructive">
-        <XCircle className="w-3 h-3 mr-1" />
-        Failed
-      </Badge>
+      return (
+        <Badge variant="destructive">
+          <XCircle className="w-3 h-3 mr-1" />
+          Failed
+        </Badge>
+      );
     default:
-      return <Badge variant="outline">
-        <Clock className="w-3 h-3 mr-1" />
-        {state}
-      </Badge>
+      return (
+        <Badge variant="outline">
+          <Clock className="w-3 h-3 mr-1" />
+          {state}
+        </Badge>
+      );
   }
 }
 
@@ -98,74 +128,78 @@ function getResourceTypeIcon(type: string) {
     case 'postgres':
     case 'postgresql':
     case 'database':
-      return <Database className="w-4 h-4" />
+      return <Database className="w-4 h-4" />;
     case 'redis':
     case 'cache':
-      return <Server className="w-4 h-4" />
+      return <Server className="w-4 h-4" />;
     case 'volume':
     case 'storage':
-      return <HardDrive className="w-4 h-4" />
+      return <HardDrive className="w-4 h-4" />;
     default:
-      return <Package className="w-4 h-4" />
+      return <Package className="w-4 h-4" />;
   }
 }
 
 function formatTimestamp(timestamp: string) {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
 
   if (diffMins < 1) {
-    return 'just now'
+    return 'just now';
   } else if (diffMins < 60) {
-    return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`
+    return `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
   } else if (diffHours < 24) {
-    return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
+    return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
   } else {
-    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
+    return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
   }
 }
 
 export default function ResourcesPage() {
-  const router = useRouter()
-  const { data: resourcesData, loading: resourcesLoading, error: resourcesError, refetch: refetchResources } = useResources()
-  const [searchTerm, setSearchTerm] = useState("")
-  const [stateFilter, setStateFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
+  const router = useRouter();
+  const {
+    data: resourcesData,
+    loading: resourcesLoading,
+    error: resourcesError,
+    refetch: refetchResources,
+  } = useResources();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
 
   // Flatten resources data into a single array
-  const allResources: ResourceInstance[] = resourcesData
-    ? Object.values(resourcesData).flat()
-    : []
+  const allResources: ResourceInstance[] = resourcesData ? Object.values(resourcesData).flat() : [];
 
   // Filter resources based on search term, state, and type
-  const filteredResources = allResources.filter(resource => {
-    const matchesSearch = resource.resource_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          resource.application_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          resource.resource_type.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesState = stateFilter === "all" || resource.state === stateFilter
-    const matchesType = typeFilter === "all" || resource.resource_type === typeFilter
-    return matchesSearch && matchesState && matchesType
-  })
+  const filteredResources = allResources.filter((resource) => {
+    const matchesSearch =
+      resource.resource_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      resource.application_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      resource.resource_type.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesState = stateFilter === 'all' || resource.state === stateFilter;
+    const matchesType = typeFilter === 'all' || resource.resource_type === typeFilter;
+    return matchesSearch && matchesState && matchesType;
+  });
 
   const handleRefresh = () => {
-    refetchResources()
-  }
+    refetchResources();
+  };
 
   // Get resource statistics
   const stats = {
     total: allResources.length,
-    active: allResources.filter(r => r.state === "active").length,
-    provisioning: allResources.filter(r => r.state === "provisioning").length,
-    failed: allResources.filter(r => r.state === "failed").length,
-    healthy: allResources.filter(r => r.health_status === "healthy").length
-  }
+    active: allResources.filter((r) => r.state === 'active').length,
+    provisioning: allResources.filter((r) => r.state === 'provisioning').length,
+    failed: allResources.filter((r) => r.state === 'failed').length,
+    healthy: allResources.filter((r) => r.health_status === 'healthy').length,
+  };
 
   // Get unique resource types for filter
-  const uniqueTypes = [...new Set(allResources.map(r => r.resource_type))]
+  const uniqueTypes = [...new Set(allResources.map((r) => r.resource_type))];
 
   return (
     <ProtectedRoute>
@@ -179,8 +213,12 @@ export default function ResourcesPage() {
                   <Package className="w-6 h-6 text-gray-900 dark:text-gray-100" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Resources</h1>
-                  <p className="text-gray-600 dark:text-gray-400">Monitor and manage resource instances across applications</p>
+                  <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+                    Resources
+                  </h1>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Monitor and manage resource instances across applications
+                  </p>
                 </div>
               </div>
               <Button
@@ -224,7 +262,9 @@ export default function ResourcesPage() {
                 <CheckCircle className="h-4 w-4 text-green-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.active}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {stats.active}
+                </div>
               </CardContent>
             </Card>
 
@@ -234,7 +274,9 @@ export default function ResourcesPage() {
                 <Zap className="h-4 w-4 text-blue-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.provisioning}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {stats.provisioning}
+                </div>
               </CardContent>
             </Card>
 
@@ -244,7 +286,9 @@ export default function ResourcesPage() {
                 <XCircle className="h-4 w-4 text-red-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.failed}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {stats.failed}
+                </div>
               </CardContent>
             </Card>
 
@@ -254,7 +298,9 @@ export default function ResourcesPage() {
                 <Activity className="h-4 w-4 text-green-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.healthy}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  {stats.healthy}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -298,8 +344,10 @@ export default function ResourcesPage() {
                     className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="all">All Types</option>
-                    {uniqueTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
+                    {uniqueTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -316,8 +364,8 @@ export default function ResourcesPage() {
                   <CardDescription>
                     {filteredResources.length} of {allResources.length} resources
                     {searchTerm && ` matching "${searchTerm}"`}
-                    {stateFilter !== "all" && ` with state "${stateFilter}"`}
-                    {typeFilter !== "all" && ` of type "${typeFilter}"`}
+                    {stateFilter !== 'all' && ` with state "${stateFilter}"`}
+                    {typeFilter !== 'all' && ` of type "${typeFilter}"`}
                   </CardDescription>
                 </div>
               </div>
@@ -333,7 +381,9 @@ export default function ResourcesPage() {
                   <div className="space-y-2">
                     <Package className="w-8 h-8 text-muted-foreground mx-auto" />
                     <p className="text-muted-foreground">
-                      {searchTerm || stateFilter !== "all" || typeFilter !== "all" ? "No resources match your filters" : "No resources found"}
+                      {searchTerm || stateFilter !== 'all' || typeFilter !== 'all'
+                        ? 'No resources match your filters'
+                        : 'No resources found'}
                     </p>
                   </div>
                 </div>
@@ -410,5 +460,5 @@ export default function ResourcesPage() {
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

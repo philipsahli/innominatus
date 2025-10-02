@@ -1,9 +1,9 @@
-'use client'
+'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import {
   AlertTriangle,
   Clock,
@@ -20,131 +20,143 @@ import {
   AlertCircle,
   TrendingUp,
   Database,
-  Box
-} from "lucide-react"
-import { ProtectedRoute } from "@/components/protected-route"
-import { useState, useRef } from "react"
-import { api } from "@/lib/api"
+  Box,
+} from 'lucide-react';
+import { ProtectedRoute } from '@/components/protected-route';
+import { useState, useRef } from 'react';
+import { api } from '@/lib/api';
 
 interface WorkflowAnalysis {
   summary: {
-    totalSteps: number
-    totalResources: number
-    parallelSteps: number
-    criticalPath: string[]
-    estimatedTime: string
-    complexityScore: number
-    riskLevel: string
-  }
+    totalSteps: number;
+    totalResources: number;
+    parallelSteps: number;
+    criticalPath: string[];
+    estimatedTime: string;
+    complexityScore: number;
+    riskLevel: string;
+  };
   executionPlan: {
     phases: Array<{
-      name: string
-      order: number
+      name: string;
+      order: number;
       parallelGroups: Array<{
         steps: Array<{
-          name: string
-          type: string
-          estimatedTime: string
-        }>
-        estimatedTime: string
-      }>
-      estimatedTime: string
-    }>
-    totalTime: string
-    maxParallel: number
-  }
+          name: string;
+          type: string;
+          estimatedTime: string;
+        }>;
+        estimatedTime: string;
+      }>;
+      estimatedTime: string;
+    }>;
+    totalTime: string;
+    maxParallel: number;
+  };
   resourceGraph: {
     nodes: Array<{
-      id: string
-      name: string
-      type: string
-      level: number
-    }>
+      id: string;
+      name: string;
+      type: string;
+      level: number;
+    }>;
     edges: Array<{
-      from: string
-      to: string
-      dependencyType: string
-    }>
-  }
+      from: string;
+      to: string;
+      dependencyType: string;
+    }>;
+  };
   dependencies: Array<{
-    stepName: string
-    stepType: string
-    dependsOn: string[]
-    blocks: string[]
-    canRunInParallel: boolean
-    estimatedDuration: string
-    phase: string
-  }>
-  warnings: string[]
-  recommendations: string[]
+    stepName: string;
+    stepType: string;
+    dependsOn: string[];
+    blocks: string[];
+    canRunInParallel: boolean;
+    estimatedDuration: string;
+    phase: string;
+  }>;
+  warnings: string[];
+  recommendations: string[];
 }
 
 export default function WorkflowAnalyzePage() {
-  const [analysis, setAnalysis] = useState<WorkflowAnalysis | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [specContent, setSpecContent] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [analysis, setAnalysis] = useState<WorkflowAnalysis | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [specContent, setSpecContent] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const analyzeWorkflow = async (yamlContent: string) => {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
 
     try {
-      const result = await api.analyzeWorkflow(yamlContent)
+      const result = await api.analyzeWorkflow(yamlContent);
 
       if (result.success) {
-        setAnalysis(result.data)
+        setAnalysis(result.data);
       } else {
-        throw new Error(result.error || 'Failed to analyze workflow')
+        throw new Error(result.error || 'Failed to analyze workflow');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to analyze workflow')
+      setError(err instanceof Error ? err.message : 'Failed to analyze workflow');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const file = event.target.files?.[0];
     if (file) {
-      const reader = new FileReader()
+      const reader = new FileReader();
       reader.onload = (e) => {
-        const content = e.target?.result as string
-        setSpecContent(content)
-        analyzeWorkflow(content)
-      }
-      reader.readAsText(file)
+        const content = e.target?.result as string;
+        setSpecContent(content);
+        analyzeWorkflow(content);
+      };
+      reader.readAsText(file);
     }
-  }
+  };
 
   const handleAnalyze = () => {
     if (specContent.trim()) {
-      analyzeWorkflow(specContent)
+      analyzeWorkflow(specContent);
     }
-  }
+  };
 
   const getRiskColor = (riskLevel: string) => {
     switch (riskLevel) {
-      case 'low': return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/20'
-      case 'medium': return 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/20'
-      case 'high': return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/20'
-      default: return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-900/20'
+      case 'low':
+        return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/20';
+      case 'medium':
+        return 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/20';
+      case 'high':
+        return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/20';
+      default:
+        return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-900/20';
     }
-  }
+  };
 
   const getStepTypeIcon = (type: string) => {
     switch (type) {
-      case 'terraform': return <Box className="w-4 h-4" />
-      case 'kubernetes': return <Activity className="w-4 h-4" />
-      case 'ansible': return <FileText className="w-4 h-4" />
-      case 'validation': return <CheckCircle className="w-4 h-4" />
-      case 'security': return <AlertTriangle className="w-4 h-4" />
-      case 'monitoring': return <TrendingUp className="w-4 h-4" />
-      case 'database': return <Database className="w-4 h-4" />
-      default: return <Activity className="w-4 h-4" />
+      case 'terraform':
+        return <Box className="w-4 h-4" />;
+      case 'kubernetes':
+        return <Activity className="w-4 h-4" />;
+      case 'ansible':
+        return <FileText className="w-4 h-4" />;
+      case 'validation':
+        return <CheckCircle className="w-4 h-4" />;
+      case 'security':
+        return <AlertTriangle className="w-4 h-4" />;
+      case 'monitoring':
+        return <TrendingUp className="w-4 h-4" />;
+      case 'database':
+        return <Database className="w-4 h-4" />;
+      default:
+        return <Activity className="w-4 h-4" />;
     }
-  }
+  };
 
   return (
     <ProtectedRoute>
@@ -200,9 +212,7 @@ export default function WorkflowAnalyzePage() {
                     className="hidden"
                     id="file-upload"
                   />
-                  <span className="text-sm text-gray-500">
-                    Supports .yaml and .yml files
-                  </span>
+                  <span className="text-sm text-gray-500">Supports .yaml and .yml files</span>
                 </div>
               </div>
 
@@ -273,7 +283,9 @@ resources:
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{analysis.summary.complexityScore}</div>
-                    <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(analysis.summary.riskLevel)}`}>
+                    <div
+                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(analysis.summary.riskLevel)}`}
+                    >
                       {analysis.summary.riskLevel} risk
                     </div>
                   </CardContent>
@@ -335,7 +347,9 @@ resources:
                             {phase.order}
                           </div>
                           <div>
-                            <h3 className="font-medium capitalize">{phase.name.replace('-', ' ')}</h3>
+                            <h3 className="font-medium capitalize">
+                              {phase.name.replace('-', ' ')}
+                            </h3>
                             <p className="text-sm text-muted-foreground">
                               Estimated time: {phase.estimatedTime}
                             </p>
@@ -449,7 +463,9 @@ resources:
                         {analysis.recommendations.map((recommendation, index) => (
                           <li key={index} className="flex items-start gap-2 text-sm">
                             <Lightbulb className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-                            <span className="text-blue-800 dark:text-blue-200">{recommendation}</span>
+                            <span className="text-blue-800 dark:text-blue-200">
+                              {recommendation}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -472,22 +488,18 @@ resources:
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {Array.from(new Set(analysis.resourceGraph.nodes.map(n => n.level)))
+                      {Array.from(new Set(analysis.resourceGraph.nodes.map((n) => n.level)))
                         .sort((a, b) => a - b)
-                        .map(level => (
+                        .map((level) => (
                           <div key={level} className="space-y-2">
                             <h4 className="text-sm font-medium text-muted-foreground">
                               Level {level}
                             </h4>
                             <div className="flex flex-wrap gap-2">
                               {analysis.resourceGraph.nodes
-                                .filter(node => node.level === level)
-                                .map(node => (
-                                  <Badge
-                                    key={node.id}
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
+                                .filter((node) => node.level === level)
+                                .map((node) => (
+                                  <Badge key={node.id} variant="outline" className="text-xs">
                                     {node.name} ({node.type})
                                   </Badge>
                                 ))}
@@ -503,5 +515,5 @@ resources:
         </div>
       </div>
     </ProtectedRoute>
-  )
+  );
 }

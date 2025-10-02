@@ -1,48 +1,48 @@
-import fs from 'fs'
-import path from 'path'
-import matter from 'gray-matter'
+import fs from 'fs';
+import path from 'path';
+import matter from 'gray-matter';
 
 export interface DocMetadata {
-  title: string
-  description?: string
-  category?: string
-  order?: number
+  title: string;
+  description?: string;
+  category?: string;
+  order?: number;
 }
 
 export interface Doc {
-  slug: string
-  content: string
-  metadata: DocMetadata
-  path: string
+  slug: string;
+  content: string;
+  metadata: DocMetadata;
+  path: string;
 }
 
 export interface DocNavItem {
-  title: string
-  slug: string
-  children?: DocNavItem[]
+  title: string;
+  slug: string;
+  children?: DocNavItem[];
 }
 
-const DOCS_PATH = path.join(process.cwd(), '..', 'docs')
+const DOCS_PATH = path.join(process.cwd(), '..', 'docs');
 
 /**
  * Get all documentation files recursively
  */
 export function getAllDocs(): Doc[] {
-  const docs: Doc[] = []
+  const docs: Doc[] = [];
 
   function readDocsRecursive(dir: string, baseSlug: string = '') {
-    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name)
+      const fullPath = path.join(dir, entry.name);
 
       if (entry.isDirectory()) {
-        readDocsRecursive(fullPath, baseSlug + entry.name + '/')
+        readDocsRecursive(fullPath, baseSlug + entry.name + '/');
       } else if (entry.name.endsWith('.md')) {
-        const fileContent = fs.readFileSync(fullPath, 'utf-8')
-        const { data, content } = matter(fileContent)
+        const fileContent = fs.readFileSync(fullPath, 'utf-8');
+        const { data, content } = matter(fileContent);
 
-        const slug = (baseSlug + entry.name.replace(/\.md$/, '')).replace(/^\//, '')
+        const slug = (baseSlug + entry.name.replace(/\.md$/, '')).replace(/^\//, '');
 
         docs.push({
           slug,
@@ -54,21 +54,21 @@ export function getAllDocs(): Doc[] {
             order: data.order,
           },
           path: fullPath,
-        })
+        });
       }
     }
   }
 
-  readDocsRecursive(DOCS_PATH)
-  return docs
+  readDocsRecursive(DOCS_PATH);
+  return docs;
 }
 
 /**
  * Get a single documentation page by slug
  */
 export function getDocBySlug(slug: string): Doc | null {
-  const allDocs = getAllDocs()
-  return allDocs.find(doc => doc.slug === slug) || null
+  const allDocs = getAllDocs();
+  return allDocs.find((doc) => doc.slug === slug) || null;
 }
 
 /**
@@ -121,53 +121,53 @@ export function getDocsNavigation(): DocNavItem[] {
         { title: 'Swagger/OpenAPI', slug: 'api/swagger' },
       ],
     },
-  ]
+  ];
 
-  return navigation
+  return navigation;
 }
 
 /**
  * Extract title from markdown content (first H1)
  */
 function extractTitleFromContent(content: string): string | null {
-  const match = content.match(/^#\s+(.+)$/m)
-  return match ? match[1] : null
+  const match = content.match(/^#\s+(.+)$/m);
+  return match ? match[1] : null;
 }
 
 /**
  * Get breadcrumbs for a doc slug
  */
 export function getBreadcrumbs(slug: string): { title: string; slug: string }[] {
-  const parts = slug.split('/')
-  const breadcrumbs: { title: string; slug: string }[] = []
+  const parts = slug.split('/');
+  const breadcrumbs: { title: string; slug: string }[] = [];
 
-  let currentSlug = ''
+  let currentSlug = '';
   for (let i = 0; i < parts.length; i++) {
-    currentSlug += (i > 0 ? '/' : '') + parts[i]
+    currentSlug += (i > 0 ? '/' : '') + parts[i];
     const title = parts[i]
       .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
 
     breadcrumbs.push({
       title,
       slug: currentSlug,
-    })
+    });
   }
 
-  return breadcrumbs
+  return breadcrumbs;
 }
 
 /**
  * Search documentation
  */
 export function searchDocs(query: string): Doc[] {
-  const allDocs = getAllDocs()
-  const lowerQuery = query.toLowerCase()
+  const allDocs = getAllDocs();
+  const lowerQuery = query.toLowerCase();
 
-  return allDocs.filter(doc => {
-    const titleMatch = doc.metadata.title.toLowerCase().includes(lowerQuery)
-    const contentMatch = doc.content.toLowerCase().includes(lowerQuery)
-    return titleMatch || contentMatch
-  })
+  return allDocs.filter((doc) => {
+    const titleMatch = doc.metadata.title.toLowerCase().includes(lowerQuery);
+    const contentMatch = doc.content.toLowerCase().includes(lowerQuery);
+    return titleMatch || contentMatch;
+  });
 }
