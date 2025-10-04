@@ -108,6 +108,7 @@ type Server struct {
 	teamManager      *teams.TeamManager
 	sessionManager   *auth.SessionManager
 	healthChecker    *health.HealthChecker
+	rateLimiter      *RateLimiter
 	loginAttempts    map[string][]time.Time
 	loginMutex       sync.Mutex
 	// In-memory workflow tracking (when database is not available)
