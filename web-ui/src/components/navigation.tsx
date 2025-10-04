@@ -22,6 +22,7 @@ import {
   ExternalLink,
   FileText,
   BookOpen,
+  User,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -99,6 +100,11 @@ const navigation: NavItem[] = [
     href: '/users',
     label: 'Users',
     icon: Users,
+  },
+  {
+    href: '/profile',
+    label: 'Profile',
+    icon: User,
   },
   {
     href: '/settings',

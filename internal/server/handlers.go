@@ -17,6 +17,7 @@ import (
 	"innominatus/internal/security"
 	"innominatus/internal/teams"
 	"innominatus/internal/types"
+	"innominatus/internal/users"
 	"innominatus/internal/workflow"
 	"net/http"
 	"os"
@@ -2675,6 +2676,162 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 	}
 
 	return nil
+}
+
+// HandleGetProfile returns the current user's profile information
+func (s *Server) HandleGetProfile(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	profile := map[string]interface{}{
+		"username": user.Username,
+		"team":     user.Team,
+		"role":     user.Role,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(profile); err != nil {
+		http.Error(w, "Failed to encode profile", http.StatusInternalServerError)
+	}
+}
+
+// HandleGetAPIKeys returns the user's API keys with masked key values
+func (s *Server) HandleGetAPIKeys(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	keys, err := store.ListAPIKeys(user.Username)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Mask keys for security (show only last 8 characters)
+	masked := []map[string]interface{}{}
+	for _, key := range keys {
+		maskedKey := "..."
+		if len(key.Key) > 8 {
+			maskedKey = "..." + key.Key[len(key.Key)-8:]
+		}
+
+		masked = append(masked, map[string]interface{}{
+			"name":         key.Name,
+			"masked_key":   maskedKey,
+			"created_at":   key.CreatedAt.Format(time.RFC3339),
+			"last_used_at": formatTimePtr(key.LastUsedAt),
+			"expires_at":   key.ExpiresAt.Format(time.RFC3339),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(masked); err != nil {
+		http.Error(w, "Failed to encode API keys", http.StatusInternalServerError)
+	}
+}
+
+// HandleGenerateAPIKey creates a new API key for the current user
+func (s *Server) HandleGenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Name       string `json:"name"`
+		ExpiryDays int    `json:"expiry_days"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "API key name is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.ExpiryDays <= 0 {
+		req.ExpiryDays = 90 // Default to 90 days
+	}
+
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	apiKey, err := store.GenerateAPIKey(user.Username, req.Name, req.ExpiryDays)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Return the full key only on creation
+	response := map[string]interface{}{
+		"key":        apiKey.Key,
+		"name":       apiKey.Name,
+		"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+		"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+	}
+}
+
+// HandleRevokeAPIKey deletes an API key
+func (s *Server) HandleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract key name from URL path
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) < 4 {
+		http.Error(w, "Invalid URL path", http.StatusBadRequest)
+		return
+	}
+	keyName := pathParts[len(pathParts)-1]
+
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	err = store.RevokeAPIKey(user.Username, keyName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// formatTimePtr formats a time pointer to RFC3339 string or returns empty string
+func formatTimePtr(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 // executeDummyStep executes a dummy workflow step with logging for testing purposes

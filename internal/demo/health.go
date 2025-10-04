@@ -107,6 +107,8 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkMinio(resp, status)
 	case "backstage":
 		status = h.checkBackstage(resp, status)
+	case "keycloak":
+		status = h.checkKeycloak(resp, status)
 	default:
 		status = h.checkGeneric(resp, status)
 	}
@@ -326,6 +328,21 @@ func (h *HealthChecker) checkBackstage(resp *http.Response, status HealthStatus)
 		status.Healthy = true
 		status.Status = "Available"
 	} else {
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return status
+}
+
+// checkKeycloak performs Keycloak-specific health check
+func (h *HealthChecker) checkKeycloak(resp *http.Response, status HealthStatus) HealthStatus {
+	// CloudPirates Keycloak chart returns HTTP 302 (redirect to /admin/) when healthy
+	switch resp.StatusCode {
+	case 302, 200:
+		status.Healthy = true
+		status.Status = "Running"
+	case 503:
+		status.Status = "Starting"
+	default:
 		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
 	}
 	return status

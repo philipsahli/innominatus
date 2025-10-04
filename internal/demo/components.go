@@ -116,6 +116,63 @@ func NewDemoEnvironment() *DemoEnvironment {
 				Port:       3000,
 			},
 			{
+				Name:        "keycloak",
+				Namespace:   "keycloak",
+				Chart:       "oci://registry-1.docker.io/cloudpirates/keycloak",
+				Repo:        "",
+				Version:     "0.1.10",
+				IngressHost: "keycloak.localtest.me",
+				Credentials: map[string]string{
+					"username": "admin",
+					"password": "adminpassword",
+					"realm":    "demo-realm",
+					"users":    "demo-user/password123, test-user/test123",
+				},
+				Values: map[string]interface{}{
+					"keycloak": map[string]interface{}{
+						"adminUser":     "admin",
+						"adminPassword": "adminpassword",
+						"httpEnabled":   true,
+						"hostname":      "keycloak.localtest.me",
+					},
+					"database": map[string]interface{}{
+						"type":     "postgres",
+						"host":     "keycloak-postgresql",
+						"port":     "5432",
+						"name":     "keycloak",
+						"username": "keycloak",
+						"password": "keycloak123",
+					},
+					"ingress": map[string]interface{}{
+						"enabled":   true,
+						"className": "nginx",
+						"hosts": []map[string]interface{}{
+							{
+								"host": "keycloak.localtest.me",
+								"paths": []map[string]interface{}{
+									{
+										"path":     "/",
+										"pathType": "Prefix",
+									},
+								},
+							},
+						},
+					},
+					"resources": map[string]interface{}{
+						"requests": map[string]interface{}{
+							"memory": "512Mi",
+							"cpu":    "500m",
+						},
+						"limits": map[string]interface{}{
+							"memory": "1Gi",
+							"cpu":    "1000m",
+						},
+					},
+				},
+				HealthPath: "/",
+				Port:       8080,
+			},
+			{
 				Name:        "argocd",
 				Namespace:   "argocd",
 				Chart:       "argo-cd",
@@ -335,12 +392,39 @@ func NewDemoEnvironment() *DemoEnvironment {
 							},
 							"backend": map[string]interface{}{
 								"baseUrl": "http://backstage.localtest.me",
+								"listen": map[string]interface{}{
+									"port": 7007,
+								},
 								"cors": map[string]interface{}{
-									"origin": "http://backstage.localtest.me",
+									"origin":      "http://backstage.localtest.me",
+									"methods":     []string{"GET", "HEAD", "PATCH", "POST", "PUT", "DELETE"},
+									"credentials": true,
+								},
+								"database": map[string]interface{}{
+									"client": "better-sqlite3",
+									"connection": map[string]interface{}{
+										"filename": ":memory:",
+									},
+								},
+								"reading": map[string]interface{}{
+									"allow": []map[string]string{
+										{"host": "gitea-http.gitea.svc.cluster.local:3000"},
+										{"host": "gitea-http.gitea.svc.cluster.local"},
+										{"host": "gitea.localtest.me"},
+									},
 								},
 							},
 							"organization": map[string]interface{}{
 								"name": "OpenAlps Demo",
+							},
+							"catalog": map[string]interface{}{
+								"import": map[string]interface{}{
+									"entityFilename":        "catalog-info.yaml",
+									"pullRequestBranchName": "backstage-integration",
+								},
+								"rules": []map[string]interface{}{
+									{"allow": []string{"Component", "System", "API", "Resource", "Location", "Template"}},
+								},
 							},
 							"techdocs": map[string]interface{}{
 								"builder": "local",
@@ -349,6 +433,26 @@ func NewDemoEnvironment() *DemoEnvironment {
 								},
 								"publisher": map[string]interface{}{
 									"type": "local",
+								},
+							},
+							"auth": map[string]interface{}{
+								"environment": "development",
+								"providers": map[string]interface{}{
+									"guest": map[string]interface{}{
+										"dangerouslyAllowOutsideDevelopment": true,
+									},
+								},
+							},
+							"permission": map[string]interface{}{
+								"enabled": false,
+							},
+							"integrations": map[string]interface{}{
+								"gitea": []map[string]interface{}{
+									{
+										"host":     "gitea-http.gitea.svc.cluster.local:3000",
+										"username": "giteaadmin",
+										"password": "admin",
+									},
 								},
 							},
 						},
@@ -363,12 +467,6 @@ func NewDemoEnvironment() *DemoEnvironment {
 					},
 					"postgresql": map[string]interface{}{
 						"enabled": false,
-					},
-					"database": map[string]interface{}{
-						"client": "better-sqlite3",
-						"connection": map[string]interface{}{
-							"filename": ":memory:",
-						},
 					},
 					"service": map[string]interface{}{
 						"type": "ClusterIP",

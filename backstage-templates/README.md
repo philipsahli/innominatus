@@ -2,6 +2,23 @@
 
 This directory contains Backstage Software Templates that provide wizard-based forms for creating Score specifications and deploying applications via the innominatus orchestrator.
 
+## Quick Start (Demo Environment)
+
+When you run `./innominatus-ctl demo-time`, the templates are automatically seeded to the Gitea `platform-config` repository. To use them in Backstage:
+
+1. **Open Backstage**: http://backstage.localtest.me
+2. **Register the template**:
+   - Click "Create" in the sidebar
+   - Click "Register Existing Component"
+   - Enter URL: `http://gitea-http.gitea.svc.cluster.local:3000/giteaadmin/platform-config/raw/branch/main/backstage-templates/catalog-info.yaml`
+   - Click "Analyze"
+   - Click "Import"
+3. **Use the template**:
+   - Go back to "Create" (or refresh the page)
+   - Find "Deploy Application with Score"
+   - Fill out the 4-step wizard
+   - Generate your Score specification!
+
 ## Overview
 
 Instead of writing Score YAML files manually, developers can use these Backstage templates to fill out user-friendly forms that generate properly validated Score specifications. The templates integrate seamlessly with the innominatus orchestration platform.

@@ -130,6 +130,27 @@ export interface ResourceInstance {
   error_message?: string;
 }
 
+export interface UserProfile {
+  username: string;
+  team: string;
+  role: string;
+}
+
+export interface APIKeyInfo {
+  name: string;
+  masked_key: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at: string;
+}
+
+export interface APIKeyFull {
+  key: string;
+  name: string;
+  created_at: string;
+  expires_at: string;
+}
+
 class ApiClient {
   private getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -370,6 +391,28 @@ class ApiClient {
         'Content-Type': 'application/yaml',
       },
       body: yamlContent,
+    });
+  }
+
+  // Profile
+  async getProfile(): Promise<ApiResponse<UserProfile>> {
+    return this.request<UserProfile>('/profile');
+  }
+
+  async getAPIKeys(): Promise<ApiResponse<APIKeyInfo[]>> {
+    return this.request<APIKeyInfo[]>('/profile/api-keys');
+  }
+
+  async generateAPIKey(name: string, expiryDays: number): Promise<ApiResponse<APIKeyFull>> {
+    return this.request('/profile/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name, expiry_days: expiryDays }),
+    });
+  }
+
+  async revokeAPIKey(name: string): Promise<ApiResponse<void>> {
+    return this.request(`/profile/api-keys/${name}`, {
+      method: 'DELETE',
     });
   }
 }

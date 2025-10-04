@@ -67,13 +67,20 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
             <CardContent className="pt-8 px-8 pb-8">
               <div
                 className="prose prose-slate dark:prose-invert max-w-none
+                prose-headings:font-bold prose-headings:tracking-tight
+                prose-h1:text-3xl prose-h1:mb-4 prose-h1:mt-8
+                prose-h2:text-2xl prose-h2:mb-3 prose-h2:mt-6 prose-h2:border-b prose-h2:border-gray-200 dark:prose-h2:border-gray-700 prose-h2:pb-2
+                prose-h3:text-xl prose-h3:mb-2 prose-h3:mt-5
+                prose-h4:text-lg prose-h4:mb-2 prose-h4:mt-4
                 prose-headings:text-gray-900 dark:prose-headings:text-gray-100
-                prose-p:text-gray-700 dark:prose-p:text-gray-300
+                prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-p:leading-relaxed
                 prose-li:text-gray-700 dark:prose-li:text-gray-300
-                prose-strong:text-gray-900 dark:prose-strong:text-gray-100
-                prose-code:text-indigo-600 dark:prose-code:text-indigo-400
-                prose-pre:bg-gray-900 dark:prose-pre:bg-gray-950
-                prose-a:text-indigo-600 dark:prose-a:text-indigo-400"
+                prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-strong:font-semibold
+                prose-code:text-indigo-600 dark:prose-code:text-indigo-300 prose-code:font-mono prose-code:text-sm
+                prose-pre:bg-gray-900 dark:prose-pre:bg-gray-950 prose-pre:text-gray-100
+                prose-a:text-indigo-600 dark:prose-a:text-indigo-400 prose-a:font-medium
+                prose-ul:my-4 prose-ol:my-4
+                prose-li:my-1"
               >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
@@ -95,7 +102,7 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                       if (inline) {
                         return (
                           <code
-                            className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 text-sm font-mono"
+                            className="px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-sm font-mono border border-indigo-200 dark:border-indigo-800"
                             {...props}
                           >
                             {children}

@@ -3,8 +3,13 @@ package demo
 // #nosec G204 - Demo installer executes kubectl and helm with controlled parameters for local demo setup only
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -107,7 +112,15 @@ func (i *Installer) AddHelmRepo(repoName, repoURL string) error {
 // InstallComponent installs a single component using Helm
 func (i *Installer) InstallComponent(component DemoComponent) error {
 	fmt.Printf("🚀 Installing component: %s\n", component.Name)
-	fmt.Printf("   Chart: %s/%s version %s\n", component.Repo, component.Chart, component.Version)
+
+	// Detect if this is an OCI chart (starts with oci://)
+	isOCI := strings.HasPrefix(component.Chart, "oci://")
+
+	if isOCI {
+		fmt.Printf("   Chart: %s version %s (OCI registry)\n", component.Chart, component.Version)
+	} else {
+		fmt.Printf("   Chart: %s/%s version %s\n", component.Repo, component.Chart, component.Version)
+	}
 
 	// Create namespace first
 	if err := i.CreateNamespace(component.Namespace); err != nil {
@@ -115,21 +128,35 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	}
 
 	if i.dryRun {
-		fmt.Printf("   [DRY RUN] Would install: %s/%s version %s\n",
-			component.Repo, component.Chart, component.Version)
+		if isOCI {
+			fmt.Printf("   [DRY RUN] Would install: %s version %s\n", component.Chart, component.Version)
+		} else {
+			fmt.Printf("   [DRY RUN] Would install: %s/%s version %s\n",
+				component.Repo, component.Chart, component.Version)
+		}
 		return nil
 	}
 
-	// Extract repo name from URL
-	repoName := i.getRepoName(component.Repo)
-	fmt.Printf("   Using repo name: %s\n", repoName)
+	var chartRef string
 
-	// Add repository
-	fmt.Printf("   Adding Helm repository...\n")
-	if err := i.AddHelmRepo(repoName, component.Repo); err != nil {
-		return err
+	if isOCI {
+		// OCI charts don't need helm repo add, use chart directly
+		chartRef = component.Chart
+		fmt.Printf("   Using OCI chart: %s\n", chartRef)
+	} else {
+		// Extract repo name from URL for traditional Helm repos
+		repoName := i.getRepoName(component.Repo)
+		fmt.Printf("   Using repo name: %s\n", repoName)
+
+		// Add repository
+		fmt.Printf("   Adding Helm repository...\n")
+		if err := i.AddHelmRepo(repoName, component.Repo); err != nil {
+			return err
+		}
+		fmt.Printf("   Repository added successfully\n")
+
+		chartRef = fmt.Sprintf("%s/%s", repoName, component.Chart)
 	}
-	fmt.Printf("   Repository added successfully\n")
 
 	// Create values file
 	valuesFile, err := i.createValuesFile(component)
@@ -139,7 +166,6 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	defer func() { _ = os.Remove(valuesFile) }()
 
 	// Install or upgrade with Helm
-	chartRef := fmt.Sprintf("%s/%s", repoName, component.Chart)
 	helmCmd := []string{"helm", "upgrade", "--install", component.Name,
 		chartRef,
 		"--version", component.Version,
@@ -164,7 +190,7 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 		"--wait",
 		"--timeout", "10m")
 
-	fmt.Printf("   Starting Helm installation (timeout: 15 minutes)...\n")
+	fmt.Printf("   Starting Helm chart %s installation (timeout: 15 minutes)...\n", chartRef)
 	fmt.Printf("   This may take several minutes for database initialization...\n")
 	fmt.Printf("   Progress: ")
 
@@ -338,14 +364,19 @@ func (i *Installer) CheckHelmRelease(releaseName, namespace string) (bool, error
 
 // getRepoName extracts a repository name from URL
 func (i *Installer) getRepoName(repoURL string) string {
-	// Simple extraction - take the last part of the domain
-	parts := strings.Split(repoURL, "/")
-	for _, part := range parts {
-		if strings.Contains(part, ".") && !strings.HasPrefix(part, "http") {
-			return strings.Split(part, ".")[0]
-		}
-	}
-	return "repo"
+	// Remove protocol
+	url := strings.TrimPrefix(repoURL, "https://")
+	url = strings.TrimPrefix(url, "http://")
+
+	// Replace dots and slashes with dashes to create unique name
+	name := strings.ReplaceAll(url, ".", "-")
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.TrimSuffix(name, "-")
+
+	// Ensure it's a valid Helm repo name (lowercase alphanumeric and dashes)
+	name = strings.ToLower(name)
+
+	return name
 }
 
 // createValuesFile creates a temporary values file for Helm
@@ -449,6 +480,337 @@ spec:
 	}
 
 	fmt.Printf("✅ Kubernetes Dashboard installed successfully\n")
+	return nil
+}
+
+// ApplyKeycloakConfig applies Keycloak realm configuration and ArgoCD OIDC integration
+func (i *Installer) ApplyKeycloakConfig() error {
+	fmt.Printf("🔐 Configuring Keycloak realm and ArgoCD OIDC integration...\n")
+
+	if i.dryRun {
+		fmt.Printf("   [DRY RUN] Would configure Keycloak and ArgoCD OIDC\n")
+		return nil
+	}
+
+	// Wait for Keycloak to be ready
+	fmt.Printf("   Waiting for Keycloak to be ready...\n")
+	time.Sleep(10 * time.Second)
+
+	// Get Keycloak admin token
+	token, err := i.getKeycloakAdminToken()
+	if err != nil {
+		return fmt.Errorf("failed to get admin token: %v", err)
+	}
+
+	// Create demo-realm
+	if err := i.createKeycloakRealm(token); err != nil {
+		fmt.Printf("   Realm creation: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Realm created\n")
+	}
+
+	// Create ArgoCD OIDC client
+	if err := i.createArgoCDClient(token); err != nil {
+		fmt.Printf("   Client creation: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ ArgoCD client created\n")
+	}
+
+	// Create demo users
+	if err := i.createKeycloakUser(token, "demo-user", "password123", "demo-user@example.com"); err != nil {
+		fmt.Printf("   User demo-user: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ demo-user created\n")
+	}
+
+	if err := i.createKeycloakUser(token, "test-user", "test123", "test-user@example.com"); err != nil {
+		fmt.Printf("   User test-user: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ test-user created\n")
+	}
+
+	// Patch ArgoCD ConfigMap for OIDC (using direct client secret, not secret reference)
+	oidcConfigPatch := `
+{
+  "data": {
+    "url": "http://argocd.localtest.me",
+    "oidc.config": "name: Keycloak\nissuer: http://keycloak.localtest.me/realms/demo-realm\nclientID: argocd\nclientSecret: argocd-client-secret-change-me\nrequestedScopes:\n  - openid\n  - profile\n  - email\n  - roles\nredirectURL: http://argocd.localtest.me/auth/callback\n"
+  }
+}
+`
+
+	fmt.Printf("   Patching ArgoCD ConfigMap for OIDC...\n")
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "patch", "configmap", "argocd-cm", // #nosec G204 - kubectl patch command
+		"-n", "argocd",
+		"--type", "merge",
+		"-p", oidcConfigPatch)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch ArgoCD ConfigMap: %v\nOutput: %s", err, string(output))
+	}
+
+	// Get ingress controller ClusterIP for hostAliases
+	ingressIP, err := i.getIngressControllerIP()
+	if err != nil {
+		return fmt.Errorf("failed to get ingress controller IP: %v", err)
+	}
+
+	// Add hostAliases to ArgoCD deployment for DNS resolution
+	hostAliasesPatch := fmt.Sprintf(`
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "hostAliases": [{
+          "ip": "%s",
+          "hostnames": ["keycloak.localtest.me"]
+        }]
+      }
+    }
+  }
+}
+`, ingressIP)
+
+	fmt.Printf("   Adding hostAliases to ArgoCD deployment (keycloak.localtest.me -> %s)...\n", ingressIP)
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "patch", "deployment", "argocd-server", // #nosec G204 - kubectl patch command
+		"-n", "argocd",
+		"--type", "strategic",
+		"-p", hostAliasesPatch)
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch ArgoCD deployment: %v\nOutput: %s", err, string(output))
+	}
+
+	fmt.Printf("✅ Keycloak realm and ArgoCD OIDC configured\n")
+	return nil
+}
+
+// getKeycloakAdminToken retrieves an admin access token from Keycloak
+func (i *Installer) getKeycloakAdminToken() (string, error) {
+	data := url.Values{}
+	data.Set("client_id", "admin-cli")
+	data.Set("username", "admin")
+	data.Set("password", "adminpassword")
+	data.Set("grant_type", "password")
+
+	resp, err := http.PostForm("http://keycloak.localtest.me/realms/master/protocol/openid-connect/token", data)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get token, status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	token, ok := result["access_token"].(string)
+	if !ok {
+		return "", fmt.Errorf("access_token not found in response")
+	}
+
+	return token, nil
+}
+
+// createKeycloakRealm creates the demo-realm in Keycloak
+func (i *Installer) createKeycloakRealm(token string) error {
+	realmData := map[string]interface{}{
+		"realm":       "demo-realm",
+		"enabled":     true,
+		"displayName": "Demo Realm",
+	}
+
+	jsonData, err := json.Marshal(realmData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createArgoCDClient creates the ArgoCD OIDC client in Keycloak
+func (i *Installer) createArgoCDClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "argocd",
+		"name":                      "ArgoCD",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "argocd-client-secret-change-me",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"*"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createKeycloakUser creates a user in the demo-realm
+func (i *Installer) createKeycloakUser(token, username, password, email string) error {
+	userData := map[string]interface{}{
+		"username":      username,
+		"enabled":       true,
+		"email":         email,
+		"emailVerified": true,
+		"credentials": []map[string]interface{}{
+			{
+				"type":      "password",
+				"value":     password,
+				"temporary": false,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(userData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/users", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// getIngressControllerIP gets the ClusterIP of the ingress controller
+func (i *Installer) getIngressControllerIP() (string, error) {
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "get", "svc", // #nosec G204 - kubectl command
+		"-n", "ingress-nginx",
+		"-l", "app.kubernetes.io/name=ingress-nginx",
+		"-o", "jsonpath={.items[0].spec.clusterIP}")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	ip := strings.TrimSpace(string(output))
+	if ip == "" {
+		return "", fmt.Errorf("no ingress controller found")
+	}
+
+	return ip, nil
+}
+
+// RestartArgoCDServer restarts the ArgoCD server to apply configuration changes
+func (i *Installer) RestartArgoCDServer() error {
+	fmt.Printf("🔄 Restarting ArgoCD server to apply OIDC configuration...\n")
+
+	if i.dryRun {
+		fmt.Printf("   [DRY RUN] Would restart ArgoCD server\n")
+		return nil
+	}
+
+	// Rollout restart
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "rollout", "restart", // #nosec G204 - kubectl rollout command
+		"deployment", "argocd-server",
+		"-n", "argocd")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to restart ArgoCD server: %v\nOutput: %s", err, string(output))
+	}
+
+	// Wait for rollout
+	fmt.Printf("   Waiting for ArgoCD server to be ready...\n")
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "rollout", "status", // #nosec G204 - kubectl rollout status
+		"deployment", "argocd-server",
+		"-n", "argocd",
+		"--timeout=300s")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ArgoCD server did not become ready: %v", err)
+	}
+
+	fmt.Printf("✅ ArgoCD server restarted\n")
 	return nil
 }
 
