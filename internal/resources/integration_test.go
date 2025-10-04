@@ -9,8 +9,7 @@ import (
 )
 
 func TestKubernetesProvisionerIntegration(t *testing.T) {
-
-	t.Skip("Skipping testing")
+	t.Skip("Integration test - run manually with: go test -v ./internal/resources -run TestKubernetesProvisionerIntegration")
 
 	if testing.Short() {
 		t.Skip("Skipping integration test")
@@ -57,6 +56,7 @@ func TestKubernetesProvisionerIntegration(t *testing.T) {
 
 	// Verify deployment has environment variables
 	t.Log("Verifying environment variables in deployment...")
+	// #nosec G204 - Test with controlled parameters
 	cmd := exec.Command("kubectl", "get", "deployment", "alice-nginx-excessive",
 		"-n", "alice-nginx-excessive-default", "-o", "yaml")
 	output, err := cmd.CombinedOutput()
@@ -88,6 +88,7 @@ func TestKubernetesProvisionerIntegration(t *testing.T) {
 
 	// Verify in running pod
 	t.Log("Verifying environment variables in running pod...")
+	// #nosec G204 - Test with controlled parameters
 	cmd = exec.Command("kubectl", "wait", "--for=condition=ready",
 		"pod", "-l", "app=alice-nginx-excessive",
 		"-n", "alice-nginx-excessive-default", "--timeout=60s")
@@ -96,6 +97,7 @@ func TestKubernetesProvisionerIntegration(t *testing.T) {
 	}
 
 	// Get pod name
+	// #nosec G204 - Test with controlled parameters
 	cmd = exec.Command("kubectl", "get", "pods",
 		"-n", "alice-nginx-excessive-default",
 		"-l", "app=alice-nginx-excessive",
@@ -106,6 +108,7 @@ func TestKubernetesProvisionerIntegration(t *testing.T) {
 	}
 
 	// Check environment variables in pod
+	// #nosec G204 - Test with controlled parameters
 	cmd = exec.Command("kubectl", "exec",
 		"-n", "alice-nginx-excessive-default",
 		string(podName), "--", "env")
