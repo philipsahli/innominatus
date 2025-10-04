@@ -559,6 +559,24 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 
 	// Validate required parameters
 	if err := config.ValidateParameters(pathName, params); err != nil {
+		// Check if it's a parameter validation error for better messaging
+		if paramErr, ok := err.(*goldenpaths.ParameterValidationError); ok {
+			formatter.PrintError(fmt.Sprintf("Parameter validation failed for '%s'", pathName))
+			formatter.PrintKeyValue(1, "Parameter", paramErr.ParameterName)
+			if paramErr.ProvidedValue != "" {
+				formatter.PrintKeyValue(1, "Provided Value", paramErr.ProvidedValue)
+			}
+			if paramErr.ExpectedType != "" {
+				formatter.PrintKeyValue(1, "Expected Type", paramErr.ExpectedType)
+			}
+			if paramErr.Constraint != "" {
+				formatter.PrintKeyValue(1, "Constraint", paramErr.Constraint)
+			}
+			if paramErr.Suggestion != "" {
+				formatter.PrintKeyValue(1, "Suggestion", paramErr.Suggestion)
+			}
+			return fmt.Errorf("parameter validation failed")
+		}
 		return fmt.Errorf("parameter validation failed: %w", err)
 	}
 
