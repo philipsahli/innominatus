@@ -287,9 +287,52 @@ func NewDemoEnvironment() *DemoEnvironment {
 					"alertmanager": map[string]interface{}{
 						"enabled": false,
 					},
+					"serverFiles": map[string]interface{}{
+						"prometheus.yml": map[string]interface{}{
+							"scrape_configs": []map[string]interface{}{
+								{
+									"job_name": "prometheus",
+									"static_configs": []map[string]interface{}{
+										{
+											"targets": []string{"localhost:9090"},
+										},
+									},
+								},
+								{
+									"job_name":     "pushgateway",
+									"honor_labels": true,
+									"static_configs": []map[string]interface{}{
+										{
+											"targets": []string{"pushgateway-prometheus-pushgateway.monitoring.svc.cluster.local:9091"},
+										},
+									},
+								},
+							},
+						},
+					},
 				},
 				HealthPath: "/-/healthy",
 				Port:       9090,
+			},
+			{
+				Name:        "pushgateway",
+				Namespace:   "monitoring",
+				Chart:       "prometheus-pushgateway",
+				Repo:        "https://prometheus-community.github.io/helm-charts",
+				Version:     "2.4.2",
+				IngressHost: "pushgateway.localtest.me",
+				Credentials: map[string]string{},
+				Values: map[string]interface{}{
+					"ingress": map[string]interface{}{
+						"enabled":   true,
+						"className": "nginx",
+						"hosts": []string{
+							"pushgateway.localtest.me",
+						},
+					},
+				},
+				HealthPath: "/-/healthy",
+				Port:       9091,
 			},
 			{
 				Name:        "grafana",

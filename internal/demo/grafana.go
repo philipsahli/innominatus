@@ -233,3 +233,232 @@ func (g *GrafanaManager) InstallClusterHealthDashboard() error {
 	fmt.Printf("✅ Cluster Health Dashboard installed in Grafana\\n")
 	return nil
 }
+
+// InstallInnominatusDashboard installs an Innominatus platform metrics dashboard
+func (g *GrafanaManager) InstallInnominatusDashboard() error {
+	fmt.Printf("📊 Installing Innominatus Platform Metrics Dashboard in Grafana...\\n")
+
+	// Wait for Grafana to be ready first
+	if err := g.WaitForGrafana(20); err != nil {
+		return err
+	}
+
+	// Innominatus Platform Metrics Dashboard JSON
+	dashboard := map[string]interface{}{
+		"dashboard": map[string]interface{}{
+			"id":       nil,
+			"title":    "Innominatus Platform Metrics",
+			"tags":     []string{"innominatus", "platform", "workflows"},
+			"timezone": "browser",
+			"panels": []map[string]interface{}{
+				// Row 1: Overview
+				{
+					"id":    1,
+					"title": "Server Uptime",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_uptime_seconds",
+							"legendFormat": "Uptime",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 0,
+						"y": 0,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "s",
+						},
+					},
+				},
+				{
+					"id":    2,
+					"title": "Total Workflows",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflows_executed_total",
+							"legendFormat": "Total",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 6,
+						"y": 0,
+					},
+				},
+				{
+					"id":    3,
+					"title": "Workflow Success Rate",
+					"type":  "gauge",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "(innominatus_workflows_succeeded_total / innominatus_workflows_executed_total) * 100",
+							"legendFormat": "Success Rate",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 12,
+						"y": 0,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "percent",
+							"min":  0,
+							"max":  100,
+						},
+					},
+				},
+				{
+					"id":    4,
+					"title": "HTTP Requests",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_http_requests_total",
+							"legendFormat": "Total Requests",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 18,
+						"y": 0,
+					},
+				},
+				// Row 2: Workflows
+				{
+					"id":    5,
+					"title": "Workflow Executions",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflows_executed_total",
+							"legendFormat": "Total",
+						},
+						{
+							"expr":         "innominatus_workflows_succeeded_total",
+							"legendFormat": "Succeeded",
+						},
+						{
+							"expr":         "innominatus_workflows_failed_total",
+							"legendFormat": "Failed",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 12,
+						"x": 0,
+						"y": 6,
+					},
+				},
+				{
+					"id":    6,
+					"title": "Average Workflow Duration",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflow_duration_seconds_avg",
+							"legendFormat": "Avg Duration",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 12,
+						"x": 12,
+						"y": 6,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "s",
+						},
+					},
+				},
+				// Row 3: Database & HTTP
+				{
+					"id":    7,
+					"title": "Database Queries",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_db_queries_total",
+							"legendFormat": "Total Queries",
+						},
+						{
+							"expr":         "innominatus_db_query_errors_total",
+							"legendFormat": "Errors",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 12,
+						"x": 0,
+						"y": 14,
+					},
+				},
+				{
+					"id":    8,
+					"title": "HTTP Requests & Errors",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_http_requests_total",
+							"legendFormat": "Requests",
+						},
+						{
+							"expr":         "innominatus_http_errors_total",
+							"legendFormat": "Errors (5xx)",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 12,
+						"x": 12,
+						"y": 14,
+					},
+				},
+			},
+			"time": map[string]interface{}{
+				"from": "now-1h",
+				"to":   "now",
+			},
+			"refresh": "15s",
+		},
+		"overwrite": true,
+	}
+
+	// Convert to JSON
+	dashboardJSON, err := json.Marshal(dashboard)
+	if err != nil {
+		return fmt.Errorf("failed to marshal dashboard JSON: %v", err)
+	}
+
+	// Create request to Grafana API
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/api/dashboards/db", g.url), bytes.NewBuffer(dashboardJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(g.username, g.password)
+
+	// Send request
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send dashboard request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("failed to install dashboard, status: %d", resp.StatusCode)
+	}
+
+	fmt.Printf("✅ Innominatus Platform Metrics Dashboard installed in Grafana\\n")
+	return nil
+}

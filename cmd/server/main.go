@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/database"
+	"innominatus/internal/metrics"
 	"innominatus/internal/server"
 	"innominatus/internal/validation"
 	"log"
@@ -164,6 +165,20 @@ func main() {
 		}
 		fs.ServeHTTP(w, r)
 	}))
+
+	// Initialize metrics pusher if PUSHGATEWAY_URL is set
+	pushgatewayURL := os.Getenv("PUSHGATEWAY_URL")
+	if pushgatewayURL == "" {
+		pushgatewayURL = "http://pushgateway.localtest.me"
+	}
+
+	var metricsPusher *metrics.MetricsPusher
+	if pushgatewayURL != "" && pushgatewayURL != "disabled" {
+		pushInterval := 15 * time.Second
+		metricsPusher = metrics.NewMetricsPusher(pushgatewayURL, pushInterval)
+		metricsPusher.StartPushing()
+		defer metricsPusher.Stop()
+	}
 
 	addr := ":" + *port
 	fmt.Printf("Starting Score Orchestrator server on http://localhost%s\n", addr)

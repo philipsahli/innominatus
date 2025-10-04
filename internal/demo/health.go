@@ -97,6 +97,8 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkGrafana(resp, status)
 	case "prometheus":
 		status = h.checkPrometheus(resp, status)
+	case "pushgateway":
+		status = h.checkPushgateway(resp, status)
 	case "demo-app":
 		status = h.checkDemoApp(resp, status)
 	case "kubernetes-dashboard":
@@ -202,6 +204,17 @@ func (h *HealthChecker) checkGrafana(resp *http.Response, status HealthStatus) H
 
 // checkPrometheus performs Prometheus-specific health check
 func (h *HealthChecker) checkPrometheus(resp *http.Response, status HealthStatus) HealthStatus {
+	if resp.StatusCode == 200 {
+		status.Healthy = true
+		status.Status = "Ready"
+	} else {
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return status
+}
+
+// checkPushgateway performs Pushgateway health check
+func (h *HealthChecker) checkPushgateway(resp *http.Response, status HealthStatus) HealthStatus {
 	if resp.StatusCode == 200 {
 		status.Healthy = true
 		status.Status = "Ready"

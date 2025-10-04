@@ -303,6 +303,8 @@ func (c *CheatSheet) formatServiceName(name string) string {
 		return "Grafana"
 	case "prometheus":
 		return "Prometheus"
+	case "pushgateway":
+		return "Pushgateway"
 	case "demo-app":
 		return "Demo App"
 	case "nginx-ingress":

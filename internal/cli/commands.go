@@ -831,6 +831,12 @@ func (c *Client) DemoTimeCommand() error {
 		return err
 	}
 
+	// Install Innominatus Platform Metrics Dashboard
+	if err := grafanaManager.InstallInnominatusDashboard(); err != nil {
+		cheatSheet.PrintError("Innominatus Dashboard Installation", err)
+		return err
+	}
+
 	// Print installation complete
 	cheatSheet.PrintInstallationComplete()
 
