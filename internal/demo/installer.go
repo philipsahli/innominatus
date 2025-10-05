@@ -483,12 +483,12 @@ spec:
 	return nil
 }
 
-// ApplyKeycloakConfig applies Keycloak realm configuration and ArgoCD OIDC integration
+// ApplyKeycloakConfig applies Keycloak realm configuration and OIDC integration for all services
 func (i *Installer) ApplyKeycloakConfig() error {
-	fmt.Printf("🔐 Configuring Keycloak realm and ArgoCD OIDC integration...\n")
+	fmt.Printf("🔐 Configuring Keycloak realm and OIDC integration for all services...\n")
 
 	if i.dryRun {
-		fmt.Printf("   [DRY RUN] Would configure Keycloak and ArgoCD OIDC\n")
+		fmt.Printf("   [DRY RUN] Would configure Keycloak and OIDC for all services\n")
 		return nil
 	}
 
@@ -509,11 +509,35 @@ func (i *Installer) ApplyKeycloakConfig() error {
 		fmt.Printf("   ✅ Realm created\n")
 	}
 
-	// Create ArgoCD OIDC client
+	// Create OIDC clients for all services
 	if err := i.createArgoCDClient(token); err != nil {
-		fmt.Printf("   Client creation: %v (might already exist)\n", err)
+		fmt.Printf("   ArgoCD client: %v (might already exist)\n", err)
 	} else {
 		fmt.Printf("   ✅ ArgoCD client created\n")
+	}
+
+	if err := i.createGrafanaClient(token); err != nil {
+		fmt.Printf("   Grafana client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Grafana client created\n")
+	}
+
+	if err := i.createBackstageClient(token); err != nil {
+		fmt.Printf("   Backstage client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Backstage client created\n")
+	}
+
+	if err := i.createGiteaClient(token); err != nil {
+		fmt.Printf("   Gitea client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Gitea client created\n")
+	}
+
+	if err := i.createVaultClient(token); err != nil {
+		fmt.Printf("   Vault client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Vault client created\n")
 	}
 
 	// Create demo users
@@ -583,7 +607,23 @@ func (i *Installer) ApplyKeycloakConfig() error {
 		return fmt.Errorf("failed to patch ArgoCD deployment: %v\nOutput: %s", err, string(output))
 	}
 
-	fmt.Printf("✅ Keycloak realm and ArgoCD OIDC configured\n")
+	// Configure Gitea OAuth2
+	fmt.Printf("   Configuring Gitea OAuth2...\n")
+	if err := i.configureGiteaOIDC(); err != nil {
+		fmt.Printf("   Gitea OAuth2: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Gitea OAuth2 configured\n")
+	}
+
+	// Configure Vault OIDC
+	fmt.Printf("   Configuring Vault OIDC...\n")
+	if err := i.configureVaultOIDC(); err != nil {
+		fmt.Printf("   Vault OIDC: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Vault OIDC configured\n")
+	}
+
+	fmt.Printf("✅ Keycloak realm and OIDC integration configured for all services\n")
 	return nil
 }
 
@@ -705,6 +745,340 @@ func (i *Installer) createArgoCDClient(token string) error {
 	}()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createGrafanaClient creates the Grafana OIDC client in Keycloak
+func (i *Installer) createGrafanaClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "grafana",
+		"name":                      "Grafana",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "grafana-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://grafana.localtest.me/login/generic_oauth"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createBackstageClient creates the Backstage OIDC client in Keycloak
+func (i *Installer) createBackstageClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "backstage",
+		"name":                      "Backstage",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "backstage-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://backstage.localtest.me/api/auth/oidc/handler/frame"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createGiteaClient creates the Gitea OIDC client in Keycloak
+func (i *Installer) createGiteaClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "gitea",
+		"name":                      "Gitea",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "gitea-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://gitea.localtest.me/user/oauth2/Keycloak/callback"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createVaultClient creates the Vault OIDC client in Keycloak
+func (i *Installer) createVaultClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "vault",
+		"name":                      "Vault",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "vault-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://vault.localtest.me/ui/vault/auth/oidc/oidc/callback", "http://localhost:8250/oidc/callback"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// configureGiteaOIDC configures Gitea to use Keycloak as OAuth2 provider
+func (i *Installer) configureGiteaOIDC() error {
+	// Gitea OAuth2 source configuration
+	authSourceData := map[string]interface{}{
+		"type":                              "oauth2",
+		"name":                              "Keycloak",
+		"is_active":                         true,
+		"oauth2_provider":                   "openidConnect",
+		"client_id":                         "gitea",
+		"client_secret":                     "gitea-client-secret",
+		"openid_connect_auto_discovery_url": "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration",
+		"skip_local_2fa":                    false,
+	}
+
+	jsonData, err := json.Marshal(authSourceData)
+	if err != nil {
+		return err
+	}
+
+	// Create OAuth2 authentication source via Gitea admin API
+	// Using basic auth with admin credentials
+	req, err := http.NewRequest("POST", "http://gitea.localtest.me/api/v1/admin/auth", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.SetBasicAuth("giteaadmin", "admin")
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	// Accept 201 Created or 422 Unprocessable Entity (already exists)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusUnprocessableEntity {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// configureVaultOIDC configures Vault to use Keycloak as OIDC provider
+func (i *Installer) configureVaultOIDC() error {
+	vaultAddr := "http://vault.localtest.me"
+	vaultToken := "root"
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// 1. Enable OIDC auth method
+	enableAuthData := map[string]interface{}{
+		"type": "oidc",
+	}
+	if err := i.vaultAPIRequest(client, vaultAddr, vaultToken, "POST", "/v1/sys/auth/oidc", enableAuthData); err != nil {
+		// Ignore error if already enabled
+		if !strings.Contains(err.Error(), "path is already in use") {
+			return fmt.Errorf("failed to enable OIDC auth: %w", err)
+		}
+	}
+
+	// 2. Configure OIDC auth method
+	oidcConfigData := map[string]interface{}{
+		"oidc_discovery_url": "http://keycloak.localtest.me/realms/demo-realm",
+		"oidc_client_id":     "vault",
+		"oidc_client_secret": "vault-client-secret",
+		"default_role":       "default",
+		"bound_issuer":       "http://keycloak.localtest.me/realms/demo-realm",
+	}
+	if err := i.vaultAPIRequest(client, vaultAddr, vaultToken, "POST", "/v1/auth/oidc/config", oidcConfigData); err != nil {
+		return fmt.Errorf("failed to configure OIDC: %w", err)
+	}
+
+	// 3. Create OIDC role
+	roleData := map[string]interface{}{
+		"bound_audiences": []string{"vault"},
+		"allowed_redirect_uris": []string{
+			"http://vault.localtest.me/ui/vault/auth/oidc/oidc/callback",
+			"http://localhost:8250/oidc/callback",
+		},
+		"user_claim":     "sub",
+		"policies":       []string{"default"},
+		"ttl":            "1h",
+		"token_policies": []string{"default"},
+	}
+	if err := i.vaultAPIRequest(client, vaultAddr, vaultToken, "POST", "/v1/auth/oidc/role/default", roleData); err != nil {
+		return fmt.Errorf("failed to create OIDC role: %w", err)
+	}
+
+	return nil
+}
+
+// vaultAPIRequest is a helper function for making Vault API requests
+func (i *Installer) vaultAPIRequest(client *http.Client, vaultAddr, token, method, path string, data map[string]interface{}) error {
+	var reqBody io.Reader
+	if data != nil {
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewBuffer(jsonData)
+	}
+
+	req, err := http.NewRequest(method, vaultAddr+path, reqBody)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("X-Vault-Token", token)
+	if data != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	// Accept 200/204 success codes and 400 for "already exists" type errors
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
 	}

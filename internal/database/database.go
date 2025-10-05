@@ -341,7 +341,7 @@ func (d *Database) RunMigrations() error {
 		)
 
 		// Execute using shell
-		output, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+		output, err := exec.Command("sh", "-c", cmd).CombinedOutput() // #nosec G204 - Database migration with controlled SQL files
 		if err != nil {
 			log.Printf("Migration output: %s", string(output))
 			log.Printf("Full error: %v", err)

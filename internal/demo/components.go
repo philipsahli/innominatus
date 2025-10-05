@@ -82,6 +82,9 @@ func NewDemoEnvironment() *DemoEnvironment {
 							"service": map[string]interface{}{
 								"DISABLE_REGISTRATION": true,
 							},
+							"oauth2": map[string]interface{}{
+								"ENABLE": true,
+							},
 						},
 					},
 					"ingress": map[string]interface{}{
@@ -367,6 +370,17 @@ func NewDemoEnvironment() *DemoEnvironment {
 							},
 						},
 					},
+					"auth.generic_oauth": map[string]interface{}{
+						"enabled":       true,
+						"name":          "Keycloak",
+						"client_id":     "grafana",
+						"client_secret": "grafana-client-secret",
+						"scopes":        "openid email profile",
+						"auth_url":      "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/auth",
+						"token_url":     "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/token",
+						"api_url":       "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/userinfo",
+						"allow_sign_up": true,
+					},
 				},
 				HealthPath: "/api/health",
 				Port:       3000,
@@ -483,6 +497,14 @@ func NewDemoEnvironment() *DemoEnvironment {
 								"providers": map[string]interface{}{
 									"guest": map[string]interface{}{
 										"dangerouslyAllowOutsideDevelopment": true,
+									},
+									"oidc": map[string]interface{}{
+										"development": map[string]interface{}{
+											"metadataUrl":  "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration",
+											"clientId":     "backstage",
+											"clientSecret": "backstage-client-secret",
+											"prompt":       "auto",
+										},
 									},
 								},
 							},

@@ -122,6 +122,28 @@ func (c *CheatSheet) PrintCredentials() {
 		fmt.Println("No services with credentials configured.")
 		fmt.Println()
 	}
+
+	// Print Keycloak SSO information
+	fmt.Println("🔑 Single Sign-On (Keycloak)")
+	fmt.Println("=============================")
+	fmt.Println()
+	fmt.Printf("🌐 %-15s http://%-25s\n", "Keycloak:", "keycloak.localtest.me")
+	fmt.Printf("   %-12s %s\n", "admin:", "admin")
+	fmt.Printf("   %-12s %s\n", "password:", "adminpassword")
+	fmt.Println()
+	fmt.Println("📝 Demo Users (for SSO login):")
+	fmt.Printf("   %-12s %s / %s\n", "demo-user:", "demo-user", "password123")
+	fmt.Printf("   %-12s %s / %s\n", "test-user:", "test-user", "test123")
+	fmt.Println()
+	fmt.Println("🔗 OIDC-Enabled Services:")
+	fmt.Println("   • ArgoCD    - Login with Keycloak button")
+	fmt.Println("   • Grafana   - Login with Keycloak button")
+	fmt.Println("   • Backstage - OIDC option on login page")
+	fmt.Println("   • Gitea     - Sign in with Keycloak option")
+	fmt.Println("   • Vault     - OIDC auth method enabled")
+	fmt.Println()
+	fmt.Println("💡 Tip: Local admin login still works for all services")
+	fmt.Println()
 }
 
 // PrintQuickStart prints quick start instructions
