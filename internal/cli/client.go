@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -207,4 +209,130 @@ func (c *Client) GetWorkflowDetail(workflowID string) (*WorkflowExecutionDetail,
 		return nil, err
 	}
 	return &result, nil
+}
+
+// GraphExportCommand exports the workflow graph for an application
+func (c *Client) GraphExportCommand(appName, format, outputFile string) error {
+	// Make request to graph export endpoint
+	url := fmt.Sprintf("%s/api/graph/%s/export?format=%s", c.baseURL, appName, format)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authentication
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	} else if apiKey := os.Getenv("IDP_API_KEY"); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to export graph: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Read response body
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Write to file or stdout
+	if outputFile != "" {
+		if err := os.WriteFile(outputFile, data, 0644); err != nil {
+			return fmt.Errorf("failed to write to file: %w", err)
+		}
+		fmt.Printf("Graph exported to %s (format: %s)\n", outputFile, format)
+	} else {
+		// Write to stdout
+		os.Stdout.Write(data)
+	}
+
+	return nil
+}
+
+// GraphStatusCommand shows graph status and statistics for an application
+func (c *Client) GraphStatusCommand(appName string) error {
+	// Make request to graph status endpoint
+	url := fmt.Sprintf("%s/api/graph/%s", c.baseURL, appName)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authentication
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	} else if apiKey := os.Getenv("IDP_API_KEY"); apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get graph: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var graphData map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&graphData); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Display graph statistics
+	fmt.Printf("Graph Status for Application: %s\n\n", appName)
+
+	if nodes, ok := graphData["nodes"].(map[string]interface{}); ok {
+		fmt.Printf("Total Nodes: %d\n", len(nodes))
+
+		// Count by type
+		typeCounts := make(map[string]int)
+		for _, node := range nodes {
+			if nodeMap, ok := node.(map[string]interface{}); ok {
+				if nodeType, ok := nodeMap["type"].(string); ok {
+					typeCounts[nodeType]++
+				}
+			}
+		}
+
+		fmt.Println("\nNode Counts by Type:")
+		for nodeType, count := range typeCounts {
+			fmt.Printf("  %s: %d\n", nodeType, count)
+		}
+
+		// Count by state
+		stateCounts := make(map[string]int)
+		for _, node := range nodes {
+			if nodeMap, ok := node.(map[string]interface{}); ok {
+				if state, ok := nodeMap["state"].(string); ok {
+					stateCounts[state]++
+				}
+			}
+		}
+
+		fmt.Println("\nNode Counts by State:")
+		for state, count := range stateCounts {
+			fmt.Printf("  %s: %d\n", state, count)
+		}
+	}
+
+	if edges, ok := graphData["edges"].(map[string]interface{}); ok {
+		fmt.Printf("\nTotal Edges: %d\n", len(edges))
+	}
+
+	return nil
 }

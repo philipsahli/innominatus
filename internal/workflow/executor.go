@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"innominatus/internal/database"
+	"innominatus/internal/graph"
 	"innominatus/internal/types"
 	"io"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	sdk "idp-orchestrator/pkg/graph"
 )
 
 // StepExecutorFunc defines the signature for step execution functions
@@ -39,6 +42,7 @@ type WorkflowExecutor struct {
 	repo             WorkflowRepositoryInterface
 	resolver         *WorkflowResolver
 	resourceManager  ResourceManager
+	graphAdapter     *graph.Adapter
 	maxConcurrent    int
 	executionTimeout time.Duration
 	stepExecutors    map[string]StepExecutorFunc
@@ -105,6 +109,11 @@ func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInte
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
+}
+
+// SetGraphAdapter sets the graph adapter for workflow tracking
+func (e *WorkflowExecutor) SetGraphAdapter(adapter *graph.Adapter) {
+	e.graphAdapter = adapter
 }
 
 // ExecuteMultiTierWorkflows executes resolved multi-tier workflows
@@ -189,8 +198,28 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 
 	fmt.Printf("Starting workflow with %d steps\n\n", len(workflow.Steps))
 
+	// Create workflow node in graph (if graph adapter is available)
+	workflowNodeID := fmt.Sprintf("workflow-%d", execution.ID)
+	if e.graphAdapter != nil {
+		workflowNode := &sdk.Node{
+			ID:    workflowNodeID,
+			Type:  sdk.NodeTypeWorkflow,
+			Name:  workflowName,
+			State: sdk.NodeStatePending,
+			Properties: map[string]interface{}{
+				"execution_id": execution.ID,
+				"app_name":     appName,
+				"total_steps":  len(workflow.Steps),
+			},
+		}
+		if err := e.graphAdapter.AddNode(appName, workflowNode); err != nil {
+			fmt.Printf("Warning: failed to add workflow node to graph: %v\n", err)
+		}
+	}
+
 	// Create step records
 	stepRecords := make(map[int]*database.WorkflowStepExecution)
+	stepNodeIDs := make(map[int]string)
 	for i, step := range workflow.Steps {
 		stepConfig := map[string]interface{}{
 			"name":      step.Name,
@@ -206,17 +235,56 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			return fmt.Errorf("failed to create workflow step: %w", err)
 		}
 		stepRecords[i] = stepRecord
+
+		// Create step node in graph (if graph adapter is available)
+		stepNodeID := fmt.Sprintf("step-%d", stepRecord.ID)
+		stepNodeIDs[i] = stepNodeID
+		if e.graphAdapter != nil {
+			stepNode := &sdk.Node{
+				ID:    stepNodeID,
+				Type:  sdk.NodeTypeStep,
+				Name:  step.Name,
+				State: sdk.NodeStateWaiting,
+				Properties: map[string]interface{}{
+					"step_id":     stepRecord.ID,
+					"step_number": i + 1,
+					"step_type":   step.Type,
+				},
+			}
+			if err := e.graphAdapter.AddNode(appName, stepNode); err != nil {
+				fmt.Printf("Warning: failed to add step node to graph: %v\n", err)
+			}
+
+			// Create edge: workflow contains step
+			edge := &sdk.Edge{
+				ID:         fmt.Sprintf("wf-%d-step-%d", execution.ID, stepRecord.ID),
+				FromNodeID: workflowNodeID,
+				ToNodeID:   stepNodeID,
+				Type:       sdk.EdgeTypeContains,
+			}
+			if err := e.graphAdapter.AddEdge(appName, edge); err != nil {
+				fmt.Printf("Warning: failed to add workflow→step edge to graph: %v\n", err)
+			}
+		}
 	}
 
 	// Execute steps
 	for i, step := range workflow.Steps {
 		stepRecord := stepRecords[i]
+		stepNodeID := stepNodeIDs[i]
 		fmt.Printf("Step %d/%d: %s (%s)\n", i+1, len(workflow.Steps), step.Name, step.Type)
 
 		// Update step to running
 		err := e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil)
 		if err != nil {
 			fmt.Printf("Warning: failed to update step status: %v\n", err)
+		}
+
+		// Update step node state to running in graph
+		if e.graphAdapter != nil {
+			if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateRunning); err != nil {
+				fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+			}
 		}
 
 		spinner := NewSpinner(fmt.Sprintf("Initializing %s step...", step.Type))
@@ -232,6 +300,13 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			workflowErrorMsg := fmt.Sprintf("workflow failed at step '%s': %v", step.Name, err)
 			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &workflowErrorMsg)
 
+			// Update step node state to failed in graph (triggers automatic propagation to workflow)
+			if e.graphAdapter != nil {
+				if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateFailed); err != nil {
+					fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+				}
+			}
+
 			spinner.Stop(false, fmt.Sprintf("Step '%s' failed: %v", step.Name, err))
 			return fmt.Errorf("workflow failed at step '%s': %w", step.Name, err)
 		}
@@ -242,6 +317,13 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			fmt.Printf("Warning: failed to update step completion: %v\n", err)
 		}
 
+		// Update step node state to succeeded in graph
+		if e.graphAdapter != nil {
+			if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateSucceeded); err != nil {
+				fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+			}
+		}
+
 		spinner.Stop(true, fmt.Sprintf("Step '%s' completed successfully", step.Name))
 		fmt.Println()
 	}
@@ -250,6 +332,13 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 	err = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusCompleted, nil)
 	if err != nil {
 		fmt.Printf("Warning: failed to update workflow completion: %v\n", err)
+	}
+
+	// Update workflow node state to succeeded in graph
+	if e.graphAdapter != nil {
+		if err := e.graphAdapter.UpdateNodeState(appName, workflowNodeID, sdk.NodeStateSucceeded); err != nil {
+			fmt.Printf("Warning: failed to update workflow state in graph: %v\n", err)
+		}
 	}
 
 	fmt.Println("🎉 Workflow completed successfully!")

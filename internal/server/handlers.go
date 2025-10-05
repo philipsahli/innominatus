@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	sdk "idp-orchestrator/pkg/graph"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -99,16 +101,16 @@ type StepExecutionContext struct {
 }
 
 type Server struct {
-	storage          *Storage
 	db               *database.Database
 	workflowRepo     *database.WorkflowRepository
 	workflowExecutor *workflow.WorkflowExecutor
 	workflowAnalyzer *workflow.WorkflowAnalyzer
 	resourceManager  *resources.Manager
 	teamManager      *teams.TeamManager
-	sessionManager   *auth.SessionManager
+	sessionManager   auth.ISessionManager
 	healthChecker    *health.HealthChecker
 	rateLimiter      *RateLimiter
+	graphAdapter     *graph.Adapter
 	loginAttempts    map[string][]time.Time
 	loginMutex       sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -151,7 +153,6 @@ func NewServer() *Server {
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 
 	server := &Server{
-		storage:          NewStorage(),
 		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
 		teamManager:      teams.NewTeamManager(),
 		sessionManager:   auth.NewSessionManager(),
@@ -173,21 +174,32 @@ func NewServerWithDB(db *database.Database) *Server {
 	resourceManager := resources.NewManager(resourceRepo)
 	workflowExecutor := workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
 
+	// Initialize graph adapter
+	graphAdapter, err := graph.NewAdapter(db.DB())
+	if err != nil {
+		fmt.Printf("Warning: Failed to initialize graph adapter: %v\n", err)
+		fmt.Println("Continuing without graph tracking...")
+	} else {
+		fmt.Println("Graph adapter initialized successfully")
+		// Set graph adapter on workflow executor
+		workflowExecutor.SetGraphAdapter(graphAdapter)
+	}
+
 	healthChecker := health.NewHealthChecker()
 	// Register health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
 
 	server := &Server{
-		storage:          NewStorage(),
 		db:               db,
 		workflowRepo:     workflowRepo,
 		workflowExecutor: workflowExecutor,
 		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
 		resourceManager:  resourceManager,
 		teamManager:      teams.NewTeamManager(),
-		sessionManager:   auth.NewSessionManager(),
+		sessionManager:   auth.NewDBSessionManager(db),
 		healthChecker:    healthChecker,
+		graphAdapter:     graphAdapter,
 		loginAttempts:    make(map[string][]time.Time),
 		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
 		workflowCounter:  0,
@@ -218,23 +230,29 @@ func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var specs map[string]*types.ScoreSpec
+	var apps []*database.Application
+	var err error
 
 	// Admin users can see all specs, regular users only see their team's specs
 	if user.IsAdmin() {
-		specs = s.storage.ListSpecs()
+		apps, err = s.db.ListApplications()
 	} else {
-		specs = s.storage.ListSpecsByTeam(user.Team)
+		apps, err = s.db.ListApplicationsByTeam(user.Team)
+	}
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list applications: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	response := make(map[string]interface{})
-	for name, spec := range specs {
-		response[name] = map[string]interface{}{
-			"metadata":    spec.Metadata,
-			"containers":  spec.Containers,
-			"resources":   spec.Resources,
-			"environment": spec.Environment,
-			"graph":       graph.BuildGraph(spec),
+	for _, app := range apps {
+		response[app.Name] = map[string]interface{}{
+			"metadata":    app.ScoreSpec.Metadata,
+			"containers":  app.ScoreSpec.Containers,
+			"resources":   app.ScoreSpec.Resources,
+			"environment": app.ScoreSpec.Environment,
+			"graph":       graph.BuildGraph(app.ScoreSpec),
 		}
 	}
 
@@ -266,9 +284,9 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := spec.Metadata.Name
-	err = s.storage.AddSpec(name, &spec, user.Team, user.Username)
+	err = s.db.AddApplication(name, &spec, user.Team, user.Username)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error storing spec: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Error storing application: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -487,24 +505,24 @@ func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 
-	storedSpec, exists := s.storage.GetStoredSpec(name)
-	if !exists {
-		http.Error(w, "Spec not found", http.StatusNotFound)
+	app, err := s.db.GetApplication(name)
+	if err != nil {
+		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this spec
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
 
 	response := map[string]interface{}{
-		"metadata":    storedSpec.Spec.Metadata,
-		"containers":  storedSpec.Spec.Containers,
-		"resources":   storedSpec.Spec.Resources,
-		"environment": storedSpec.Spec.Environment,
-		"graph":       graph.BuildGraph(storedSpec.Spec),
+		"metadata":    app.ScoreSpec.Metadata,
+		"containers":  app.ScoreSpec.Containers,
+		"resources":   app.ScoreSpec.Resources,
+		"environment": app.ScoreSpec.Environment,
+		"graph":       graph.BuildGraph(app.ScoreSpec),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -521,19 +539,19 @@ func (s *Server) handleDeleteSpec(w http.ResponseWriter, r *http.Request, name s
 		return
 	}
 
-	storedSpec, exists := s.storage.GetStoredSpec(name)
-	if !exists {
-		http.Error(w, "Spec not found", http.StatusNotFound)
+	app, err := s.db.GetApplication(name)
+	if err != nil {
+		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this spec
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
 
-	err := s.storage.DeleteSpec(name)
+	err = s.db.DeleteApplication(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -555,7 +573,11 @@ func (s *Server) HandleEnvironments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	environments := s.storage.ListEnvironments()
+	environments, err := s.db.ListEnvironments()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list environments: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(environments); err != nil {
@@ -580,24 +602,27 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Legacy /api/graph endpoint - return first spec for backward compatibility
-	specs := s.storage.ListSpecs()
+	apps, err := s.db.ListApplications()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list applications: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-	if len(specs) == 1 {
-		for _, spec := range specs {
-			response := map[string]interface{}{
-				"metadata":    spec.Metadata,
-				"containers":  spec.Containers,
-				"resources":   spec.Resources,
-				"environment": spec.Environment,
-				"graph":       graph.BuildGraph(spec),
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(response); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-			}
-			return
+	if len(apps) == 1 {
+		app := apps[0]
+		response := map[string]interface{}{
+			"metadata":    app.ScoreSpec.Metadata,
+			"containers":  app.ScoreSpec.Containers,
+			"resources":   app.ScoreSpec.Resources,
+			"environment": app.ScoreSpec.Environment,
+			"graph":       graph.BuildGraph(app.ScoreSpec),
 		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
+		return
 	}
 
 	// Return all specs if multiple exist
@@ -606,26 +631,61 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 // handleAppGraph handles /api/graph/<app> requests with enhanced graph data
 func (s *Server) handleAppGraph(w http.ResponseWriter, r *http.Request, appName string) {
-	// Get the spec for the application
-	spec, exists := s.storage.GetSpec(appName)
-	if !exists {
+	// Get the graph from the database via graph adapter
+	if s.graphAdapter == nil {
+		http.Error(w, "Graph adapter not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	sdkGraph, err := s.graphAdapter.GetGraph(appName)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Application '%s' not found", appName), http.StatusNotFound)
 		return
 	}
 
-	// Build enhanced resource graph
-	resourceGraph := graph.BuildResourceGraph(appName, spec)
+	// Convert SDK graph format to frontend-compatible format
+	response := convertSDKGraphToFrontend(sdkGraph)
 
-	// Add workflow data to the graph
-	s.addWorkflowDataToGraph(resourceGraph, appName)
-
-	// Add mock resource status (for demonstration)
-	s.addMockResourceStatus(resourceGraph)
-
-	// Return the enhanced graph
+	// Return the graph data
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resourceGraph); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// convertSDKGraphToFrontend converts the SDK Graph format to frontend JSON format
+func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
+	// Convert nodes map to array
+	nodes := make([]map[string]interface{}, 0, len(sdkGraph.Nodes))
+	for _, node := range sdkGraph.Nodes {
+		nodes = append(nodes, map[string]interface{}{
+			"id":          node.ID,
+			"name":        node.Name,
+			"type":        string(node.Type),
+			"status":      string(node.State), // Convert NodeState to string
+			"description": node.Description,
+			"metadata":    node.Properties,
+			"created_at":  node.CreatedAt,
+			"updated_at":  node.UpdatedAt,
+		})
+	}
+
+	// Convert edges map to array
+	edges := make([]map[string]interface{}, 0, len(sdkGraph.Edges))
+	for _, edge := range sdkGraph.Edges {
+		edges = append(edges, map[string]interface{}{
+			"id":          edge.ID,
+			"source_id":   edge.FromNodeID, // Map from_node_id to source_id
+			"target_id":   edge.ToNodeID,   // Map to_node_id to target_id
+			"type":        string(edge.Type),
+			"description": edge.Description,
+			"metadata":    edge.Properties,
+		})
+	}
+
+	return map[string]interface{}{
+		"nodes": nodes,
+		"edges": edges,
 	}
 }
 
@@ -1427,13 +1487,19 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Count applications
-	var specs map[string]*types.ScoreSpec
+	var apps []*database.Application
+	var err error
 	if user.IsAdmin() {
-		specs = s.storage.ListSpecs()
+		apps, err = s.db.ListApplications()
 	} else {
-		specs = s.storage.ListSpecsByTeam(user.Team)
+		apps, err = s.db.ListApplicationsByTeam(user.Team)
 	}
-	applicationsCount := len(specs)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to count applications: %v", err), http.StatusInternalServerError)
+		return
+	}
+	applicationsCount := len(apps)
 
 	// Count workflows
 	var workflowsCount int
@@ -1452,9 +1518,9 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 	// Count resources across all specs
 	resourcesCount := 0
-	for _, spec := range specs {
-		if spec.Resources != nil {
-			resourcesCount += len(spec.Resources)
+	for _, app := range apps {
+		if app.ScoreSpec.Resources != nil {
+			resourcesCount += len(app.ScoreSpec.Resources)
 		}
 	}
 
@@ -1717,14 +1783,14 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Check if application exists
-	storedSpec, exists := s.storage.GetStoredSpec(appName)
-	if !exists {
+	app, err := s.db.GetApplication(appName)
+	if err != nil {
 		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this application
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
@@ -1738,8 +1804,8 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request,
 		}
 	}
 
-	// Also remove from storage (spec records)
-	err := s.storage.DeleteSpec(appName)
+	// Also remove from database (spec records)
+	err = s.db.DeleteApplication(appName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to delete application spec: %v", err), http.StatusInternalServerError)
 		return
@@ -1765,14 +1831,14 @@ func (s *Server) handleDeprovisionApplication(w http.ResponseWriter, r *http.Req
 	}
 
 	// Check if application exists
-	storedSpec, exists := s.storage.GetStoredSpec(appName)
-	if !exists {
+	app, err := s.db.GetApplication(appName)
+	if err != nil {
 		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this application
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
@@ -1876,9 +1942,9 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	workflow := workflowSpec.Spec
 
 	// Store the Score spec first
-	err = s.storage.AddSpec(spec.Metadata.Name, &spec, user.Team, user.Username)
+	err = s.db.AddApplication(spec.Metadata.Name, &spec, user.Team, user.Username)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error storing spec: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Error storing application: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -1892,33 +1958,25 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Execute workflow with enhanced resource management integration
+	// Execute workflow with enhanced resource management integration and graph tracking
 	var workflowExecution *database.WorkflowExecution
 	if s.workflowExecutor != nil {
-		// Create workflow execution record
-		workflowExecution, err = s.workflowRepo.CreateWorkflowExecution(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), len(workflow.Steps))
+		// Execute workflow using workflow executor (which has graph adapter attached)
+		// This will automatically create workflow execution record and track graph
+		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow)
 		if err != nil {
-			fmt.Printf("Warning: Failed to create workflow execution record: %v\n", err)
-		}
-
-		// Execute workflow with resource integration
-		err = s.executeGoldenPathWorkflowWithResources(&workflow, &spec, user.Username, workflowExecution)
-		if err != nil {
-			// Mark workflow as failed
-			if workflowExecution != nil {
-				errorMsg := err.Error()
-				if updateErr := s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusFailed, &errorMsg); updateErr != nil {
-					fmt.Fprintf(os.Stderr, "failed to update workflow status: %v\n", updateErr)
-				}
-			}
 			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		// Mark workflow as completed
-		if workflowExecution != nil {
-			if err := s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusCompleted, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to update workflow status: %v\n", err)
+		// Get the workflow execution ID from the most recent execution
+		// (ExecuteWorkflow creates it internally)
+		executions, listErr := s.workflowRepo.ListWorkflowExecutions(spec.Metadata.Name, 1, 0)
+		if listErr == nil && len(executions) > 0 {
+			// Get full execution details for response
+			fullExec, getErr := s.workflowRepo.GetWorkflowExecution(executions[0].ID)
+			if getErr == nil {
+				workflowExecution = fullExec
 			}
 		}
 	} else {

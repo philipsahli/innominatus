@@ -161,24 +161,15 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 
 	if appName != "" {
 		// List resources for specific application
-		var resources interface{}
-		var err error
+		if s.resourceManager == nil {
+			http.Error(w, "Resource management not available", http.StatusServiceUnavailable)
+			return
+		}
 
-		if s.resourceManager != nil && s.db != nil {
-			// Use database storage
-			resources, err = s.resourceManager.GetResourcesByApplication(appName)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Failed to get resources: %v", err), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			// Use local storage
-			localResources, err := s.storage.GetResourcesByApplication(appName)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("Failed to get resources: %v", err), http.StatusInternalServerError)
-				return
-			}
-			resources = localResources
+		resources, err := s.resourceManager.GetResourcesByApplication(appName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get resources: %v", err), http.StatusInternalServerError)
+			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -190,29 +181,23 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Return all deployed applications and their resources
-		specs := s.storage.ListStoredSpecs()
+		apps, err := s.db.ListApplications()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to list applications: %v", err), http.StatusInternalServerError)
+			return
+		}
+
 		allResources := make(map[string]interface{})
 
-		if s.resourceManager != nil && s.db != nil {
-			// Use database storage
-			for appName := range specs {
-				resources, err := s.resourceManager.GetResourcesByApplication(appName)
+		if s.resourceManager != nil {
+			// Get resources for each application
+			for _, app := range apps {
+				resources, err := s.resourceManager.GetResourcesByApplication(app.Name)
 				if err != nil {
 					continue // Skip apps with errors
 				}
 				if len(resources) > 0 {
-					allResources[appName] = resources
-				}
-			}
-		} else {
-			// Use local storage
-			for appName := range specs {
-				resources, err := s.storage.GetResourcesByApplication(appName)
-				if err != nil {
-					continue // Skip apps with errors
-				}
-				if len(resources) > 0 {
-					allResources[appName] = resources
+					allResources[app.Name] = resources
 				}
 			}
 		}

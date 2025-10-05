@@ -252,6 +252,39 @@ func main() {
 
 		err = client.LogsCommand(workflowID, options)
 
+	case "graph-export":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: graph-export command requires an application name\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s graph-export <app-name> [--format svg|png|dot] [--output file]\n", os.Args[0])
+			os.Exit(1)
+		}
+		appName := flag.Args()[1]
+
+		// Parse graph-export-specific flags
+		graphFlags := flag.NewFlagSet("graph-export", flag.ExitOnError)
+		formatFlag := graphFlags.String("format", "svg", "Output format (svg, png, dot)")
+		outputFlag := graphFlags.String("output", "", "Output file path (default: stdout)")
+
+		// Parse remaining arguments
+		graphArgs := flag.Args()[2:]
+		if len(graphArgs) > 0 {
+			if err := graphFlags.Parse(graphArgs); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing graph-export flags: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		err = client.GraphExportCommand(appName, *formatFlag, *outputFlag)
+
+	case "graph-status":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: graph-status command requires an application name\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s graph-status <app-name>\n", os.Args[0])
+			os.Exit(1)
+		}
+		appName := flag.Args()[1]
+		err = client.GraphStatusCommand(appName)
+
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n", command)
 		printUsage()
@@ -278,6 +311,8 @@ func printUsage() {
 	fmt.Printf("  list-workflows [app]  List workflow executions (optionally filtered by app)\n")
 	fmt.Printf("  list-resources [app]  List resource instances (optionally filtered by app)\n")
 	fmt.Printf("  logs <workflow-id>    Show workflow execution logs with step details\n")
+	fmt.Printf("  graph-export <app>    Export workflow graph visualization\n")
+	fmt.Printf("  graph-status <app>    Show workflow graph status and statistics\n")
 	fmt.Printf("  list-goldenpaths      List available golden paths\n")
 	fmt.Printf("  run <path> [spec]     Run a golden path workflow\n")
 	fmt.Printf("  admin <command>       Admin commands (requires admin role)\n")

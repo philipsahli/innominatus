@@ -1,0 +1,385 @@
+openapi: 3.0.0
+info:
+  title: innominatus Admin API
+  description: Administrative API for platform administrators to manage users, teams, and demo environments
+  version: 1.0.0
+  contact:
+    name: innominatus
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+paths:
+  /api/impersonate:
+    post:
+      summary: Impersonate user (admin only)
+      description: Start impersonating another user (admin only)
+      operationId: impersonateUser
+      tags:
+        - Admin
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+              properties:
+                username:
+                  type: string
+                  description: Username to impersonate
+                  example: "bob"
+      responses:
+        '200':
+          description: Impersonation started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  impersonating:
+                    type: string
+                  impersonating_team:
+                    type: string
+                  impersonating_role:
+                    type: string
+        '403':
+          description: Not an admin or impersonation not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Stop impersonation
+      description: Stop impersonating and return to original user
+      operationId: stopImpersonation
+      tags:
+        - Admin
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Impersonation stopped successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Not currently impersonating
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users:
+    get:
+      summary: List all users (admin only)
+      description: Returns a list of all users in the system
+      operationId: listUsers
+      tags:
+        - Admin
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    username:
+                      type: string
+                    team:
+                      type: string
+                    role:
+                      type: string
+                    is_admin:
+                      type: boolean
+        '403':
+          description: Not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/teams:
+    get:
+      summary: List teams
+      description: Returns all teams in the system
+      operationId: listTeams
+      tags:
+        - Teams
+      responses:
+        '200':
+          description: List of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+    post:
+      summary: Create new team
+      description: Creates a new team
+      operationId: createTeam
+      tags:
+        - Teams
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Team created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Team already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/teams/{id}:
+    get:
+      summary: Get team details
+      description: Returns details of a specific team
+      operationId: getTeam
+      tags:
+        - Teams
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404':
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete team
+      description: Deletes a team (cannot delete default team)
+      operationId: deleteTeam
+      tags:
+        - Teams
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '403':
+          description: Cannot delete default team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Team not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/demo/status:
+    get:
+      summary: Get demo environment status
+      description: Returns the current status of the demo environment
+      operationId: getDemoStatus
+      tags:
+        - Demo
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Demo environment status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  resources:
+                    type: array
+                    items:
+                      type: object
+
+  /api/demo/time:
+    get:
+      summary: Get demo environment time
+      description: Returns the current time in the demo environment
+      operationId: getDemoTime
+      tags:
+        - Demo
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Demo environment time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_time:
+                    type: string
+                    format: date-time
+
+  /api/demo/nuke:
+    post:
+      summary: Reset demo environment
+      description: Destroys and resets the demo environment
+      operationId: nukeDemoEnvironment
+      tags:
+        - Demo
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Demo environment reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+components:
+  schemas:
+    Team:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - created_at
+        - members
+      properties:
+        id:
+          type: string
+          description: Unique team identifier
+          example: "backend-team"
+        name:
+          type: string
+          description: Human-readable team name
+          example: "Backend Team"
+        description:
+          type: string
+          description: Team description
+          example: "Team responsible for backend services"
+        created_at:
+          type: string
+          format: date-time
+          description: Team creation timestamp
+        members:
+          type: array
+          items:
+            type: string
+          description: List of team member emails
+          example: ["john@example.com", "jane@example.com"]
+
+    CreateTeamRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Team name
+          example: "Backend Team"
+        description:
+          type: string
+          description: Team description
+          example: "Team responsible for backend services"
+
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "No spec loaded"
+
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+      description: Session-based authentication via cookies
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: API key authentication (use "Bearer <api_key>" format)
+
+tags:
+  - name: Admin
+    description: Administrative endpoints (admin users only)
+  - name: Teams
+    description: Team management
+  - name: Demo
+    description: Demo environment management

@@ -16,6 +16,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     // Only redirect if we're explicitly not authenticated
     // This prevents premature redirects during authentication loading
     if (isAuthenticated === false) {
+      // Save the current path to redirect back after login
+      const currentPath = window.location.pathname;
+      sessionStorage.setItem('redirectAfterLogin', currentPath);
       router.push('/login');
     }
   }, [isAuthenticated, router]);

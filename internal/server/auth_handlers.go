@@ -210,7 +210,8 @@ func (s *Server) HandleAPILogin(w http.ResponseWriter, r *http.Request) {
 	// Create session
 	session, err := s.sessionManager.CreateSession(user)
 	if err != nil {
-		http.Error(w, "Unable to create session", http.StatusInternalServerError)
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to create session: %v\n", err)
+		http.Error(w, fmt.Sprintf("Unable to create session: %v", err), http.StatusInternalServerError)
 		return
 	}
 

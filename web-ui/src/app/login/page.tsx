@@ -34,7 +34,15 @@ export default function LoginPage() {
 
       if (response.success && response.data) {
         login(response.data.token);
-        router.push('/dashboard/');
+
+        // Redirect to the original destination or dashboard
+        const redirectPath = sessionStorage.getItem('redirectAfterLogin');
+        if (redirectPath && redirectPath !== '/login') {
+          sessionStorage.removeItem('redirectAfterLogin');
+          router.push(redirectPath);
+        } else {
+          router.push('/dashboard/');
+        }
       } else {
         setError(response.error || 'Login failed');
       }

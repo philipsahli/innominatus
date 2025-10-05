@@ -3,7 +3,11 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -35,8 +39,15 @@ func NewDatabase() (*Database, error) {
 		SSLMode:  getEnvWithDefault("DB_SSLMODE", "disable"),
 	}
 
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
+	// Build connection string - omit password if empty to avoid lib/pq default behavior
+	connStr := fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s",
+		config.Host, config.Port, config.User, config.DBName, config.SSLMode)
+	if config.Password != "" {
+		connStr = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
+	}
+
+	fmt.Printf("DEBUG: NewDatabase connecting to: %s (DBName=%s)\n", connStr, config.DBName)
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -53,13 +64,28 @@ func NewDatabase() (*Database, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	return &Database{db: db}, nil
+	// Verify which database we actually connected to
+	var actualDB string
+	if err := db.QueryRow("SELECT current_database()").Scan(&actualDB); err != nil {
+		fmt.Printf("WARNING: Failed to verify database connection: %v\n", err)
+	} else {
+		fmt.Printf("DEBUG: NewDatabase - verified connection to database: %s\n", actualDB)
+	}
+
+	result := &Database{db: db}
+	fmt.Printf("DEBUG: NewDatabase - returning Database pointer: %p\n", result)
+	return result, nil
 }
 
 // NewDatabaseWithConfig creates a new database connection with custom config
 func NewDatabaseWithConfig(config Config) (*Database, error) {
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
+	// Build connection string - omit password if empty to avoid lib/pq default behavior
+	connStr := fmt.Sprintf("host=%s port=%s user=%s dbname=%s sslmode=%s",
+		config.Host, config.Port, config.User, config.DBName, config.SSLMode)
+	if config.Password != "" {
+		connStr = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
+	}
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -268,6 +294,69 @@ ALTER TABLE resource_dependencies ADD CONSTRAINT chk_dependency_type
 		return fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
+	// Run migrations from migrations/ directory
+	if err := d.RunMigrations(); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	return nil
+}
+
+// RunMigrations executes SQL migration files from the migrations/ directory
+func (d *Database) RunMigrations() error {
+	if d == nil || d.db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
+	// Get migrations directory path
+	migrationsDir := "migrations"
+
+	// Read migration files
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+	if err != nil {
+		return fmt.Errorf("failed to read migrations directory: %w", err)
+	}
+
+	// Sort files to ensure consistent execution order
+	sort.Strings(files)
+
+	// Execute each migration file
+	for _, file := range files {
+		log.Printf("Running migration: %s", filepath.Base(file))
+
+		// Execute migration using psql directly for proper multi-statement support
+		// This avoids issues with comment parsing and complex SQL statements
+		psqlCmd := fmt.Sprintf("psql -d %s -f %s",
+			getEnvWithDefault("DB_NAME", "idp_orchestrator"),
+			file,
+		)
+
+		// Set environment variables for psql connection
+		cmd := fmt.Sprintf("PGHOST=%s PGPORT=%s PGUSER=%s PGPASSWORD=%s %s",
+			getEnvWithDefault("DB_HOST", "localhost"),
+			getEnvWithDefault("DB_PORT", "5432"),
+			getEnvWithDefault("DB_USER", "postgres"),
+			getEnvWithDefault("DB_PASSWORD", ""),
+			psqlCmd,
+		)
+
+		// Execute using shell
+		output, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+		if err != nil {
+			log.Printf("Migration output: %s", string(output))
+			log.Printf("Full error: %v", err)
+			return fmt.Errorf("failed to execute migration %s: %w", file, err)
+		}
+
+		log.Printf("Successfully executed migration: %s", filepath.Base(file))
+	}
+
+	if len(files) == 0 {
+		log.Printf("No migration files found in %s", migrationsDir)
+	} else {
+		log.Printf("Successfully executed %d migration(s)", len(files))
+	}
+
 	return nil
 }
 
@@ -286,6 +375,9 @@ TRUNCATE TABLE workflow_executions CASCADE;
 
 -- Truncate resource tables (CASCADE will clean transitions, health checks, dependencies)
 TRUNCATE TABLE resource_instances CASCADE;
+
+-- Truncate graph tables (CASCADE will clean nodes, edges, graph_runs)
+TRUNCATE TABLE apps CASCADE;
 `
 
 	_, err := d.db.Exec(truncateSQL)

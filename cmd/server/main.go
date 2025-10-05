@@ -146,6 +146,10 @@ func main() {
 	// Swagger API documentation routes
 	http.HandleFunc("/swagger", srv.LoggingMiddleware(srv.HandleSwagger))
 	http.HandleFunc("/swagger.yaml", srv.LoggingMiddleware(srv.HandleSwaggerYAML))
+	http.HandleFunc("/swagger-admin", srv.LoggingMiddleware(srv.HandleSwaggerAdmin))
+	http.HandleFunc("/swagger-admin.yaml", srv.LoggingMiddleware(srv.HandleSwaggerAdminYAML))
+	http.HandleFunc("/swagger-user", srv.LoggingMiddleware(srv.HandleSwaggerUser))
+	http.HandleFunc("/swagger-user.yaml", srv.LoggingMiddleware(srv.HandleSwaggerUserYAML))
 
 	// Health check endpoints (no authentication needed - for monitoring systems)
 	http.HandleFunc("/health", srv.HandleHealth)
@@ -155,13 +159,18 @@ func main() {
 	// Web UI (static files) - no authentication needed for static assets
 	fs := http.FileServer(http.Dir("./web-ui/out/"))
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Serve static assets directly (don't redirect _next, favicon, etc.)
-		if r.URL.Path == "/" ||
-			r.URL.Path == "/index.html" ||
-			!fileExists("./web-ui/out"+r.URL.Path) &&
-				!isStaticAsset(r.URL.Path) {
-			// For SPA routing, serve index.html for non-existent routes that aren't static assets
+		// For SPA routing, serve appropriate index.html for non-existent routes that aren't static assets
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			r.URL.Path = "/"
+		} else if !fileExists("./web-ui/out"+r.URL.Path) && !isStaticAsset(r.URL.Path) {
+			// For /graph/* routes, serve /graph/index.html
+			if strings.HasPrefix(r.URL.Path, "/graph/") {
+				r.URL.Path = "/graph/"
+			} else if strings.HasPrefix(r.URL.Path, "/goldenpaths/") {
+				r.URL.Path = "/goldenpaths/"
+			} else {
+				r.URL.Path = "/"
+			}
 		}
 		fs.ServeHTTP(w, r)
 	}))

@@ -23,6 +23,13 @@ import {
   FileText,
   BookOpen,
   User,
+  Shield,
+  Key,
+  FileSearch,
+  Server,
+  Boxes,
+  Plug,
+  UsersRound,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -33,6 +40,7 @@ interface NavSubItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   external?: boolean;
+  adminOnly?: boolean;
 }
 
 interface NavItem {
@@ -40,13 +48,21 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   children?: NavSubItem[];
+  adminOnly?: boolean;
+  external?: boolean;
 }
 
-const navigation: NavItem[] = [
+// Normal User Navigation
+const userNavigation: NavItem[] = [
   {
     href: '/dashboard',
     label: 'Dashboard',
     icon: Home,
+  },
+  {
+    href: '/apps',
+    label: 'Applications',
+    icon: Package,
   },
   {
     label: 'Workflows',
@@ -65,31 +81,14 @@ const navigation: NavItem[] = [
     ],
   },
   {
-    label: 'Resources',
-    icon: Package,
-    children: [
-      {
-        href: '/resources',
-        label: 'Resource Management',
-        icon: Package,
-      },
-      {
-        href: 'http://localhost:8081/swagger',
-        label: 'API Documentation',
-        icon: FileText,
-        external: true,
-      },
-    ],
-  },
-  {
     href: '/graph',
-    label: 'Resource Graph',
+    label: 'Graphs',
     icon: Network,
   },
   {
-    href: '/docs',
-    label: 'Documentation',
-    icon: BookOpen,
+    href: '/goldenpaths',
+    label: 'Golden Paths',
+    icon: Activity,
   },
   {
     href: '/demo',
@@ -97,19 +96,81 @@ const navigation: NavItem[] = [
     icon: Monitor,
   },
   {
-    href: '/users',
-    label: 'Users',
-    icon: Users,
-  },
-  {
     href: '/profile',
     label: 'Profile',
     icon: User,
   },
   {
-    href: '/settings',
-    label: 'Settings',
-    icon: Settings,
+    href: 'http://localhost:8081/swagger-user',
+    label: 'API Docs',
+    icon: FileText,
+    external: true,
+  },
+];
+
+// Admin Navigation (extends user navigation)
+const adminNavigation: NavItem[] = [
+  {
+    label: 'Admin',
+    icon: Shield,
+    adminOnly: true,
+    children: [
+      {
+        href: '/admin/users',
+        label: 'User Management',
+        icon: Users,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/teams',
+        label: 'Team Management',
+        icon: UsersRound,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/secrets',
+        label: 'Secrets & Vault',
+        icon: Key,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/audit',
+        label: 'Audit Logs',
+        icon: FileSearch,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/settings',
+        label: 'Settings',
+        icon: Settings,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/system',
+        label: 'System Health',
+        icon: Server,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/graph',
+        label: 'Graph Config',
+        icon: Boxes,
+        adminOnly: true,
+      },
+      {
+        href: '/admin/integrations',
+        label: 'Integrations',
+        icon: Plug,
+        adminOnly: true,
+      },
+      {
+        href: 'http://localhost:8081/swagger-admin',
+        label: 'Admin API Docs',
+        icon: FileText,
+        external: true,
+        adminOnly: true,
+      },
+    ],
   },
 ];
 
@@ -118,6 +179,11 @@ export function Navigation() {
   const { theme, setTheme } = useTheme();
   const { logout } = useAuth();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+
+  // TODO: Get user role from API/session - for now, assume admin for demo
+  const isAdmin = true;
+
+  const navigation = isAdmin ? [...userNavigation, ...adminNavigation] : userNavigation;
 
   const toggleExpanded = (label: string) => {
     setExpandedItems((prev) =>
@@ -131,9 +197,10 @@ export function Navigation() {
     <div className="h-full flex flex-col bg-gray-800 text-white dark:bg-gray-900">
       <div className="p-6 border-b border-gray-700 dark:border-gray-600">
         <h1 className="text-xl font-bold">innominatus</h1>
+        <p className="text-xs text-gray-400 mt-1">IDP Orchestrator</p>
       </div>
 
-      <nav className="flex-1 p-4">
+      <nav className="flex-1 p-4 overflow-y-auto">
         <ul className="space-y-2">
           {navigation.map((item) => {
             const Icon = item.icon;
@@ -149,7 +216,9 @@ export function Navigation() {
                       onClick={() => toggleExpanded(item.label)}
                       className={cn(
                         'flex items-center justify-between w-full gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                        'text-gray-100 hover:text-white dark:text-gray-200'
+                        item.adminOnly
+                          ? 'text-amber-400 hover:text-amber-300'
+                          : 'text-gray-100 hover:text-white dark:text-gray-200'
                       )}
                     >
                       <div className="flex items-center gap-3">
@@ -177,7 +246,9 @@ export function Navigation() {
                                   rel="noopener noreferrer"
                                   className={cn(
                                     'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                                    'text-gray-100 hover:text-white dark:text-gray-200'
+                                    subItem.adminOnly
+                                      ? 'text-amber-400 hover:text-amber-300'
+                                      : 'text-gray-100 hover:text-white dark:text-gray-200'
                                   )}
                                 >
                                   <SubIcon className="w-4 h-4" />
@@ -190,8 +261,12 @@ export function Navigation() {
                                   className={cn(
                                     'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
                                     isSubActive
-                                      ? 'bg-gray-700 text-white dark:bg-gray-600'
-                                      : 'text-gray-100 hover:text-white dark:text-gray-200'
+                                      ? subItem.adminOnly
+                                        ? 'bg-amber-700 text-white dark:bg-amber-600'
+                                        : 'bg-gray-700 text-white dark:bg-gray-600'
+                                      : subItem.adminOnly
+                                        ? 'text-amber-400 hover:text-amber-300'
+                                        : 'text-gray-100 hover:text-white dark:text-gray-200'
                                   )}
                                 >
                                   <SubIcon className="w-4 h-4" />
@@ -204,14 +279,34 @@ export function Navigation() {
                       </ul>
                     )}
                   </>
+                ) : item.external ? (
+                  <a
+                    href={item.href!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                      item.adminOnly
+                        ? 'text-amber-400 hover:text-amber-300'
+                        : 'text-gray-100 hover:text-white dark:text-gray-200'
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {item.label}
+                    <ExternalLink className="w-3 h-3 ml-auto" />
+                  </a>
                 ) : (
                   <Link
                     href={item.href!}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
                       isActive
-                        ? 'bg-gray-700 text-white dark:bg-gray-600'
-                        : 'text-gray-100 hover:text-white dark:text-gray-200'
+                        ? item.adminOnly
+                          ? 'bg-amber-700 text-white dark:bg-amber-600'
+                          : 'bg-gray-700 text-white dark:bg-gray-600'
+                        : item.adminOnly
+                          ? 'text-amber-400 hover:text-amber-300'
+                          : 'text-gray-100 hover:text-white dark:text-gray-200'
                     )}
                   >
                     <Icon className="w-4 h-4" />

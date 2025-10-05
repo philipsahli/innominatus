@@ -86,8 +86,18 @@ go build -o innominatus-ctl cmd/cli/main.go
 
 **Build the Web UI:**
 ```bash
+# Using the build script (recommended)
+./scripts/build-web-ui.sh
+
+# Or manually from web-ui directory
 cd web-ui && npm run build
 ```
+
+The build script automatically:
+- Checks for and installs dependencies if needed
+- Builds the Next.js application for production
+- Outputs static files to `web-ui/out/`
+- These files are served by the Go server at http://localhost:8081
 
 ### Running the Components
 
@@ -96,7 +106,9 @@ cd web-ui && npm run build
 ./innominatus
 # Server runs on http://localhost:8081 by default
 # Web UI: http://localhost:8081/
-# API Docs: http://localhost:8081/swagger
+# API Docs (User): http://localhost:8081/swagger-user
+# API Docs (Admin): http://localhost:8081/swagger-admin
+# API Docs (Legacy): http://localhost:8081/swagger
 ```
 
 **Health & Monitoring Endpoints:**
@@ -108,11 +120,20 @@ http://localhost:8081/metrics  - Prometheus metrics (performance monitoring)
 
 See [docs/HEALTH_MONITORING.md](docs/HEALTH_MONITORING.md) for detailed monitoring documentation.
 
-**Note:** When server source code is modified, you must rebuild and restart the server for changes to take effect:
+**Note:** When source code is modified, you must rebuild and restart:
+
+*Server changes:*
 ```bash
 # Stop the running server (Ctrl+C)
 go build -o innominatus cmd/server/main.go
 ./innominatus
+```
+
+*Web UI changes:*
+```bash
+# Rebuild Web UI (server will pick up changes automatically)
+./scripts/build-web-ui.sh
+# No server restart needed - just refresh browser at http://localhost:8081
 ```
 
 **Use the CLI:**
