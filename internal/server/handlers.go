@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	sdk "idp-orchestrator/pkg/graph"
+	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
 
 	"gopkg.in/yaml.v3"
 )

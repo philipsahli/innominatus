@@ -6,9 +6,10 @@ import (
 	"log"
 	"os"
 
-	"idp-orchestrator/pkg/export"
-	sdk "idp-orchestrator/pkg/graph"
-	"idp-orchestrator/pkg/storage"
+	"github.com/philipsahli/innominatus-graph/pkg/export"
+	"github.com/philipsahli/innominatus-graph/pkg/storage"
+
+	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	sdk "idp-orchestrator/pkg/graph"
+	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
 )
 
 // StepExecutorFunc defines the signature for step execution functions
