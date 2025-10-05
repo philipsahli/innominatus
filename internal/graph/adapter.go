@@ -180,7 +180,9 @@ func (a *Adapter) ExportGraph(runID, format string) ([]byte, error) {
 
 	// Export using SDK exporter
 	exporter := export.NewExporter()
-	defer exporter.Close()
+	defer func() {
+		_ = exporter.Close()
+	}()
 
 	// Convert format string to export.Format type
 	var exportFormat export.Format

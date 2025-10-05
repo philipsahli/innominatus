@@ -232,7 +232,9 @@ func (c *Client) GraphExportCommand(appName, format, outputFile string) error {
 	if err != nil {
 		return fmt.Errorf("failed to export graph: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -247,13 +249,15 @@ func (c *Client) GraphExportCommand(appName, format, outputFile string) error {
 
 	// Write to file or stdout
 	if outputFile != "" {
-		if err := os.WriteFile(outputFile, data, 0644); err != nil {
+		if err := os.WriteFile(outputFile, data, 0600); err != nil {
 			return fmt.Errorf("failed to write to file: %w", err)
 		}
 		fmt.Printf("Graph exported to %s (format: %s)\n", outputFile, format)
 	} else {
 		// Write to stdout
-		os.Stdout.Write(data)
+		if _, err := os.Stdout.Write(data); err != nil {
+			return fmt.Errorf("failed to write to stdout: %w", err)
+		}
 	}
 
 	return nil
@@ -280,7 +284,9 @@ func (c *Client) GraphStatusCommand(appName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get graph: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

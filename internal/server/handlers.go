@@ -689,70 +689,6 @@ func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
 	}
 }
 
-// addWorkflowDataToGraph adds workflow execution data to the resource graph
-func (s *Server) addWorkflowDataToGraph(resourceGraph *graph.Graph, appName string) {
-	s.workflowMutex.RLock()
-	defer s.workflowMutex.RUnlock()
-
-	// Find workflows for this app
-	for _, workflow := range s.memoryWorkflows {
-		if workflow.AppName == appName {
-			// Extract step names
-			stepNames := make([]string, len(workflow.Steps))
-			for i, step := range workflow.Steps {
-				stepNames[i] = step.Name
-			}
-
-			// Add workflow node to graph
-			resourceGraph.AddWorkflowNodes(workflow.WorkflowName, workflow.Status, stepNames)
-		}
-	}
-}
-
-// addMockResourceStatus adds mock infrastructure resource status for demonstration
-func (s *Server) addMockResourceStatus(resourceGraph *graph.Graph) {
-	// Detect Postgres resources and add mock status
-	postgresNodes := resourceGraph.DetectPostgresResources()
-	for _, node := range postgresNodes {
-		resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-			"connection_string": "postgresql://localhost:5432/" + node.Name,
-			"status":            "running",
-			"host":              "postgres.demo.local",
-			"port":              5432,
-			"database":          node.Name,
-		})
-	}
-
-	// Add mock status for other resource types
-	for _, node := range resourceGraph.Nodes {
-		if node.Type == graph.NodeTypeResource && node.Status == graph.NodeStatusUnknown {
-			resourceType, _ := node.Metadata["resource_type"].(string)
-			switch resourceType {
-			case "redis":
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"endpoint": "redis.demo.local:6379",
-					"status":   "running",
-				})
-			case "volume":
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"mount_path": "/data/" + node.Name,
-					"size":       "10Gi",
-					"status":     "bound",
-				})
-			case "route":
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"url":    "https://" + node.Name + ".demo.local",
-					"status": "active",
-				})
-			default:
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"status": "provisioned",
-				})
-			}
-		}
-	}
-}
-
 // HandleWorkflows handles workflow-related API requests
 func (s *Server) HandleWorkflows(w http.ResponseWriter, r *http.Request) {
 	if s.workflowExecutor == nil {
@@ -2012,65 +1948,6 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
-}
-
-// executeGoldenPathWorkflowWithResources executes a workflow with full resource management integration
-func (s *Server) executeGoldenPathWorkflowWithResources(workflow *types.Workflow, spec *types.ScoreSpec, username string, execution *database.WorkflowExecution) error {
-	fmt.Printf("📋 Executing workflow with %d steps for %s\n", len(workflow.Steps), spec.Metadata.Name)
-
-	for i, step := range workflow.Steps {
-		fmt.Printf("🔄 Step %d/%d: %s (%s)\n", i+1, len(workflow.Steps), step.Name, step.Type)
-
-		// Create step execution record if database tracking is available
-		var stepRecord *database.WorkflowStepExecution
-		if execution != nil {
-			stepConfig := map[string]interface{}{
-				"name":      step.Name,
-				"type":      step.Type,
-				"path":      step.Path,
-				"namespace": step.Namespace,
-			}
-
-			var err error
-			stepRecord, err = s.workflowRepo.CreateWorkflowStep(execution.ID, i+1, step.Name, step.Type, stepConfig)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create step record: %v\n", err)
-			} else {
-				// Mark step as running
-				if err := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil); err != nil {
-					fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", err)
-				}
-			}
-		}
-
-		// Execute the step
-		stepContext := &StepExecutionContext{
-			StepID:       &stepRecord.ID,
-			WorkflowRepo: s.workflowRepo,
-		}
-		err := s.runWorkflowStepWithTracking(step, spec.Metadata.Name, "default", stepContext)
-		if err != nil {
-			// Mark step as failed
-			if stepRecord != nil {
-				errorMsg := err.Error()
-				if updateErr := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg); updateErr != nil {
-					fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", updateErr)
-				}
-			}
-			return fmt.Errorf("step %s failed: %w", step.Name, err)
-		}
-
-		// Mark step as completed
-		if stepRecord != nil {
-			if err := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusCompleted, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", err)
-			}
-		}
-
-		fmt.Printf("✅ Step %s completed successfully\n", step.Name)
-	}
-
-	return nil
 }
 
 // executeBasicGoldenPathWorkflow executes a workflow without database tracking (fallback)
