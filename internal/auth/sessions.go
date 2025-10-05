@@ -160,7 +160,7 @@ func (sm *SessionManager) cleanupExpiredSessions() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	//nolint:gosimple,staticcheck // for-select with single case is intentional for cleanup goroutine pattern
+	//nolint:staticcheck // for-select with single case is intentional for cleanup goroutine pattern
 	for {
 		select {
 		case <-ticker.C:
