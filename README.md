@@ -52,11 +52,11 @@ This is an **integration component**, not a standalone platform. It's designed t
 
 ### Enterprise-Ready
 
-- **Authentication**: JWT-based auth with enterprise identity provider integration
+- **Authentication**: OIDC/SSO integration (Keycloak, Okta, etc.) with dual authentication (sessions + API keys)
 - **Authorization**: Role-based access control (RBAC) for multi-tenant environments
 - **Observability**: Prometheus metrics, structured logging, distributed tracing
 - **Scalability**: Horizontal pod autoscaling, database connection pooling
-- **Security**: Network policies, secret management, vulnerability scanning
+- **Security**: Network policies, secret management, vulnerability scanning, SHA-256 API key hashing
 
 ---
 
@@ -177,13 +177,23 @@ export DB_USER=postgres
 export DB_NAME=idp_orchestrator
 ./innominatus
 
-# 2. Deploy a Score specification (in another terminal)
+# OR with OIDC authentication enabled:
+OIDC_ENABLED=true ./innominatus
+
+# 2. Access Web UI and login
+# Browser: http://localhost:8081
+# - Without OIDC: Use admin/admin123 (default credentials)
+# - With OIDC: Click "Login with Keycloak" button
+
+# 3. Deploy a Score specification (API)
 curl -X POST http://localhost:8081/api/specs \
   -H "Content-Type: application/yaml" \
+  -H "Authorization: Bearer $API_KEY" \
   --data-binary @example-score-spec.yaml
 
-# 3. Monitor execution
-curl http://localhost:8081/api/workflows
+# 4. Monitor execution
+curl -H "Authorization: Bearer $API_KEY" \
+  http://localhost:8081/api/workflows
 ```
 
 **Important**: The demo environment is for **local development only**. Do not use it for production workloads.
@@ -215,21 +225,35 @@ The server automatically creates required tables on startup.
 
 ### Authentication & Authorization
 
-#### JWT-based Authentication
+#### OIDC (OpenID Connect) Authentication
 
-```yaml
-# admin-config.yaml
-auth:
-  jwtSecret: ${JWT_SECRET}  # Load from environment
-  jwtIssuer: "platform.company.com"
-  jwtAudience: "innominatus"
+innominatus supports enterprise SSO via OIDC providers like Keycloak:
 
-  # OIDC integration (optional)
-  oidc:
-    issuerURL: "https://auth.company.com"
-    clientID: "innominatus"
-    clientSecret: ${OIDC_CLIENT_SECRET}
+```bash
+# Environment variables
+export OIDC_ENABLED=true
+export OIDC_ISSUER="https://keycloak.company.com/realms/production"
+export OIDC_CLIENT_ID="innominatus"
+export OIDC_CLIENT_SECRET="your-client-secret"
+export OIDC_REDIRECT_URL="https://innominatus.company.com/auth/oidc/callback"
 ```
+
+**Features:**
+- SSO login via "Login with Keycloak" button in Web UI
+- Session-based authentication for browser access
+- API key generation for CLI/API access (database-backed for OIDC users)
+- Automatic user type detection (local vs OIDC users)
+
+**See:** [OIDC Authentication Guide](./docs/OIDC_AUTHENTICATION.md) for complete setup instructions.
+
+#### Dual Authentication Support
+
+innominatus supports two authentication backends:
+
+1. **Local Users** (`users.yaml`): Admin and service accounts with file-based API keys
+2. **OIDC Users** (database): Enterprise users with database-backed API keys
+
+Both types coexist seamlessly with automatic user type detection.
 
 #### Role-Based Access Control (RBAC)
 
@@ -458,6 +482,13 @@ innominatus provides a RESTful API for platform integration:
 | `/api/specs/{app}` | DELETE | Remove application and cleanup resources |
 | `/api/workflows` | GET | List workflow executions (filter by `?app=name`) |
 | `/api/workflows/{id}` | GET | Get workflow execution details and logs |
+| `/api/auth/config` | GET | Get OIDC configuration (public endpoint) |
+| `/auth/oidc/login` | GET | Initiate OIDC login flow |
+| `/auth/oidc/callback` | GET | OIDC callback handler |
+| `/api/profile` | GET | Get user profile information |
+| `/api/profile/api-keys` | GET | List user's API keys (masked) |
+| `/api/profile/api-keys` | POST | Generate new API key |
+| `/api/profile/api-keys/{name}` | DELETE | Revoke API key |
 | `/health` | GET | Server health check (liveness probe) |
 | `/ready` | GET | Server readiness check |
 | `/metrics` | GET | Prometheus metrics |
@@ -838,6 +869,7 @@ This project follows a Code of Conduct to ensure a welcoming environment for all
 ## Documentation
 
 - **[Score Specification](https://score.dev)** - Official Score documentation and standards
+- **[OIDC Authentication Guide](./docs/OIDC_AUTHENTICATION.md)** - Enterprise SSO and API key management
 - **[Terraform Enterprise Workflow](./TFE-WORKFLOW-README.md)** - TFE integration guide
 - **[Development Guide](./CLAUDE.md)** - Development setup and testing
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contribution guidelines

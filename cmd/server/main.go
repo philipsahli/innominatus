@@ -88,6 +88,10 @@ func main() {
 	http.HandleFunc("/api/login", srv.LoggingMiddleware(srv.CorsMiddleware(srv.HandleAPILogin)))
 	http.HandleFunc("/api/user-info", srv.LoggingMiddleware(srv.AuthMiddleware(srv.HandleUserInfo)))
 
+	// OIDC authentication routes (if enabled via environment variables)
+	http.HandleFunc("/auth/oidc/login", srv.LoggingMiddleware(srv.HandleOIDCLogin))
+	http.HandleFunc("/auth/callback", srv.LoggingMiddleware(srv.HandleOIDCCallback))
+
 	// API routes (with logging, CORS, and authentication)
 	http.HandleFunc("/api/specs", srv.LoggingMiddleware(srv.CorsMiddleware(srv.AuthMiddleware(srv.HandleSpecs))))
 	http.HandleFunc("/api/specs/", srv.LoggingMiddleware(srv.CorsMiddleware(srv.AuthMiddleware(srv.HandleSpecDetail))))
@@ -155,6 +159,9 @@ func main() {
 	http.HandleFunc("/health", srv.HandleHealth)
 	http.HandleFunc("/ready", srv.HandleReady)
 	http.HandleFunc("/metrics", srv.HandleMetrics)
+
+	// Auth configuration endpoint (no authentication needed - needed before login)
+	http.HandleFunc("/api/auth/config", srv.HandleAuthConfig)
 
 	// Web UI (static files) - no authentication needed for static assets
 	fs := http.FileServer(http.Dir("./web-ui/out/"))

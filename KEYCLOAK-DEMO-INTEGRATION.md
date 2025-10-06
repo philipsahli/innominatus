@@ -72,6 +72,16 @@ Realm:    demo-realm
 - `demo-user` / `password123`
 - `test-user` / `test123`
 
+**innominatus Web UI with OIDC:**
+```
+URL: http://localhost:8081
+
+Login Options:
+1. Local User: admin / admin123
+2. OIDC: Click "Login with Keycloak"
+   - Use: demo-user / password123
+```
+
 **ArgoCD with OIDC:**
 ```
 URL: http://argocd.localtest.me
@@ -184,6 +194,59 @@ stringData:
   clientSecret: argocd-client-secret-change-me
 ```
 
+### innominatus Server OIDC Integration
+
+**OIDC Client:** `innominatus-web`
+
+**Client Configuration:**
+- Client ID: `innominatus-web`
+- Client Type: Confidential (with secret)
+- Client Secret: `innominatus-client-secret`
+- Protocol: openid-connect
+- Redirect URIs:
+  - `http://localhost:8081/auth/oidc/callback`
+
+**Scopes:**
+- `openid` - OpenID Connect authentication
+- `profile` - User profile information
+- `email` - Email address
+
+**Protocol Mappers:**
+- `preferred_username` - Username claim (required)
+- `email` - Email mapper
+- `family_name` - Last name mapper
+- `given_name` - First name mapper
+
+**Server Configuration:**
+
+```bash
+# Start server with OIDC enabled (demo environment)
+OIDC_ENABLED=true ./innominatus
+
+# Default demo configuration:
+# - Issuer: http://keycloak.localtest.me/realms/demo-realm
+# - Client ID: innominatus-web
+# - Client Secret: innominatus-client-secret
+# - Redirect URL: http://localhost:8081/auth/oidc/callback
+```
+
+**Features:**
+- SSO login via "Login with Keycloak" button
+- Session-based authentication for Web UI
+- Database-backed API key generation for OIDC users
+- Automatic user type detection (local vs OIDC users)
+
+**Endpoints:**
+- `GET /api/auth/config` - Check OIDC status
+- `GET /auth/oidc/login` - Initiate OIDC login
+- `GET /auth/oidc/callback` - Handle OIDC callback
+- `GET /api/profile` - Get user profile
+- `POST /api/profile/api-keys` - Generate API key
+- `GET /api/profile/api-keys` - List API keys
+- `DELETE /api/profile/api-keys/{name}` - Revoke API key
+
+**See:** [OIDC Authentication Guide](./docs/OIDC_AUTHENTICATION.md) for complete documentation.
+
 ## Architecture
 
 ### Installation Flow
@@ -294,11 +357,39 @@ kubectl rollout restart deployment argocd-server -n argocd
 
 ## Testing OIDC Login
 
+### innominatus Web UI
+
+1. Start server with OIDC enabled:
+   ```bash
+   OIDC_ENABLED=true ./innominatus
+   ```
+
+2. Open http://localhost:8081/login
+
+3. Look for **"Login with Keycloak"** button (should appear below the login form)
+
+4. Click the button
+
+5. You'll be redirected to: `http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/auth?...`
+
+6. Login with: `demo-user` / `password123`
+
+7. You'll be redirected back to innominatus dashboard at http://localhost:8081/dashboard
+
+8. Navigate to Profile page to generate API keys for CLI/API access
+
+### ArgoCD
+
 1. Open http://argocd.localtest.me
+
 2. Look for **"LOG IN VIA KEYCLOAK"** button
+
 3. Click the button
+
 4. You'll be redirected to: `http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/auth?...`
+
 5. Login with: `demo-user` / `password123`
+
 6. You'll be redirected back to ArgoCD dashboard
 
 ## Future Enhancements

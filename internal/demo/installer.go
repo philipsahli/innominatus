@@ -540,6 +540,12 @@ func (i *Installer) ApplyKeycloakConfig() error {
 		fmt.Printf("   ✅ Vault client created\n")
 	}
 
+	if err := i.createInnominatusClient(token); err != nil {
+		fmt.Printf("   Innominatus client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Innominatus client created\n")
+	}
+
 	// Create demo users
 	if err := i.createKeycloakUser(token, "demo-user", "password123", "demo-user@example.com"); err != nil {
 		fmt.Printf("   User demo-user: %v (might already exist)\n", err)
@@ -606,6 +612,64 @@ func (i *Installer) ApplyKeycloakConfig() error {
 	if err != nil {
 		return fmt.Errorf("failed to patch ArgoCD deployment: %v\nOutput: %s", err, string(output))
 	}
+
+	// Add hostAliases to Grafana deployment for DNS resolution
+	grafanaHostAliasesPatch := fmt.Sprintf(`
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "hostAliases": [{
+          "ip": "%s",
+          "hostnames": ["keycloak.localtest.me"]
+        }]
+      }
+    }
+  }
+}
+`, ingressIP)
+
+	fmt.Printf("   Adding hostAliases to Grafana deployment (keycloak.localtest.me -> %s)...\n", ingressIP)
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "patch", "deployment", "grafana", // #nosec G204 - kubectl patch command
+		"-n", "monitoring",
+		"--type", "strategic",
+		"-p", grafanaHostAliasesPatch)
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch Grafana deployment: %v\nOutput: %s", err, string(output))
+	}
+
+	// Add hostAliases to Gitea deployment for DNS resolution
+	giteaHostAliasesPatch := fmt.Sprintf(`
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "hostAliases": [{
+          "ip": "%s",
+          "hostnames": ["keycloak.localtest.me"]
+        }]
+      }
+    }
+  }
+}
+`, ingressIP)
+
+	fmt.Printf("   Adding hostAliases to Gitea deployment (keycloak.localtest.me -> %s)...\n", ingressIP)
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "patch", "deployment", "gitea", // #nosec G204 - kubectl patch command
+		"-n", "gitea",
+		"--type", "strategic",
+		"-p", giteaHostAliasesPatch)
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch Gitea deployment: %v\nOutput: %s", err, string(output))
+	}
+
+	// Wait for services to restart with new hostAliases
+	fmt.Printf("   Waiting for services to restart...\n")
+	time.Sleep(15 * time.Second)
 
 	// Configure Gitea OAuth2
 	fmt.Printf("   Configuring Gitea OAuth2...\n")
@@ -948,33 +1012,34 @@ func (i *Installer) createVaultClient(token string) error {
 	return nil
 }
 
-// configureGiteaOIDC configures Gitea to use Keycloak as OAuth2 provider
-func (i *Installer) configureGiteaOIDC() error {
-	// Gitea OAuth2 source configuration
-	authSourceData := map[string]interface{}{
-		"type":                              "oauth2",
-		"name":                              "Keycloak",
-		"is_active":                         true,
-		"oauth2_provider":                   "openidConnect",
-		"client_id":                         "gitea",
-		"client_secret":                     "gitea-client-secret",
-		"openid_connect_auto_discovery_url": "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration",
-		"skip_local_2fa":                    false,
+// createInnominatusClient creates the Innominatus OIDC client in Keycloak
+func (i *Installer) createInnominatusClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "innominatus",
+		"name":                      "Innominatus",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "innominatus-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://localhost:8081/auth/callback", "http://innominatus.localtest.me/auth/callback"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
 	}
 
-	jsonData, err := json.Marshal(authSourceData)
+	jsonData, err := json.Marshal(clientData)
 	if err != nil {
 		return err
 	}
 
-	// Create OAuth2 authentication source via Gitea admin API
-	// Using basic auth with admin credentials
-	req, err := http.NewRequest("POST", "http://gitea.localtest.me/api/v1/admin/auth", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
 
-	req.SetBasicAuth("giteaadmin", "admin")
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -988,10 +1053,49 @@ func (i *Installer) configureGiteaOIDC() error {
 		}
 	}()
 
-	// Accept 201 Created or 422 Unprocessable Entity (already exists)
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusUnprocessableEntity {
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// configureGiteaOIDC configures Gitea to use Keycloak as OAuth2 provider
+func (i *Installer) configureGiteaOIDC() error {
+	// Get Gitea pod name
+	getPodCmd := exec.Command("kubectl", "--context", i.kubeContext, // #nosec G204 - kubectl get pods command
+		"get", "pods", "-n", "gitea",
+		"-l", "app.kubernetes.io/name=gitea",
+		"-o", "jsonpath={.items[0].metadata.name}")
+
+	podNameBytes, err := getPodCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get Gitea pod name: %v", err)
+	}
+	podName := string(podNameBytes)
+	if podName == "" {
+		return fmt.Errorf("no Gitea pod found")
+	}
+
+	// Use Gitea CLI to add OAuth2 authentication source
+	// Note: This command may fail if the source already exists, which is acceptable
+	addAuthCmd := exec.Command("kubectl", "--context", i.kubeContext, // #nosec G204 - kubectl exec gitea command
+		"exec", "-n", "gitea", podName, "--",
+		"gitea", "admin", "auth", "add-oauth",
+		"--name", "Keycloak",
+		"--provider", "openidConnect",
+		"--key", "gitea",
+		"--secret", "gitea-client-secret",
+		"--auto-discover-url", "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration")
+
+	output, err := addAuthCmd.CombinedOutput()
+	if err != nil {
+		// If the error is about the source already existing, that's fine
+		if strings.Contains(string(output), "already exists") || strings.Contains(string(output), "duplicate") {
+			return nil
+		}
+		return fmt.Errorf("failed to add OAuth2 source: %v\nOutput: %s", err, string(output))
 	}
 
 	return nil

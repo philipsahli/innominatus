@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"innominatus/internal/auth"
 	"innominatus/internal/users"
 	"log"
@@ -189,13 +190,34 @@ func (s *Server) getSessionFromRequestWithToken(r *http.Request) (*auth.Session,
 }
 
 // authenticateWithAPIKey validates an API key and returns the associated user
+// Checks both file-based users (users.yaml) and database-stored API keys (OIDC users)
 func (s *Server) authenticateWithAPIKey(apiKey string) (*users.User, error) {
+	// First try file-based users (users.yaml)
 	store, err := users.LoadUsers()
-	if err != nil {
-		return nil, err
+	if err == nil {
+		if user, err := store.AuthenticateWithAPIKey(apiKey); err == nil {
+			return user, nil
+		}
 	}
 
-	return store.AuthenticateWithAPIKey(apiKey)
+	// Then try database API keys (for OIDC users)
+	if s.db != nil {
+		keyHash := hashAPIKey(apiKey)
+		username, team, role, err := s.db.GetUserByAPIKeyHash(keyHash)
+		if err == nil {
+			// Update last used timestamp
+			_ = s.db.UpdateAPIKeyLastUsed(keyHash)
+
+			// Return user object (OIDC user from database)
+			return &users.User{
+				Username: username,
+				Team:     team,
+				Role:     role,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid API key")
 }
 
 // responseWriter wraps http.ResponseWriter to capture status code and size

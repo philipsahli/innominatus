@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"innominatus/internal/users"
@@ -395,4 +397,148 @@ func (s *Server) getUserFromContext(r *http.Request) *users.User {
 		return user
 	}
 	return nil
+}
+
+// HandleOIDCLogin redirects to Keycloak for OIDC authentication
+func (s *Server) HandleOIDCLogin(w http.ResponseWriter, r *http.Request) {
+	if s.oidcAuthenticator == nil || !s.oidcAuthenticator.IsEnabled() {
+		http.Error(w, "OIDC authentication not enabled", http.StatusNotFound)
+		return
+	}
+
+	// Generate random state for CSRF protection
+	state, err := generateRandomState()
+	if err != nil {
+		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
+		return
+	}
+
+	// Store state in cookie for verification
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    state,
+		Path:     "/",
+		MaxAge:   300, // 5 minutes
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// Redirect to Keycloak authorization URL
+	authURL := s.oidcAuthenticator.AuthCodeURL(state)
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+// HandleOIDCCallback handles the OAuth2 callback from Keycloak
+func (s *Server) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	if s.oidcAuthenticator == nil || !s.oidcAuthenticator.IsEnabled() {
+		http.Error(w, "OIDC authentication not enabled", http.StatusNotFound)
+		return
+	}
+
+	// Verify state (CSRF protection)
+	stateCookie, err := r.Cookie("oidc_state")
+	if err != nil {
+		http.Redirect(w, r, "/?error=missing_state", http.StatusSeeOther)
+		return
+	}
+
+	queryState := r.URL.Query().Get("state")
+	if stateCookie.Value != queryState {
+		http.Redirect(w, r, "/?error=invalid_state", http.StatusSeeOther)
+		return
+	}
+
+	// Clear state cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:   "oidc_state",
+		MaxAge: -1,
+		Path:   "/",
+	})
+
+	// Check for error from provider
+	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		errDesc := r.URL.Query().Get("error_description")
+		fmt.Fprintf(os.Stderr, "OIDC error: %s - %s\n", errParam, errDesc)
+		http.Redirect(w, r, "/?error=oidc_auth_failed", http.StatusSeeOther)
+		return
+	}
+
+	// Exchange authorization code for token
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Redirect(w, r, "/?error=missing_code", http.StatusSeeOther)
+		return
+	}
+
+	oauth2Token, err := s.oidcAuthenticator.Exchange(r.Context(), code)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to exchange token: %v\n", err)
+		http.Redirect(w, r, "/?error=token_exchange_failed", http.StatusSeeOther)
+		return
+	}
+
+	// Extract and verify ID token
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "No id_token in oauth2 token\n")
+		http.Redirect(w, r, "/?error=missing_id_token", http.StatusSeeOther)
+		return
+	}
+
+	userInfo, err := s.oidcAuthenticator.VerifyIDToken(r.Context(), rawIDToken)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to verify ID token: %v\n", err)
+		http.Redirect(w, r, "/?error=token_verification_failed", http.StatusSeeOther)
+		return
+	}
+
+	// Create user object for session
+	// Use preferred_username or email as username
+	username := userInfo.PreferredUsername
+	if username == "" {
+		username = userInfo.Email
+	}
+
+	user := &users.User{
+		Username: username,
+		Team:     "oidc-users",
+		Role:     determineRole(userInfo.Roles),
+	}
+
+	// Create session
+	session, err := s.sessionManager.CreateSession(user)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create session: %v\n", err)
+		http.Redirect(w, r, "/?error=session_creation_failed", http.StatusSeeOther)
+		return
+	}
+
+	// Set session cookie
+	s.sessionManager.SetSessionCookie(w, session)
+
+	fmt.Printf("OIDC login successful for user: %s (role: %s)\n", username, user.Role)
+
+	// Redirect to callback page with session ID so frontend can store it
+	redirectURL := fmt.Sprintf("/auth/oidc/callback?token=%s", session.ID)
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+// generateRandomState generates a random state for CSRF protection
+func generateRandomState() (string, error) {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// determineRole determines user role from Keycloak roles
+func determineRole(roles []string) string {
+	for _, role := range roles {
+		if role == "admin" {
+			return "admin"
+		}
+	}
+	return "user"
 }

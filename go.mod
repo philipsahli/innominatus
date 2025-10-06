@@ -4,6 +4,7 @@ go 1.24.0
 
 require (
 	github.com/bxcodec/faker/v3 v3.8.1
+	github.com/coreos/go-oidc/v3 v3.16.0
 	github.com/lib/pq v1.10.9
 	github.com/philipsahli/innominatus-graph v0.0.0-20251005160933-4d0670151100
 	github.com/prometheus/client_golang v1.23.2
@@ -23,6 +24,7 @@ require (
 	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/flopp/go-findfont v0.1.0 // indirect
 	github.com/fogleman/gg v1.3.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/goccy/go-graphviz v0.2.9 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

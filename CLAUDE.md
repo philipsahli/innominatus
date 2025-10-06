@@ -103,12 +103,29 @@ The build script automatically:
 
 **Start the Server:**
 ```bash
+# Standard mode (file-based authentication)
 ./innominatus
+
+# With OIDC authentication enabled (requires demo Keycloak running)
+OIDC_ENABLED=true ./innominatus
+
 # Server runs on http://localhost:8081 by default
 # Web UI: http://localhost:8081/
 # API Docs (User): http://localhost:8081/swagger-user
 # API Docs (Admin): http://localhost:8081/swagger-admin
 # API Docs (Legacy): http://localhost:8081/swagger
+```
+
+**OIDC Environment Variables (optional):**
+```bash
+export OIDC_ENABLED=true
+export OIDC_ISSUER="http://keycloak.localtest.me/realms/demo-realm"  # Default for demo
+export OIDC_CLIENT_ID="innominatus-web"                               # Default for demo
+export OIDC_CLIENT_SECRET="innominatus-client-secret"                 # Default for demo
+export OIDC_REDIRECT_URL="http://localhost:8081/auth/oidc/callback"  # Default for demo
+
+# Start server with OIDC
+./innominatus
 ```
 
 **Health & Monitoring Endpoints:**
@@ -385,6 +402,52 @@ policies:
 - CLI command `./innominatus-ctl admin show` displays current settings
 - Supports admin defaults, resource definitions, and policies
 - Uses `gopkg.in/yaml.v3` for configuration parsing
+
+### OIDC Authentication
+
+innominatus supports enterprise SSO authentication via OpenID Connect (OIDC) with providers like Keycloak.
+
+**Starting Server with OIDC:**
+```bash
+# Demo environment (with Keycloak from demo-time)
+OIDC_ENABLED=true ./innominatus
+
+# Production with custom Keycloak
+export OIDC_ENABLED=true
+export OIDC_ISSUER="https://keycloak.company.com/realms/production"
+export OIDC_CLIENT_ID="innominatus"
+export OIDC_CLIENT_SECRET="your-client-secret"
+export OIDC_REDIRECT_URL="https://innominatus.company.com/auth/oidc/callback"
+./innominatus
+```
+
+**Authentication Features:**
+- **Web UI Login**: "Login with Keycloak" button appears on login page
+- **Session Management**: HttpOnly cookies + localStorage tokens
+- **API Key Generation**: OIDC users can generate API keys for CLI/API access
+- **Dual User Sources**:
+  - Local users (users.yaml): File-based API keys
+  - OIDC users (database): Database-backed API keys with SHA-256 hashing
+- **Automatic Detection**: System automatically determines user type
+
+**User Workflow:**
+1. Login via OIDC SSO (Web UI)
+2. Navigate to Profile page
+3. Generate API key (provide name and expiry days)
+4. Use API key for CLI/API access:
+   ```bash
+   export IDP_API_KEY="your-generated-key"
+   curl -H "Authorization: Bearer $IDP_API_KEY" \
+     http://localhost:8081/api/specs
+   ```
+
+**Database Requirements:**
+OIDC users require PostgreSQL for API key storage:
+- Table: `user_api_keys` (created automatically via migration)
+- API keys stored as SHA-256 hashes (never plaintext)
+- Supports key lifecycle management (creation, listing, revocation)
+
+**See:** [OIDC Authentication Guide](docs/OIDC_AUTHENTICATION.md) for complete setup instructions.
 
 ### Enterprise Integration
 

@@ -388,6 +388,121 @@ TRUNCATE TABLE apps CASCADE;
 	return nil
 }
 
+// APIKeyRecord represents an API key stored in the database
+type APIKeyRecord struct {
+	ID         int64
+	Username   string
+	KeyHash    string
+	KeyName    string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+	ExpiresAt  time.Time
+}
+
+// CreateAPIKey stores an API key in the database (for OIDC users)
+func (d *Database) CreateAPIKey(username, keyHash, keyName string, expiresAt time.Time) error {
+	query := `
+		INSERT INTO user_api_keys (username, key_hash, key_name, expires_at)
+		VALUES ($1, $2, $3, $4)
+	`
+	_, err := d.db.Exec(query, username, keyHash, keyName, expiresAt)
+	if err != nil {
+		return fmt.Errorf("failed to create API key: %w", err)
+	}
+	return nil
+}
+
+// GetAPIKeys retrieves all API keys for a user from the database
+func (d *Database) GetAPIKeys(username string) ([]APIKeyRecord, error) {
+	query := `
+		SELECT id, username, key_hash, key_name, created_at, last_used_at, expires_at
+		FROM user_api_keys
+		WHERE username = $1
+		ORDER BY created_at DESC
+	`
+	rows, err := d.db.Query(query, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query API keys: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var keys []APIKeyRecord
+	for rows.Next() {
+		var key APIKeyRecord
+		err := rows.Scan(&key.ID, &key.Username, &key.KeyHash, &key.KeyName,
+			&key.CreatedAt, &key.LastUsedAt, &key.ExpiresAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan API key: %w", err)
+		}
+		keys = append(keys, key)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating API keys: %w", err)
+	}
+
+	return keys, nil
+}
+
+// UpdateAPIKeyLastUsed updates the last_used_at timestamp for an API key
+func (d *Database) UpdateAPIKeyLastUsed(keyHash string) error {
+	query := `
+		UPDATE user_api_keys
+		SET last_used_at = NOW()
+		WHERE key_hash = $1
+	`
+	_, err := d.db.Exec(query, keyHash)
+	if err != nil {
+		return fmt.Errorf("failed to update API key last used: %w", err)
+	}
+	return nil
+}
+
+// DeleteAPIKey removes an API key from the database
+func (d *Database) DeleteAPIKey(username, keyName string) error {
+	query := `
+		DELETE FROM user_api_keys
+		WHERE username = $1 AND key_name = $2
+	`
+	result, err := d.db.Exec(query, username, keyName)
+	if err != nil {
+		return fmt.Errorf("failed to delete API key: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("API key not found")
+	}
+
+	return nil
+}
+
+// GetUserByAPIKeyHash retrieves user information by API key hash
+func (d *Database) GetUserByAPIKeyHash(keyHash string) (username string, team string, role string, err error) {
+	// First check if key exists and is not expired
+	query := `
+		SELECT username
+		FROM user_api_keys
+		WHERE key_hash = $1 AND expires_at > NOW()
+	`
+	err = d.db.QueryRow(query, keyHash).Scan(&username)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", "", "", fmt.Errorf("API key not found or expired")
+		}
+		return "", "", "", fmt.Errorf("failed to query API key: %w", err)
+	}
+
+	// OIDC users don't have persistent records, so we need to get user info from session
+	// For now, return the username and default team/role
+	// The actual user object will be reconstructed from session data
+	return username, "oidc-users", "user", nil
+}
+
 // getEnvWithDefault returns environment variable value or default if not set
 func getEnvWithDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

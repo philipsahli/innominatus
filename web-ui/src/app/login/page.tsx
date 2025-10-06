@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, EyeOff, Lock, User, Zap } from 'lucide-react';
+import { Eye, EyeOff, Lock, User, Zap, Key } from 'lucide-react';
 import { useCustomTheme } from '@/contexts/theme-context';
 import { useAuth } from '@/contexts/auth-context';
 import { api } from '@/lib/api';
@@ -19,10 +19,22 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [oidcProviderName, setOidcProviderName] = useState('Keycloak');
   const [formData, setFormData] = useState({
     username: '',
     password: '',
   });
+
+  useEffect(() => {
+    // Fetch auth config on mount
+    api.getAuthConfig().then((response) => {
+      if (response.success && response.data) {
+        setOidcEnabled(response.data.oidc_enabled);
+        setOidcProviderName(response.data.oidc_provider_name);
+      }
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,6 +171,33 @@ export default function LoginPage() {
                 )}
               </Button>
             </form>
+
+            {oidcEnabled && (
+              <>
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-muted"></div>
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white dark:bg-slate-900 px-2 text-muted-foreground">
+                      Or
+                    </span>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full border-2 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  onClick={() => {
+                    window.location.href = '/auth/oidc/login';
+                  }}
+                >
+                  <Key className="w-4 h-4 mr-2" />
+                  Login with {oidcProviderName}
+                </Button>
+              </>
+            )}
 
             <div className="mt-6 text-center text-sm text-muted-foreground">
               <p>Default credentials for demo:</p>

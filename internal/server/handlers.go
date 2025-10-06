@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -101,18 +104,19 @@ type StepExecutionContext struct {
 }
 
 type Server struct {
-	db               *database.Database
-	workflowRepo     *database.WorkflowRepository
-	workflowExecutor *workflow.WorkflowExecutor
-	workflowAnalyzer *workflow.WorkflowAnalyzer
-	resourceManager  *resources.Manager
-	teamManager      *teams.TeamManager
-	sessionManager   auth.ISessionManager
-	healthChecker    *health.HealthChecker
-	rateLimiter      *RateLimiter
-	graphAdapter     *graph.Adapter
-	loginAttempts    map[string][]time.Time
-	loginMutex       sync.Mutex
+	db                *database.Database
+	workflowRepo      *database.WorkflowRepository
+	workflowExecutor  *workflow.WorkflowExecutor
+	workflowAnalyzer  *workflow.WorkflowAnalyzer
+	resourceManager   *resources.Manager
+	teamManager       *teams.TeamManager
+	sessionManager    auth.ISessionManager
+	oidcAuthenticator *auth.OIDCAuthenticator
+	healthChecker     *health.HealthChecker
+	rateLimiter       *RateLimiter
+	graphAdapter      *graph.Adapter
+	loginAttempts     map[string][]time.Time
+	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)
 	memoryWorkflows map[int64]*MemoryWorkflowExecution
 	workflowCounter int64
@@ -148,18 +152,29 @@ type MemoryWorkflowStep struct {
 }
 
 func NewServer() *Server {
+	// Initialize OIDC authenticator
+	oidcConfig := auth.LoadOIDCConfig()
+	oidcAuth, err := auth.NewOIDCAuthenticator(oidcConfig)
+	if err != nil && oidcConfig.Enabled {
+		fmt.Printf("Warning: Failed to initialize OIDC: %v\n", err)
+		fmt.Println("Continuing without OIDC authentication...")
+	} else if oidcConfig.Enabled {
+		fmt.Println("OIDC authentication enabled")
+	}
+
 	healthChecker := health.NewHealthChecker()
 	// Register basic health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 
 	server := &Server{
-		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
-		teamManager:      teams.NewTeamManager(),
-		sessionManager:   auth.NewSessionManager(),
-		healthChecker:    healthChecker,
-		loginAttempts:    make(map[string][]time.Time),
-		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
-		workflowCounter:  0,
+		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
+		teamManager:       teams.NewTeamManager(),
+		sessionManager:    auth.NewSessionManager(),
+		oidcAuthenticator: oidcAuth,
+		healthChecker:     healthChecker,
+		loginAttempts:     make(map[string][]time.Time),
+		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
+		workflowCounter:   0,
 	}
 
 	// Load existing workflow executions from disk
@@ -169,6 +184,16 @@ func NewServer() *Server {
 }
 
 func NewServerWithDB(db *database.Database) *Server {
+	// Initialize OIDC authenticator
+	oidcConfig := auth.LoadOIDCConfig()
+	oidcAuth, err := auth.NewOIDCAuthenticator(oidcConfig)
+	if err != nil && oidcConfig.Enabled {
+		fmt.Printf("Warning: Failed to initialize OIDC: %v\n", err)
+		fmt.Println("Continuing without OIDC authentication...")
+	} else if oidcConfig.Enabled {
+		fmt.Println("OIDC authentication enabled")
+	}
+
 	workflowRepo := database.NewWorkflowRepository(db)
 	resourceRepo := database.NewResourceRepository(db)
 	resourceManager := resources.NewManager(resourceRepo)
@@ -191,18 +216,19 @@ func NewServerWithDB(db *database.Database) *Server {
 	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
 
 	server := &Server{
-		db:               db,
-		workflowRepo:     workflowRepo,
-		workflowExecutor: workflowExecutor,
-		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
-		resourceManager:  resourceManager,
-		teamManager:      teams.NewTeamManager(),
-		sessionManager:   auth.NewDBSessionManager(db),
-		healthChecker:    healthChecker,
-		graphAdapter:     graphAdapter,
-		loginAttempts:    make(map[string][]time.Time),
-		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
-		workflowCounter:  0,
+		db:                db,
+		workflowRepo:      workflowRepo,
+		workflowExecutor:  workflowExecutor,
+		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
+		resourceManager:   resourceManager,
+		teamManager:       teams.NewTeamManager(),
+		sessionManager:    auth.NewDBSessionManager(db),
+		oidcAuthenticator: oidcAuth,
+		healthChecker:     healthChecker,
+		graphAdapter:      graphAdapter,
+		loginAttempts:     make(map[string][]time.Time),
+		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
+		workflowCounter:   0,
 	}
 
 	// Start the workflow scheduler only when database is available
@@ -990,6 +1016,20 @@ func (s *Server) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(metricsData))
+}
+
+// HandleAuthConfig returns authentication configuration for the frontend
+func (s *Server) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
+	oidcEnabled := s.oidcAuthenticator != nil && s.oidcAuthenticator.IsEnabled()
+
+	config := map[string]interface{}{
+		"oidc_enabled":       oidcEnabled,
+		"oidc_provider_name": "Keycloak",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(config)
 }
 
 // Memory workflow tracking methods
@@ -2642,16 +2682,47 @@ func (s *Server) HandleGetAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if user exists in users.yaml (local user) or is OIDC user
 	store, err := users.LoadUsers()
 	if err != nil {
 		http.Error(w, "Failed to load users", http.StatusInternalServerError)
 		return
 	}
 
-	keys, err := store.ListAPIKeys(user.Username)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+	_, err = store.GetUser(user.Username)
+	isOIDCUser := err != nil // User not found in yaml = OIDC user
+
+	var keys []users.APIKey
+
+	if isOIDCUser && s.db != nil {
+		// Get API keys from database for OIDC user
+		dbKeys, err := s.db.GetAPIKeys(user.Username)
+		if err != nil {
+			http.Error(w, "Failed to retrieve API keys", http.StatusInternalServerError)
+			return
+		}
+
+		// Convert database records to users.APIKey format
+		for _, dbKey := range dbKeys {
+			lastUsed := time.Time{}
+			if dbKey.LastUsedAt != nil {
+				lastUsed = *dbKey.LastUsedAt
+			}
+			keys = append(keys, users.APIKey{
+				Key:        dbKey.KeyHash, // Will be masked anyway
+				Name:       dbKey.KeyName,
+				CreatedAt:  dbKey.CreatedAt,
+				LastUsedAt: lastUsed,
+				ExpiresAt:  dbKey.ExpiresAt,
+			})
+		}
+	} else {
+		// Get API keys from users.yaml for local user
+		keys, err = store.ListAPIKeys(user.Username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 	}
 
 	// Mask keys for security (show only last 8 characters)
@@ -2704,30 +2775,58 @@ func (s *Server) HandleGenerateAPIKey(w http.ResponseWriter, r *http.Request) {
 		req.ExpiryDays = 90 // Default to 90 days
 	}
 
+	// Check if user exists in users.yaml (local user) or is OIDC user
 	store, err := users.LoadUsers()
 	if err != nil {
 		http.Error(w, "Failed to load users", http.StatusInternalServerError)
 		return
 	}
 
-	apiKey, err := store.GenerateAPIKey(user.Username, req.Name, req.ExpiryDays)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	_, err = store.GetUser(user.Username)
+	isOIDCUser := err != nil // User not found in yaml = OIDC user
 
-	// Return the full key only on creation
-	response := map[string]interface{}{
-		"key":        apiKey.Key,
-		"name":       apiKey.Name,
-		"created_at": apiKey.CreatedAt.Format(time.RFC3339),
-		"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
-	}
+	if isOIDCUser && s.db != nil {
+		// Generate API key for OIDC user (store in database)
+		apiKey, err := s.generateDatabaseAPIKey(user.Username, req.Name, req.ExpiryDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		// Return the full key only on creation
+		response := map[string]interface{}{
+			"key":        apiKey.Key,
+			"name":       apiKey.Name,
+			"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+			"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		}
+	} else {
+		// Generate API key for local user (store in users.yaml)
+		apiKey, err := store.GenerateAPIKey(user.Username, req.Name, req.ExpiryDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Return the full key only on creation
+		response := map[string]interface{}{
+			"key":        apiKey.Key,
+			"name":       apiKey.Name,
+			"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+			"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		}
 	}
 }
 
@@ -2747,16 +2846,30 @@ func (s *Server) HandleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	keyName := pathParts[len(pathParts)-1]
 
+	// Check if user exists in users.yaml (local user) or is OIDC user
 	store, err := users.LoadUsers()
 	if err != nil {
 		http.Error(w, "Failed to load users", http.StatusInternalServerError)
 		return
 	}
 
-	err = store.RevokeAPIKey(user.Username, keyName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+	_, err = store.GetUser(user.Username)
+	isOIDCUser := err != nil // User not found in yaml = OIDC user
+
+	if isOIDCUser && s.db != nil {
+		// Delete API key from database for OIDC user
+		err = s.db.DeleteAPIKey(user.Username, keyName)
+		if err != nil {
+			http.Error(w, "Failed to revoke API key", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Delete API key from users.yaml for local user
+		err = store.RevokeAPIKey(user.Username, keyName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -2791,4 +2904,66 @@ func (s *Server) executeDummyStep(step types.Step, appName string, envType strin
 	_, _ = logBuffer.Write([]byte("This log message confirms the enhanced logging system is working"))
 
 	return nil
+}
+
+// generateDatabaseAPIKey generates an API key for OIDC users and stores it in the database
+func (s *Server) generateDatabaseAPIKey(username, keyName string, expiryDays int) (*users.APIKey, error) {
+	// Check if database is available
+	if s.db == nil {
+		return nil, fmt.Errorf("database not available for OIDC user API keys")
+	}
+
+	// Check if API key name already exists for this user
+	existingKeys, err := s.db.GetAPIKeys(username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing API keys: %w", err)
+	}
+
+	for _, key := range existingKeys {
+		if key.KeyName == keyName {
+			return nil, fmt.Errorf("API key with name '%s' already exists for user '%s'", keyName, username)
+		}
+	}
+
+	// Generate a cryptographically secure API key
+	apiKeyString, err := generateAPIKeyString()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Hash the API key for storage
+	keyHash := hashAPIKey(apiKeyString)
+
+	// Calculate expiration
+	expiresAt := time.Now().Add(time.Duration(expiryDays) * 24 * time.Hour)
+
+	// Store in database
+	err = s.db.CreateAPIKey(username, keyHash, keyName, expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store API key: %w", err)
+	}
+
+	// Return API key (similar structure to file-based keys)
+	return &users.APIKey{
+		Key:       apiKeyString,
+		Name:      keyName,
+		CreatedAt: time.Now(),
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// generateAPIKeyString generates a cryptographically secure API key
+func generateAPIKeyString() (string, error) {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// hashAPIKey creates a SHA-256 hash of an API key
+func hashAPIKey(apiKey string) string {
+	hash := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(hash[:])
 }

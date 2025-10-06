@@ -63,13 +63,13 @@ func NewDemoEnvironment() *DemoEnvironment {
 				IngressHost: "gitea.localtest.me",
 				Credentials: map[string]string{
 					"username": "giteaadmin",
-					"password": "admin",
+					"password": "admin123",
 				},
 				Values: map[string]interface{}{
 					"gitea": map[string]interface{}{
 						"admin": map[string]interface{}{
 							"username": "giteaadmin",
-							"password": "admin",
+							"password": "admin123",
 							"email":    "giteaadmin@localtest.me",
 						},
 						"config": map[string]interface{}{
@@ -80,10 +80,12 @@ func NewDemoEnvironment() *DemoEnvironment {
 								"DISABLE_SSH": true,
 							},
 							"service": map[string]interface{}{
-								"DISABLE_REGISTRATION": true,
+								"DISABLE_REGISTRATION":             true,
+								"ALLOW_ONLY_EXTERNAL_REGISTRATION": true,
 							},
 							"oauth2": map[string]interface{}{
-								"ENABLE": true,
+								"ENABLE":                   true,
+								"ENABLE_AUTO_REGISTRATION": true,
 							},
 						},
 					},
@@ -370,16 +372,21 @@ func NewDemoEnvironment() *DemoEnvironment {
 							},
 						},
 					},
-					"auth.generic_oauth": map[string]interface{}{
-						"enabled":       true,
-						"name":          "Keycloak",
-						"client_id":     "grafana",
-						"client_secret": "grafana-client-secret",
-						"scopes":        "openid email profile",
-						"auth_url":      "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/auth",
-						"token_url":     "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/token",
-						"api_url":       "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/userinfo",
-						"allow_sign_up": true,
+					"grafana.ini": map[string]interface{}{
+						"server": map[string]interface{}{
+							"root_url": "http://grafana.localtest.me",
+						},
+						"auth.generic_oauth": map[string]interface{}{
+							"enabled":       true,
+							"name":          "Keycloak",
+							"client_id":     "grafana",
+							"client_secret": "grafana-client-secret",
+							"scopes":        "openid email profile",
+							"auth_url":      "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/auth",
+							"token_url":     "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/token",
+							"api_url":       "http://keycloak.localtest.me/realms/demo-realm/protocol/openid-connect/userinfo",
+							"allow_sign_up": true,
+						},
 					},
 				},
 				HealthPath: "/api/health",

@@ -151,6 +151,11 @@ export interface APIKeyFull {
   expires_at: string;
 }
 
+export interface AuthConfig {
+  oidc_enabled: boolean;
+  oidc_provider_name: string;
+}
+
 class ApiClient {
   private getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -171,6 +176,7 @@ class ApiClient {
 
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers,
+        credentials: 'include', // Include cookies for session-based auth
         ...options,
       });
 
@@ -341,6 +347,10 @@ class ApiClient {
   }
 
   // Authentication
+  async getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
+    return this.request<AuthConfig>('/auth/config');
+  }
+
   async login(
     username: string,
     password: string
