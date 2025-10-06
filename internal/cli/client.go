@@ -49,6 +49,11 @@ func NewClient(baseURL string) *Client {
 	return client
 }
 
+// HasToken returns true if the client has an API token loaded
+func (c *Client) HasToken() bool {
+	return c.token != ""
+}
+
 type DeployResponse struct {
 	Message     string `json:"message"`
 	Name        string `json:"name"`

@@ -53,10 +53,14 @@ func main() {
 	var user *users.User
 	var err error
 	if !localCommands[command] {
-		// Check if API key is already set (from environment variable)
-		if os.Getenv("IDP_API_KEY") != "" {
+		// Check if API key is already set (from environment variable or credentials file)
+		if client.HasToken() {
 			// API key authentication - no need to prompt for login
-			fmt.Printf("✓ Using API key authentication\n")
+			if os.Getenv("IDP_API_KEY") != "" {
+				fmt.Printf("✓ Using API key from environment variable\n")
+			} else {
+				fmt.Printf("✓ Using API key from credentials file\n")
+			}
 		} else {
 			// Authenticate user with server for server commands
 			user, err = users.PromptLogin()
