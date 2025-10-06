@@ -26,6 +26,7 @@ interface Doc {
   metadata: {
     title: string;
     description?: string;
+    summary?: string;
   };
 }
 
@@ -47,15 +48,19 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
     categories[category].push(doc);
   });
 
-  // Filter docs based on search
+  // Filter docs based on search (searches title, description, summary, and content)
   const filteredCategories = Object.entries(categories).reduce(
     (acc, [category, docs]) => {
-      const filteredDocs = docs.filter(
-        (doc) =>
-          doc.metadata.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      const filteredDocs = docs.filter((doc) => {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          doc.metadata.title.toLowerCase().includes(searchLower) ||
           (doc.metadata.description &&
-            doc.metadata.description.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
+            doc.metadata.description.toLowerCase().includes(searchLower)) ||
+          (doc.metadata.summary && doc.metadata.summary.toLowerCase().includes(searchLower)) ||
+          doc.content.toLowerCase().includes(searchLower)
+        );
+      });
       if (filteredDocs.length > 0) {
         acc[category] = filteredDocs;
       }
