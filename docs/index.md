@@ -132,6 +132,7 @@ Trigger workflows from Git repositories and integrate with ArgoCD.
 |-------|-------------|
 | [Workflow Developer Guide](guides/workflow-developer-guide.md) | Complete reference for building workflows |
 | [Workflows](guides/workflows.md) | Introduction to workflow concepts |
+| [Delegated Resources](features/delegated-resources.md) | External resource tracking and GitOps integration |
 | [Conditional Execution](features/conditional-execution.md) | if/unless/when conditions |
 | [Parallel Execution](features/parallel-execution.md) | Run steps concurrently |
 | [Context & Variables](features/context-variables.md) | Variable interpolation and outputs |
@@ -151,6 +152,7 @@ Trigger workflows from Git repositories and integrate with ArgoCD.
 - **Score-Based**: Native support for Score specifications
 - **Multi-Step Workflows**: Orchestrate complex deployments with Terraform, Kubernetes, Ansible
 - **Golden Paths**: Pre-defined workflows for common platform patterns
+- **Delegated Resources**: Track externally-managed infrastructure (GitOps, Terraform Enterprise) in unified inventory
 - **Variable Context**: Share data between workflow steps with powerful interpolation
 - **Conditional Execution**: Dynamic workflows that adapt based on results
 - **Parallel Execution**: Run independent steps concurrently for faster deployments
