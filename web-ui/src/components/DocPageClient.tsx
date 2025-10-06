@@ -9,11 +9,12 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSlug from 'rehype-slug';
 import rehypeAutolinkHeadings from 'rehype-autolink-headings';
-import { ComponentPropsWithoutRef, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { ComponentPropsWithoutRef, useMemo, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { TableOfContents } from '@/components/TableOfContents';
 import { extractTableOfContents } from '@/lib/extract-toc';
 import { MermaidDiagram } from '@/components/mermaid-diagram';
+import rehypeRaw from 'rehype-raw';
 import 'highlight.js/styles/github-dark.css';
 
 interface Doc {
@@ -33,9 +34,51 @@ interface DocPageClientProps {
 
 export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const highlight = searchParams.get('highlight');
 
   // Extract table of contents from markdown
   const tocItems = useMemo(() => extractTableOfContents(doc.content), [doc.content]);
+
+  // Helper function to escape regex special characters
+  const escapeRegex = useCallback((str: string) => {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }, []);
+
+  // Helper function to highlight search terms in content
+  const highlightText = useCallback(
+    (content: string, searchTerm: string): string => {
+      if (!searchTerm) return content;
+
+      const escapedTerm = escapeRegex(searchTerm);
+      const regex = new RegExp(`(${escapedTerm})`, 'gi');
+
+      // Replace matches with <mark> tags
+      return content.replace(
+        regex,
+        '<mark class="bg-yellow-200 dark:bg-yellow-800 px-1 rounded">$1</mark>'
+      );
+    },
+    [escapeRegex]
+  );
+
+  // Process content with highlighting if search term exists
+  const processedContent = useMemo(() => {
+    return highlight ? highlightText(doc.content, highlight) : doc.content;
+  }, [doc.content, highlight, highlightText]);
+
+  // Scroll to first highlighted term
+  useEffect(() => {
+    if (highlight) {
+      const timer = setTimeout(() => {
+        const firstMark = document.querySelector('mark');
+        if (firstMark) {
+          firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100); // Small delay to ensure content is rendered
+      return () => clearTimeout(timer);
+    }
+  }, [highlight]);
 
   return (
     <ProtectedRoute>
@@ -97,6 +140,7 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[
+                        rehypeRaw, // Allow rendering of <mark> tags
                         rehypeHighlight,
                         rehypeSlug,
                         [rehypeAutolinkHeadings, { behavior: 'wrap' }],
@@ -210,7 +254,7 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                         },
                       }}
                     >
-                      {doc.content}
+                      {processedContent}
                     </ReactMarkdown>
                   </div>
                 </CardContent>

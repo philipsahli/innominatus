@@ -248,7 +248,11 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                 <Card
                   key={doc.slug}
                   className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-all cursor-pointer group border-l-4 border-l-indigo-500"
-                  onClick={() => router.push(`/docs/${doc.slug}`)}
+                  onClick={() =>
+                    router.push(
+                      `/docs/${doc.slug}${searchTerm ? `?highlight=${encodeURIComponent(searchTerm)}` : ''}`
+                    )
+                  }
                 >
                   <CardContent className="pt-6">
                     <div className="space-y-3">
@@ -317,7 +321,11 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                     <Card
                       key={doc.slug}
                       className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-shadow cursor-pointer group"
-                      onClick={() => router.push(`/docs/${doc.slug}`)}
+                      onClick={() =>
+                        router.push(
+                          `/docs/${doc.slug}${searchTerm ? `?highlight=${encodeURIComponent(searchTerm)}` : ''}`
+                        )
+                      }
                     >
                       <CardHeader className="pb-3">
                         <div className="flex items-start justify-between">
