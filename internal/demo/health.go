@@ -131,6 +131,21 @@ func (h *HealthChecker) CheckAll(env *DemoEnvironment) []HealthStatus {
 	return results
 }
 
+// CheckComponents performs health checks on specific components
+func (h *HealthChecker) CheckComponents(components []DemoComponent) []HealthStatus {
+	var results []HealthStatus
+
+	// Check only the specified components that have ingress or are system components
+	for _, component := range components {
+		if component.IngressHost != "" || component.Name == "vault-secrets-operator" {
+			result := h.CheckComponent(component)
+			results = append(results, result)
+		}
+	}
+
+	return results
+}
+
 // checkGitea performs Gitea-specific health check
 func (h *HealthChecker) checkGitea(resp *http.Response, status HealthStatus) HealthStatus {
 	switch resp.StatusCode {
@@ -372,6 +387,47 @@ func (h *HealthChecker) WaitForHealthy(env *DemoEnvironment, maxRetries int, del
 		}
 
 		results := h.CheckAll(env)
+		healthy, total, _ := h.GetHealthSummary(results)
+
+		if healthy == total {
+			fmt.Printf("✅ All services are healthy!\n")
+			return nil
+		}
+
+		// Show which services are still unhealthy
+		unhealthy := []string{}
+		for _, result := range results {
+			if !result.Healthy {
+				unhealthy = append(unhealthy, result.Name)
+			}
+		}
+
+		fmt.Printf("   Waiting for: %s\n", strings.Join(unhealthy, ", "))
+	}
+
+	return fmt.Errorf("services did not become healthy after %d retries", maxRetries)
+}
+
+// WaitForComponentsHealthy waits for specific components to become healthy
+func (h *HealthChecker) WaitForComponentsHealthy(components []DemoComponent, maxRetries int, delay time.Duration) error {
+	fmt.Printf("⏳ Waiting for %d services to become healthy...\n", len(components))
+
+	for retry := 0; retry < maxRetries; retry++ {
+		if retry > 0 {
+			fmt.Printf("   Retry %d/%d...\n", retry+1, maxRetries)
+			time.Sleep(delay)
+		}
+
+		// Check only the specified components
+		var results []HealthStatus
+		for _, component := range components {
+			// Only check components with ingress or specific system components
+			if component.IngressHost != "" || component.Name == "vault-secrets-operator" {
+				result := h.CheckComponent(component)
+				results = append(results, result)
+			}
+		}
+
 		healthy, total, _ := h.GetHealthSummary(results)
 
 		if healthy == total {

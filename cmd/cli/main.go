@@ -197,7 +197,16 @@ func main() {
 		err = client.RunGoldenPathCommand(goldenPath, scoreFile, paramMap)
 
 	case "demo-time":
-		err = client.DemoTimeCommand()
+		// Parse demo-time specific flags
+		demoFlags := flag.NewFlagSet("demo-time", flag.ExitOnError)
+		componentFilter := demoFlags.String("component", "", "Comma-separated list of components to install (e.g., grafana, gitea,argocd)")
+
+		// Parse remaining arguments for demo-time command
+		if len(flag.Args()) > 1 {
+			_ = demoFlags.Parse(flag.Args()[1:])
+		}
+
+		err = client.DemoTimeCommand(*componentFilter)
 
 	case "demo-nuke":
 		err = client.DemoNukeCommand()
@@ -323,7 +332,10 @@ func printUsage() {
 	fmt.Printf("    generate-api-key    Generate API key for user\n")
 	fmt.Printf("    list-api-keys       List API keys for user\n")
 	fmt.Printf("    revoke-api-key      Revoke API key for user\n")
-	fmt.Printf("  demo-time             Install/reconcile demo environment\n")
+	fmt.Printf("  demo-time [options]   Install/reconcile demo environment\n")
+	fmt.Printf("    -component <names>  Comma-separated list of components to install\n")
+	fmt.Printf("                        (e.g., grafana, gitea,argocd). Dependencies are\n")
+	fmt.Printf("                        automatically included. Omit to install all.\n")
 	fmt.Printf("  demo-nuke             Uninstall and clean demo environment\n")
 	fmt.Printf("  demo-status           Check demo environment health and status\n\n")
 	fmt.Printf("Options:\n")
@@ -344,6 +356,8 @@ func printUsage() {
 	fmt.Printf("  %s run deploy-app score-spec.yaml\n", os.Args[0])
 	fmt.Printf("  %s run ephemeral-env\n", os.Args[0])
 	fmt.Printf("  %s demo-time\n", os.Args[0])
+	fmt.Printf("  %s demo-time -component grafana\n", os.Args[0])
+	fmt.Printf("  %s demo-time -component gitea,argocd\n", os.Args[0])
 	fmt.Printf("  %s demo-status\n", os.Args[0])
 	fmt.Printf("  %s demo-nuke\n", os.Args[0])
 	fmt.Printf("  %s admin show\n", os.Args[0])

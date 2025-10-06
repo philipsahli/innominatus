@@ -737,7 +737,20 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 }
 
 // DemoTimeCommand installs/reconciles the demo environment
-func (c *Client) DemoTimeCommand() error {
+func (c *Client) DemoTimeCommand(componentFilter string) error {
+	// Parse component filter
+	var filter []string
+	if componentFilter != "" {
+		// Split by comma and trim whitespace
+		parts := strings.Split(componentFilter, ",")
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				filter = append(filter, trimmed)
+			}
+		}
+	}
+
 	// Create demo environment configuration
 	env := demo.NewDemoEnvironment()
 
@@ -759,6 +772,12 @@ func (c *Client) DemoTimeCommand() error {
 	// Print welcome message
 	cheatSheet.PrintWelcome()
 
+	// Print filter information if components are filtered
+	if len(filter) > 0 {
+		fmt.Printf("\n🎯 Component filter active: %s\n", strings.Join(filter, ", "))
+		fmt.Printf("   (Dependencies will be automatically included)\n\n")
+	}
+
 	// Kill any processes using port 8081 to prevent conflicts
 	cheatSheet.PrintProgress("Cleaning up port 8081...")
 	if err := killProcessesOnPort(8081); err != nil {
@@ -771,10 +790,11 @@ func (c *Client) DemoTimeCommand() error {
 		return err
 	}
 
-	// Install components
-	cheatSheet.PrintProgress("Installing demo environment components...")
+	// Install components (filtered or all)
+	componentsToInstall := env.GetFilteredComponents(filter)
+	cheatSheet.PrintProgress(fmt.Sprintf("Installing %d demo environment components...", len(componentsToInstall)))
 
-	for _, component := range env.GetHelmComponents() {
+	for _, component := range componentsToInstall {
 		cheatSheet.PrintProgress(fmt.Sprintf("Installing %s...", component.Name))
 		if err := installer.InstallComponent(component); err != nil {
 			cheatSheet.PrintError(fmt.Sprintf("Installing %s", component.Name), err)
@@ -782,66 +802,93 @@ func (c *Client) DemoTimeCommand() error {
 		}
 	}
 
-	// Install Kubernetes Dashboard
-	cheatSheet.PrintProgress("Installing Kubernetes Dashboard...")
-	if err := installer.InstallKubernetesDashboard(); err != nil {
-		cheatSheet.PrintError("Installing Kubernetes Dashboard", err)
-		return err
+	// Build list of all installed components for health checking
+	allInstalledComponents := componentsToInstall
+
+	// Install Kubernetes Dashboard (if requested)
+	if env.IsComponentRequested("kubernetes-dashboard", filter) {
+		cheatSheet.PrintProgress("Installing Kubernetes Dashboard...")
+		if err := installer.InstallKubernetesDashboard(); err != nil {
+			cheatSheet.PrintError("Installing Kubernetes Dashboard", err)
+			return err
+		}
+		// Add to health check list
+		for _, comp := range env.Components {
+			if comp.Name == "kubernetes-dashboard" {
+				allInstalledComponents = append(allInstalledComponents, comp)
+				break
+			}
+		}
 	}
 
-	// Install Demo App
-	cheatSheet.PrintProgress("Installing Demo Application...")
-	if err := installer.InstallDemoApp(); err != nil {
-		cheatSheet.PrintError("Installing Demo Application", err)
-		return err
+	// Install Demo App (if requested)
+	if env.IsComponentRequested("demo-app", filter) {
+		cheatSheet.PrintProgress("Installing Demo Application...")
+		if err := installer.InstallDemoApp(); err != nil {
+			cheatSheet.PrintError("Installing Demo Application", err)
+			return err
+		}
+		// Add to health check list
+		for _, comp := range env.Components {
+			if comp.Name == "demo-app" {
+				allInstalledComponents = append(allInstalledComponents, comp)
+				break
+			}
+		}
 	}
 
-	// Wait for services to be healthy
+	// Wait for services to be healthy (only check installed components)
 	cheatSheet.PrintProgress("Waiting for services to become healthy...")
-	if err := healthChecker.WaitForHealthy(env, 30, 10*time.Second); err != nil {
+	if err := healthChecker.WaitForComponentsHealthy(allInstalledComponents, 30, 10*time.Second); err != nil {
 		cheatSheet.PrintError("Health Check", err)
 		return err
 	}
 
-	// Configure Keycloak realm and ArgoCD OIDC
-	cheatSheet.PrintProgress("Configuring Keycloak realm and ArgoCD OIDC...")
-	if err := installer.ApplyKeycloakConfig(); err != nil {
-		cheatSheet.PrintError("Keycloak Configuration", err)
-		return err
+	// Configure Keycloak realm and ArgoCD OIDC (if Keycloak and ArgoCD are installed)
+	if env.IsComponentRequested("keycloak", filter) && env.IsComponentRequested("argocd", filter) {
+		cheatSheet.PrintProgress("Configuring Keycloak realm and ArgoCD OIDC...")
+		if err := installer.ApplyKeycloakConfig(); err != nil {
+			cheatSheet.PrintError("Keycloak Configuration", err)
+			return err
+		}
+
+		// Restart ArgoCD server to apply OIDC configuration
+		cheatSheet.PrintProgress("Restarting ArgoCD server...")
+		if err := installer.RestartArgoCDServer(); err != nil {
+			cheatSheet.PrintError("ArgoCD Restart", err)
+			return err
+		}
 	}
 
-	// Restart ArgoCD server to apply OIDC configuration
-	cheatSheet.PrintProgress("Restarting ArgoCD server...")
-	if err := installer.RestartArgoCDServer(); err != nil {
-		cheatSheet.PrintError("ArgoCD Restart", err)
-		return err
+	// Seed Git repository (if Gitea is installed)
+	if env.IsComponentRequested("gitea", filter) {
+		cheatSheet.PrintProgress("Seeding Git repository...")
+		if err := gitManager.SeedRepository(); err != nil {
+			cheatSheet.PrintError("Git Repository Seeding", err)
+			return err
+		}
 	}
 
-	// Seed Git repository
-	cheatSheet.PrintProgress("Seeding Git repository...")
-	if err := gitManager.SeedRepository(); err != nil {
-		cheatSheet.PrintError("Git Repository Seeding", err)
-		return err
-	}
+	// Install Grafana dashboards (if Grafana is installed)
+	if env.IsComponentRequested("grafana", filter) {
+		cheatSheet.PrintProgress("Installing Grafana dashboards...")
+		if err := grafanaManager.InstallClusterHealthDashboard(); err != nil {
+			cheatSheet.PrintError("Grafana Dashboard Installation", err)
+			return err
+		}
 
-	// Install Grafana dashboards
-	cheatSheet.PrintProgress("Installing Grafana dashboards...")
-	if err := grafanaManager.InstallClusterHealthDashboard(); err != nil {
-		cheatSheet.PrintError("Grafana Dashboard Installation", err)
-		return err
-	}
-
-	// Install Innominatus Platform Metrics Dashboard
-	if err := grafanaManager.InstallInnominatusDashboard(); err != nil {
-		cheatSheet.PrintError("Innominatus Dashboard Installation", err)
-		return err
+		// Install Innominatus Platform Metrics Dashboard
+		if err := grafanaManager.InstallInnominatusDashboard(); err != nil {
+			cheatSheet.PrintError("Innominatus Dashboard Installation", err)
+			return err
+		}
 	}
 
 	// Print installation complete
 	cheatSheet.PrintInstallationComplete()
 
-	// Print status and credentials
-	healthResults := healthChecker.CheckAll(env)
+	// Print status and credentials (only for installed components)
+	healthResults := healthChecker.CheckComponents(allInstalledComponents)
 	cheatSheet.PrintStatus(healthResults)
 	cheatSheet.PrintCredentials()
 	cheatSheet.PrintQuickStart()

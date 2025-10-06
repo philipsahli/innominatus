@@ -347,7 +347,7 @@ func TestDemoCommands(t *testing.T) {
 	client := NewClient("http://localhost:8081")
 
 	// Test demo-time command
-	err := client.DemoTimeCommand()
+	err := client.DemoTimeCommand("")
 	assert.NoError(t, err) // Should work if Kubernetes is available
 
 	// Test demo-status command

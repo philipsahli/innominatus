@@ -623,3 +623,69 @@ func (d *DemoEnvironment) GetSystemComponents() []DemoComponent {
 	}
 	return systemComponents
 }
+
+// GetFilteredComponents returns components filtered by name, with automatic dependency resolution
+// If filter is empty, returns all Helm components (backward compatible)
+func (d *DemoEnvironment) GetFilteredComponents(filter []string) []DemoComponent {
+	// If no filter provided, return all Helm components (backward compatible)
+	if len(filter) == 0 {
+		return d.GetHelmComponents()
+	}
+
+	// Create map for O(1) lookup
+	filterMap := make(map[string]bool)
+	for _, name := range filter {
+		filterMap[name] = true
+	}
+
+	// Always include nginx-ingress if any component has IngressHost (dependency)
+	needsIngress := false
+	for _, component := range d.Components {
+		if filterMap[component.Name] && component.IngressHost != "" {
+			needsIngress = true
+			break
+		}
+	}
+	if needsIngress {
+		filterMap["nginx-ingress"] = true
+	}
+
+	// Add dependency resolution
+	// If vault-secrets-operator is requested, also include vault
+	if filterMap["vault-secrets-operator"] {
+		filterMap["vault"] = true
+	}
+
+	// If grafana is requested and prometheus exists, include prometheus (datasource)
+	if filterMap["grafana"] {
+		filterMap["prometheus"] = true
+		filterMap["pushgateway"] = true
+	}
+
+	// Filter components
+	var filtered []DemoComponent
+	for _, component := range d.Components {
+		if filterMap[component.Name] && component.Chart != "" {
+			filtered = append(filtered, component)
+		}
+	}
+
+	return filtered
+}
+
+// IsComponentRequested checks if a specific component is in the filter list
+// Returns true if filter is empty (all components) or if component is in the filter
+func (d *DemoEnvironment) IsComponentRequested(componentName string, filter []string) bool {
+	// If no filter, all components are requested
+	if len(filter) == 0 {
+		return true
+	}
+
+	// Check if component is in filter list
+	for _, name := range filter {
+		if name == componentName {
+			return true
+		}
+	}
+	return false
+}
