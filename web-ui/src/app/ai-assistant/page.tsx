@@ -8,7 +8,7 @@ import { ChatMessage } from '@/components/ai/chat-message';
 import { ChatInput } from '@/components/ai/chat-input';
 import { SpecPreview } from '@/components/ai/spec-preview';
 import { Alert } from '@/components/ui/alert';
-import { api, AIChatResponse, AIGenerateSpecResponse } from '@/lib/api';
+import { api, AIChatResponse, AIGenerateSpecResponse, ConversationMessage } from '@/lib/api';
 import { Bot, Sparkles, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 
 interface Message {
@@ -17,6 +17,7 @@ interface Message {
   content: string;
   timestamp: string;
   citations?: string[];
+  spec?: string; // Store generated spec with the message
 }
 
 interface GeneratedSpec {
@@ -77,7 +78,15 @@ export default function AIAssistantPage() {
     setError(null);
 
     try {
-      const response = await api.sendAIChat(message);
+      // Build conversation history from existing messages
+      const conversationHistory: ConversationMessage[] = messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp,
+        spec: msg.spec, // Include generated spec in history
+      }));
+
+      const response = await api.sendAIChat(message, conversationHistory);
       if (response.success && response.data) {
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -85,6 +94,7 @@ export default function AIAssistantPage() {
           content: response.data.message,
           timestamp: new Date(response.data.timestamp).toLocaleTimeString(),
           citations: response.data.citations,
+          spec: response.data.generated_spec, // Store spec with message
         };
 
         setMessages((prev) => [...prev, assistantMessage]);

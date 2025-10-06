@@ -4,9 +4,10 @@ import "time"
 
 // ChatRequest represents a chat message from the user
 type ChatRequest struct {
-	Message   string `json:"message"`
-	Context   string `json:"context,omitempty"` // Optional context (e.g., workflow ID, app name)
-	AuthToken string `json:"-"`                 // Not sent from client, populated by handler from Authorization header
+	Message             string    `json:"message"`
+	Context             string    `json:"context,omitempty"`              // Optional context (e.g., workflow ID, app name)
+	ConversationHistory []Message `json:"conversation_history,omitempty"` // Previous messages in the conversation
+	AuthToken           string    `json:"-"`                              // Not sent from client, populated by handler from Authorization header
 }
 
 // ChatResponse represents the AI's response
@@ -47,7 +48,8 @@ type Message struct {
 	Role      string    `json:"role"` // "user" or "assistant"
 	Content   string    `json:"content"`
 	Timestamp time.Time `json:"timestamp"`
-	Spec      string    `json:"spec,omitempty"` // If message contains a generated spec
+	Spec      string    `json:"spec,omitempty"`       // If message contains a generated spec
+	ToolCalls []string  `json:"tool_calls,omitempty"` // Tool calls made by assistant
 }
 
 // ChatHistory stores conversation history

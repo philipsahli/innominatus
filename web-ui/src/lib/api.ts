@@ -431,10 +431,14 @@ class ApiClient {
     return this.request<AIStatusResponse>('/ai/status');
   }
 
-  async sendAIChat(message: string, context?: string): Promise<ApiResponse<AIChatResponse>> {
+  async sendAIChat(
+    message: string,
+    conversationHistory?: ConversationMessage[],
+    context?: string
+  ): Promise<ApiResponse<AIChatResponse>> {
     return this.request('/ai/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, context }),
+      body: JSON.stringify({ message, conversation_history: conversationHistory, context }),
     });
   }
 
@@ -447,6 +451,13 @@ class ApiClient {
       body: JSON.stringify({ description, metadata }),
     });
   }
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  spec?: string;
 }
 
 export interface AIStatusResponse {

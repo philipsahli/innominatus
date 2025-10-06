@@ -45,17 +45,40 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 		contextMessage = "Here is relevant context from the documentation:\n\n" + contextMessage + "\n\n"
 	}
 
-	messages := []llm.Message{
-		{
-			Role: "user",
-			Content: []llm.ContentBlock{
-				{
-					Type: "text",
-					Text: contextMessage + req.Message,
+	// Build messages array starting with conversation history
+	messages := []llm.Message{}
+
+	// Add previous conversation history if provided
+	if len(req.ConversationHistory) > 0 {
+		for _, msg := range req.ConversationHistory {
+			// Build content including spec if present
+			content := msg.Content
+			if msg.Spec != "" {
+				content += "\n\n[Generated Score Specification]:\n```yaml\n" + msg.Spec + "\n```"
+			}
+
+			messages = append(messages, llm.Message{
+				Role: msg.Role,
+				Content: []llm.ContentBlock{
+					{
+						Type: "text",
+						Text: content,
+					},
 				},
+			})
+		}
+	}
+
+	// Add current user message
+	messages = append(messages, llm.Message{
+		Role: "user",
+		Content: []llm.ContentBlock{
+			{
+				Type: "text",
+				Text: contextMessage + req.Message,
 			},
 		},
-	}
+	})
 
 	// Get available tools
 	tools := GetAvailableTools()
