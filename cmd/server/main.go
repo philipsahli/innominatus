@@ -15,6 +15,12 @@ import (
 	"time"
 )
 
+// Build information - set via ldflags during release builds
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
@@ -191,7 +197,7 @@ func main() {
 	var metricsPusher *metrics.MetricsPusher
 	if pushgatewayURL != "" && pushgatewayURL != "disabled" {
 		pushInterval := 15 * time.Second
-		metricsPusher = metrics.NewMetricsPusher(pushgatewayURL, pushInterval)
+		metricsPusher = metrics.NewMetricsPusher(pushgatewayURL, pushInterval, version, commit)
 		metricsPusher.StartPushing()
 		defer metricsPusher.Stop()
 	}

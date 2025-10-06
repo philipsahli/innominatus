@@ -3,9 +3,11 @@ package metrics
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/push"
 )
 
@@ -16,16 +18,50 @@ type MetricsPusher struct {
 	jobName        string
 	stopChan       chan struct{}
 	metrics        *Metrics
+	registry       *prometheus.Registry
+	buildInfo      *prometheus.GaugeVec
 }
 
-// NewMetricsPusher creates a new metrics pusher
-func NewMetricsPusher(pushgatewayURL string, pushInterval time.Duration) *MetricsPusher {
+// NewMetricsPusher creates a new metrics pusher with runtime collectors
+func NewMetricsPusher(pushgatewayURL string, pushInterval time.Duration, version, commit string) *MetricsPusher {
+	// Create a new registry for all collectors
+	registry := prometheus.NewRegistry()
+
+	// Register standard Go runtime metrics collector
+	registry.MustRegister(collectors.NewGoCollector())
+
+	// Register process metrics collector (CPU, memory, file descriptors)
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+
+	// Create build info metric
+	buildInfo := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "innominatus_build_info",
+			Help: "Build information including version and commit",
+		},
+		[]string{"version", "commit", "go_version"},
+	)
+
+	// Set build info with current values
+	if version == "" {
+		version = "dev"
+	}
+	if commit == "" {
+		commit = "unknown"
+	}
+	buildInfo.WithLabelValues(version, commit, runtime.Version()).Set(1)
+
+	// Register build info
+	registry.MustRegister(buildInfo)
+
 	return &MetricsPusher{
 		pushgatewayURL: pushgatewayURL,
 		pushInterval:   pushInterval,
 		jobName:        "innominatus",
 		stopChan:       make(chan struct{}),
 		metrics:        GetGlobal(),
+		registry:       registry,
+		buildInfo:      buildInfo,
 	}
 }
 
@@ -69,6 +105,9 @@ func (p *MetricsPusher) pushMetrics() error {
 	defer p.metrics.mu.RUnlock()
 
 	pusher := push.New(p.pushgatewayURL, p.jobName)
+
+	// Add the registry containing Go runtime and process collectors
+	pusher.Gatherer(p.registry)
 
 	// Add uptime gauge
 	uptimeGauge := prometheus.NewGauge(prometheus.GaugeOpts{

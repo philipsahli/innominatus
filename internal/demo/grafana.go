@@ -423,6 +423,129 @@ func (g *GrafanaManager) InstallInnominatusDashboard() error {
 						"y": 14,
 					},
 				},
+				// Row 4: Runtime & Performance (Go metrics)
+				{
+					"id":    9,
+					"title": "Go Goroutines",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "go_goroutines",
+							"legendFormat": "Goroutines",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 0,
+						"y": 22,
+					},
+				},
+				{
+					"id":    10,
+					"title": "Memory Allocated",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "go_memstats_alloc_bytes",
+							"legendFormat": "Allocated",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 6,
+						"y": 22,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "bytes",
+						},
+					},
+				},
+				{
+					"id":    11,
+					"title": "Process Memory (Resident)",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "process_resident_memory_bytes",
+							"legendFormat": "Resident Memory",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 12,
+						"y": 22,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "bytes",
+						},
+					},
+				},
+				{
+					"id":    12,
+					"title": "Build Info",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_build_info",
+							"legendFormat": "{{version}} ({{commit}})",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 18,
+						"y": 22,
+					},
+				},
+				{
+					"id":    13,
+					"title": "GC Duration Rate",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "rate(go_gc_duration_seconds_sum[5m])",
+							"legendFormat": "GC Rate",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 12,
+						"x": 0,
+						"y": 28,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "s",
+						},
+					},
+				},
+				{
+					"id":    14,
+					"title": "CPU Usage Rate",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "rate(process_cpu_seconds_total[1m])",
+							"legendFormat": "CPU Rate",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 12,
+						"x": 12,
+						"y": 28,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "percentunit",
+						},
+					},
+				},
 			},
 			"time": map[string]interface{}{
 				"from": "now-1h",
