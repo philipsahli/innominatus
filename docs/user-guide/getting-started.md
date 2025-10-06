@@ -128,19 +128,26 @@ innominatus-ctl deploy my-first-app.yaml
 
 Output:
 ```
-✓ Workflow 'deploy-app' started
-📋 Executing 5 steps...
+🚀 Starting deployment: my-first-app
+
 [1/5] ✓ validate-spec - 0.5s
 [2/5] ✓ provision-namespace - 1.2s
 [3/5] ✓ deploy-application - 2.1s
 [4/5] ✓ health-check - 3.0s
 [5/5] ✓ register-app - 0.3s
 
-✅ Deployed successfully!
+✅ Deployed successfully in 7.1 seconds!
 🔗 https://my-first-app.yourcompany.com
 ```
 
-Visit the URL and see your app running! 🎉
+**🎉 SUCCESS!** Visit the URL and see your app running!
+
+**What just happened:**
+- Created Kubernetes namespace
+- Deployed nginx container
+- Configured ingress route
+- Verified health checks
+- All done automatically by innominatus!
 
 ---
 
