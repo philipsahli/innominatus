@@ -155,29 +155,68 @@ func (s *Server) HandleResourceHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleListResources lists all resources, optionally filtered by application
+// handleListResources lists all resources, optionally filtered by application, type, and provider
 func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 	appName := r.URL.Query().Get("app")
+	resourceType := r.URL.Query().Get("type") // native, delegated, external
+	provider := r.URL.Query().Get("provider") // gitops, terraform-enterprise, etc.
 
-	if appName != "" {
-		// List resources for specific application
-		if s.resourceManager == nil {
-			http.Error(w, "Resource management not available", http.StatusServiceUnavailable)
+	if s.resourceManager == nil {
+		http.Error(w, "Resource management not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var resources []*database.ResourceInstance
+	var err error
+
+	// Filter by type if specified
+	if resourceType != "" {
+		// Validate resource type
+		validTypes := map[string]bool{
+			database.ResourceTypeNative:    true,
+			database.ResourceTypeDelegated: true,
+			database.ResourceTypeExternal:  true,
+		}
+		if !validTypes[resourceType] {
+			http.Error(w, fmt.Sprintf("Invalid resource type: %s (must be native, delegated, or external)", resourceType), http.StatusBadRequest)
 			return
 		}
 
-		resources, err := s.resourceManager.GetResourcesByApplication(appName)
+		// Use repository directly for filtering by type
+		repo := database.NewResourceRepository(s.db)
+		resources, err = repo.FilterResourcesByType(appName, resourceType)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to filter resources: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Further filter by provider if specified
+		if provider != "" {
+			filtered := make([]*database.ResourceInstance, 0)
+			for _, res := range resources {
+				if res.Provider != nil && *res.Provider == provider {
+					filtered = append(filtered, res)
+				}
+			}
+			resources = filtered
+		}
+	} else if appName != "" {
+		// List resources for specific application (no type filter)
+		resources, err = s.resourceManager.GetResourcesByApplication(appName)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to get resources: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"application": appName,
-			"resources":   resources,
-		}); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		// Filter by provider if specified
+		if provider != "" {
+			filtered := make([]*database.ResourceInstance, 0)
+			for _, res := range resources {
+				if res.Provider != nil && *res.Provider == provider {
+					filtered = append(filtered, res)
+				}
+			}
+			resources = filtered
 		}
 	} else {
 		// Return all deployed applications and their resources
@@ -189,16 +228,26 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 
 		allResources := make(map[string]interface{})
 
-		if s.resourceManager != nil {
-			// Get resources for each application
-			for _, app := range apps {
-				resources, err := s.resourceManager.GetResourcesByApplication(app.Name)
-				if err != nil {
-					continue // Skip apps with errors
+		// Get resources for each application
+		for _, app := range apps {
+			appResources, err := s.resourceManager.GetResourcesByApplication(app.Name)
+			if err != nil {
+				continue // Skip apps with errors
+			}
+
+			// Filter by provider if specified
+			if provider != "" {
+				filtered := make([]*database.ResourceInstance, 0)
+				for _, res := range appResources {
+					if res.Provider != nil && *res.Provider == provider {
+						filtered = append(filtered, res)
+					}
 				}
-				if len(resources) > 0 {
-					allResources[app.Name] = resources
-				}
+				appResources = filtered
+			}
+
+			if len(appResources) > 0 {
+				allResources[app.Name] = appResources
 			}
 		}
 
@@ -206,6 +255,26 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(allResources); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 		}
+		return
+	}
+
+	// Return filtered resources for specific app and/or type
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"resources": resources,
+	}
+	if appName != "" {
+		response["application"] = appName
+	}
+	if resourceType != "" {
+		response["type"] = resourceType
+	}
+	if provider != "" {
+		response["provider"] = provider
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }
 
