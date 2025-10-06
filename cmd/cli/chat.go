@@ -35,7 +35,7 @@ func ChatCommand() error {
 	fmt.Println()
 	fmt.Println("Available commands:")
 	fmt.Println("  /help       - Show this help message")
-	fmt.Println("  /clear      - Clear the screen")
+	fmt.Println("  /clear      - Clear the screen and conversation history")
 	fmt.Println("  /save FILE  - Save last generated spec to a file")
 	fmt.Println("  /exit, /quit, Ctrl+C - Exit the chat")
 	fmt.Println()
@@ -55,6 +55,7 @@ func ChatCommand() error {
 	}()
 
 	var lastSpec string
+	var conversationHistory []ai.Message // Track conversation history
 
 	for {
 		line, err := rl.Readline()
@@ -83,7 +84,9 @@ func ChatCommand() error {
 				continue
 
 			case "/clear":
-				print("\033[H\033[2J") // Clear screen
+				print("\033[H\033[2J")               // Clear screen
+				conversationHistory = []ai.Message{} // Clear conversation history
+				fmt.Println("🧹 Screen and conversation history cleared")
 				continue
 
 			case "/save":
@@ -143,11 +146,23 @@ func ChatCommand() error {
 			fmt.Printf("💡 Tip: Use '/save spec.yaml' to save this specification\n\n")
 
 			lastSpec = specResp.Spec
+
+			// Add to conversation history
+			conversationHistory = append(conversationHistory, ai.Message{
+				Role:    "user",
+				Content: input,
+			})
+			conversationHistory = append(conversationHistory, ai.Message{
+				Role:    "assistant",
+				Content: specResp.Explanation,
+				Spec:    specResp.Spec, // Store the generated spec
+			})
 		} else {
-			// Regular chat
+			// Regular chat - send conversation history
 			fmt.Println()
 			chatResp, err := aiService.Chat(ctx, ai.ChatRequest{
-				Message: input,
+				Message:             input,
+				ConversationHistory: conversationHistory, // Send full history
 			})
 			if err != nil {
 				fmt.Printf("❌ Error: %v\n\n", err)
@@ -155,6 +170,18 @@ func ChatCommand() error {
 			}
 
 			fmt.Printf("🤖 AI: %s\n\n", chatResp.Message)
+
+			// Add user message to history
+			conversationHistory = append(conversationHistory, ai.Message{
+				Role:    "user",
+				Content: input,
+			})
+
+			// Add assistant response to history
+			assistantMsg := ai.Message{
+				Role:    "assistant",
+				Content: chatResp.Message,
+			}
 
 			if chatResp.GeneratedSpec != "" {
 				fmt.Println("📄 Generated Score Specification:")
@@ -164,7 +191,10 @@ func ChatCommand() error {
 				fmt.Println()
 				fmt.Printf("💡 Tip: Use '/save spec.yaml' to save this specification\n\n")
 				lastSpec = chatResp.GeneratedSpec
+				assistantMsg.Spec = chatResp.GeneratedSpec // Store spec in history
 			}
+
+			conversationHistory = append(conversationHistory, assistantMsg)
 
 			if len(chatResp.Citations) > 0 {
 				fmt.Println("📚 Sources:")
