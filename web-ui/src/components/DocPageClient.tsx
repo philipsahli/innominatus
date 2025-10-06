@@ -13,6 +13,7 @@ import { ComponentPropsWithoutRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { TableOfContents } from '@/components/TableOfContents';
 import { extractTableOfContents } from '@/lib/extract-toc';
+import { MermaidDiagram } from '@/components/mermaid-diagram';
 import 'highlight.js/styles/github-dark.css';
 
 interface Doc {
@@ -121,6 +122,12 @@ export function DocPageClient({ doc, prevDoc, nextDoc }: DocPageClientProps) {
                             );
                           }
 
+                          // Handle Mermaid diagrams
+                          if (lang === 'mermaid') {
+                            return <MermaidDiagram chart={String(children).trim()} />;
+                          }
+
+                          // Handle regular code blocks
                           return (
                             <div className="relative group my-4 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
                               {lang && (
