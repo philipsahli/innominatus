@@ -134,6 +134,11 @@ type ResourceInstance struct {
 	Configuration       map[string]interface{} `json:"configuration" db:"configuration"`
 	ProviderID          *string                `json:"provider_id,omitempty" db:"provider_id"`
 	ProviderMetadata    map[string]interface{} `json:"provider_metadata,omitempty" db:"provider_metadata"`
+	Type                string                 `json:"type" db:"type"`                               // "native" or "delegated"
+	Provider            *string                `json:"provider,omitempty" db:"provider"`             // e.g., "gitops", "terraform-enterprise"
+	ReferenceURL        *string                `json:"reference_url,omitempty" db:"reference_url"`   // PR URL, external ID, or build link
+	ExternalState       *string                `json:"external_state,omitempty" db:"external_state"` // External system state
+	LastSync            *time.Time             `json:"last_sync,omitempty" db:"last_sync"`           // Last synchronization time
 	WorkflowExecutionID *int64                 `json:"workflow_execution_id,omitempty" db:"workflow_execution_id"`
 	CreatedAt           time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at" db:"updated_at"`
@@ -158,6 +163,22 @@ const (
 	ResourceStateTerminating  ResourceLifecycleState = "terminating"
 	ResourceStateTerminated   ResourceLifecycleState = "terminated"
 	ResourceStateFailed       ResourceLifecycleState = "failed"
+)
+
+// Resource type constants
+const (
+	ResourceTypeNative    = "native"    // Directly managed by orchestrator
+	ResourceTypeDelegated = "delegated" // Managed by external system (GitOps, Terraform Enterprise)
+	ResourceTypeExternal  = "external"  // Read-only reference to external resource
+)
+
+// External state constants for delegated resources
+const (
+	ExternalStateWaitingExternal  = "WaitingExternal"  // Waiting for external system to start
+	ExternalStateBuildingExternal = "BuildingExternal" // External system is building/provisioning
+	ExternalStateHealthy          = "Healthy"          // External resource is healthy
+	ExternalStateError            = "Error"            // External resource has errors
+	ExternalStateUnknown          = "Unknown"          // External state is unknown
 )
 
 // ResourceStateTransition tracks state changes for audit trail

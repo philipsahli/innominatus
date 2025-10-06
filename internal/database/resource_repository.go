@@ -58,8 +58,8 @@ func (r *ResourceRepository) CreateResourceInstance(applicationName, resourceNam
 func (r *ResourceRepository) GetResourceInstance(id int64) (*ResourceInstance, error) {
 	query := `
 		SELECT id, application_name, resource_name, resource_type, state, health_status,
-		       configuration, provider_id, provider_metadata, created_at, updated_at,
-		       last_health_check, error_message
+		       configuration, provider_id, provider_metadata, type, provider, reference_url,
+		       external_state, last_sync, created_at, updated_at, last_health_check, error_message
 		FROM resource_instances WHERE id = $1`
 
 	var resource ResourceInstance
@@ -69,6 +69,8 @@ func (r *ResourceRepository) GetResourceInstance(id int64) (*ResourceInstance, e
 		&resource.ID, &resource.ApplicationName, &resource.ResourceName,
 		&resource.ResourceType, &resource.State, &resource.HealthStatus,
 		&configJSON, &resource.ProviderID, &providerMetadataJSON,
+		&resource.Type, &resource.Provider, &resource.ReferenceURL,
+		&resource.ExternalState, &resource.LastSync,
 		&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
 		&resource.ErrorMessage)
 
@@ -99,8 +101,8 @@ func (r *ResourceRepository) GetResourceInstance(id int64) (*ResourceInstance, e
 func (r *ResourceRepository) GetResourceInstanceByName(applicationName, resourceName string) (*ResourceInstance, error) {
 	query := `
 		SELECT id, application_name, resource_name, resource_type, state, health_status,
-		       configuration, provider_id, provider_metadata, created_at, updated_at,
-		       last_health_check, error_message
+		       configuration, provider_id, provider_metadata, type, provider, reference_url,
+		       external_state, last_sync, created_at, updated_at, last_health_check, error_message
 		FROM resource_instances WHERE application_name = $1 AND resource_name = $2`
 
 	var resource ResourceInstance
@@ -110,6 +112,8 @@ func (r *ResourceRepository) GetResourceInstanceByName(applicationName, resource
 		&resource.ID, &resource.ApplicationName, &resource.ResourceName,
 		&resource.ResourceType, &resource.State, &resource.HealthStatus,
 		&configJSON, &resource.ProviderID, &providerMetadataJSON,
+		&resource.Type, &resource.Provider, &resource.ReferenceURL,
+		&resource.ExternalState, &resource.LastSync,
 		&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
 		&resource.ErrorMessage)
 
@@ -140,8 +144,8 @@ func (r *ResourceRepository) GetResourceInstanceByName(applicationName, resource
 func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*ResourceInstance, error) {
 	query := `
 		SELECT id, application_name, resource_name, resource_type, state, health_status,
-		       configuration, provider_id, provider_metadata, created_at, updated_at,
-		       last_health_check, error_message
+		       configuration, provider_id, provider_metadata, type, provider, reference_url,
+		       external_state, last_sync, created_at, updated_at, last_health_check, error_message
 		FROM resource_instances WHERE application_name = $1 ORDER BY created_at ASC`
 
 	rows, err := r.db.db.Query(query, applicationName)
@@ -159,6 +163,8 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 			&resource.ID, &resource.ApplicationName, &resource.ResourceName,
 			&resource.ResourceType, &resource.State, &resource.HealthStatus,
 			&configJSON, &resource.ProviderID, &providerMetadataJSON,
+			&resource.Type, &resource.Provider, &resource.ReferenceURL,
+			&resource.ExternalState, &resource.LastSync,
 			&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
 			&resource.ErrorMessage)
 
@@ -313,4 +319,149 @@ func (r *ResourceRepository) DeleteResourceInstance(id int64) error {
 	}
 
 	return nil
+}
+
+// UpdateExternalResourceState updates the external state and reference URL of a delegated resource
+func (r *ResourceRepository) UpdateExternalResourceState(id int64, externalState, referenceURL string) error {
+	query := `
+		UPDATE resource_instances
+		SET external_state = $1, reference_url = $2, last_sync = NOW(), updated_at = NOW()
+		WHERE id = $3`
+
+	result, err := r.db.db.Exec(query, externalState, referenceURL, id)
+	if err != nil {
+		return fmt.Errorf("failed to update external resource state: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return ErrResourceNotFound
+	}
+
+	return nil
+}
+
+// GetDelegatedResources retrieves all delegated resources for an application
+func (r *ResourceRepository) GetDelegatedResources(applicationName string) ([]*ResourceInstance, error) {
+	query := `
+		SELECT id, application_name, resource_name, resource_type, state, health_status,
+		       configuration, provider_id, provider_metadata, type, provider, reference_url,
+		       external_state, last_sync, created_at, updated_at, last_health_check, error_message
+		FROM resource_instances
+		WHERE application_name = $1 AND type = $2
+		ORDER BY created_at ASC`
+
+	rows, err := r.db.db.Query(query, applicationName, ResourceTypeDelegated)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get delegated resources: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var resources []*ResourceInstance
+	for rows.Next() {
+		var resource ResourceInstance
+		var configJSON, providerMetadataJSON []byte
+
+		err := rows.Scan(
+			&resource.ID, &resource.ApplicationName, &resource.ResourceName,
+			&resource.ResourceType, &resource.State, &resource.HealthStatus,
+			&configJSON, &resource.ProviderID, &providerMetadataJSON,
+			&resource.Type, &resource.Provider, &resource.ReferenceURL,
+			&resource.ExternalState, &resource.LastSync,
+			&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
+			&resource.ErrorMessage)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan resource instance: %w", err)
+		}
+
+		// Unmarshal JSON fields
+		if len(configJSON) > 0 {
+			if err := json.Unmarshal(configJSON, &resource.Configuration); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
+			}
+		}
+
+		if len(providerMetadataJSON) > 0 {
+			if err := json.Unmarshal(providerMetadataJSON, &resource.ProviderMetadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal provider metadata: %w", err)
+			}
+		}
+
+		resources = append(resources, &resource)
+	}
+
+	return resources, nil
+}
+
+// FilterResourcesByType retrieves resources filtered by application name and type
+func (r *ResourceRepository) FilterResourcesByType(applicationName, resourceType string) ([]*ResourceInstance, error) {
+	var query string
+	var args []interface{}
+
+	if applicationName != "" {
+		query = `
+			SELECT id, application_name, resource_name, resource_type, state, health_status,
+			       configuration, provider_id, provider_metadata, type, provider, reference_url,
+			       external_state, last_sync, created_at, updated_at, last_health_check, error_message
+			FROM resource_instances
+			WHERE application_name = $1 AND type = $2
+			ORDER BY created_at ASC`
+		args = []interface{}{applicationName, resourceType}
+	} else {
+		query = `
+			SELECT id, application_name, resource_name, resource_type, state, health_status,
+			       configuration, provider_id, provider_metadata, type, provider, reference_url,
+			       external_state, last_sync, created_at, updated_at, last_health_check, error_message
+			FROM resource_instances
+			WHERE type = $1
+			ORDER BY created_at ASC`
+		args = []interface{}{resourceType}
+	}
+
+	rows, err := r.db.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to filter resources by type: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var resources []*ResourceInstance
+	for rows.Next() {
+		var resource ResourceInstance
+		var configJSON, providerMetadataJSON []byte
+
+		err := rows.Scan(
+			&resource.ID, &resource.ApplicationName, &resource.ResourceName,
+			&resource.ResourceType, &resource.State, &resource.HealthStatus,
+			&configJSON, &resource.ProviderID, &providerMetadataJSON,
+			&resource.Type, &resource.Provider, &resource.ReferenceURL,
+			&resource.ExternalState, &resource.LastSync,
+			&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
+			&resource.ErrorMessage)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan resource instance: %w", err)
+		}
+
+		// Unmarshal JSON fields
+		if len(configJSON) > 0 {
+			if err := json.Unmarshal(configJSON, &resource.Configuration); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal configuration: %w", err)
+			}
+		}
+
+		if len(providerMetadataJSON) > 0 {
+			if err := json.Unmarshal(providerMetadataJSON, &resource.ProviderMetadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal provider metadata: %w", err)
+			}
+		}
+
+		resources = append(resources, &resource)
+	}
+
+	return resources, nil
 }

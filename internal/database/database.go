@@ -210,6 +210,11 @@ CREATE TABLE IF NOT EXISTS resource_instances (
     configuration JSONB NOT NULL DEFAULT '{}',
     provider_id VARCHAR(255) NULL,
     provider_metadata JSONB NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'native',
+    provider VARCHAR(100) NULL,
+    reference_url TEXT NULL,
+    external_state VARCHAR(50) NULL,
+    last_sync TIMESTAMP WITH TIME ZONE NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_health_check TIMESTAMP WITH TIME ZONE NULL,
@@ -257,6 +262,9 @@ CREATE INDEX IF NOT EXISTS idx_resource_instances_state ON resource_instances(st
 CREATE INDEX IF NOT EXISTS idx_resource_instances_type ON resource_instances(resource_type);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_health ON resource_instances(health_status);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_updated ON resource_instances(updated_at);
+CREATE INDEX IF NOT EXISTS idx_resource_instances_resource_type ON resource_instances(type);
+CREATE INDEX IF NOT EXISTS idx_resource_instances_provider ON resource_instances(provider);
+CREATE INDEX IF NOT EXISTS idx_resource_instances_external_state ON resource_instances(external_state);
 
 CREATE INDEX IF NOT EXISTS idx_resource_state_transitions_resource_id ON resource_state_transitions(resource_instance_id);
 CREATE INDEX IF NOT EXISTS idx_resource_state_transitions_transitioned_at ON resource_state_transitions(transitioned_at);
