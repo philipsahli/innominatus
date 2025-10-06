@@ -262,9 +262,7 @@ CREATE INDEX IF NOT EXISTS idx_resource_instances_state ON resource_instances(st
 CREATE INDEX IF NOT EXISTS idx_resource_instances_type ON resource_instances(resource_type);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_health ON resource_instances(health_status);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_updated ON resource_instances(updated_at);
-CREATE INDEX IF NOT EXISTS idx_resource_instances_resource_type ON resource_instances(type);
-CREATE INDEX IF NOT EXISTS idx_resource_instances_provider ON resource_instances(provider);
-CREATE INDEX IF NOT EXISTS idx_resource_instances_external_state ON resource_instances(external_state);
+-- Note: Indexes for type, provider, external_state are created in migration 006_add_delegated_resources.sql
 
 CREATE INDEX IF NOT EXISTS idx_resource_state_transitions_resource_id ON resource_state_transitions(resource_instance_id);
 CREATE INDEX IF NOT EXISTS idx_resource_state_transitions_transitioned_at ON resource_state_transitions(transitioned_at);

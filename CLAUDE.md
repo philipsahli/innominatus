@@ -243,6 +243,84 @@ curl -X POST http://localhost:8081/api/specs \
   - Leveraging pre-defined golden path workflows
   - Running deployments from local development machines
 
+### Kubernetes Deployment
+
+**For platform teams deploying innominatus to production Kubernetes clusters**
+
+innominatus can be deployed to Kubernetes using Helm for production, staging, or development environments.
+
+#### Quick Install
+
+```bash
+# Install with bundled PostgreSQL (default)
+helm install innominatus ./charts/innominatus \
+  --namespace innominatus-system \
+  --create-namespace \
+  --set postgresql.auth.password=strongPassword123
+```
+
+#### Production Install (External Database)
+
+```bash
+# Production deployment with external database
+helm install innominatus ./charts/innominatus \
+  --namespace innominatus-system \
+  --create-namespace \
+  --set postgresql.enabled=false \
+  --set externalDatabase.enabled=true \
+  --set externalDatabase.host=postgres.example.com \
+  --set externalDatabase.password=secretPassword \
+  --set replicaCount=3 \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=innominatus.example.com
+```
+
+#### Access innominatus in Kubernetes
+
+```bash
+# Port-forward for local access
+kubectl port-forward -n innominatus-system svc/innominatus 8081:8081
+
+# Or access via ingress (if enabled)
+kubectl get ingress -n innominatus-system
+```
+
+#### Kubernetes Mode Features
+
+When running in Kubernetes, innominatus automatically detects K8s mode and:
+- Uses K8s service DNS names for component communication
+- Leverages in-cluster database connection
+- demo-time deploys components with K8s-native configurations
+- RBAC permissions allow cluster-wide resource management
+
+#### demo-time in Kubernetes
+
+```bash
+# Get pod name
+POD=$(kubectl get pod -n innominatus-system -l app.kubernetes.io/name=innominatus -o jsonpath='{.items[0].metadata.name}')
+
+# Run demo environment installation
+kubectl exec -it -n innominatus-system $POD -- /app/innominatus-ctl demo-time
+
+# Check demo status
+kubectl exec -it -n innominatus-system $POD -- /app/innominatus-ctl demo-status
+
+# Cleanup demo
+kubectl exec -it -n innominatus-system $POD -- /app/innominatus-ctl demo-nuke
+```
+
+#### Complete Documentation
+
+📖 **[Kubernetes Deployment Guide](docs/platform-team-guide/kubernetes-deployment.md)** - Comprehensive guide for platform engineers covering:
+- Prerequisites and installation options
+- Production configuration examples
+- Database setup (bundled vs. external)
+- OIDC/SSO authentication setup
+- Monitoring, security, and troubleshooting
+- Upgrade procedures and best practices
+
+📖 **[Helm Chart README](charts/innominatus/README.md)** - Quick reference for chart configuration
+
 ### Workflow Capabilities
 
 innominatus supports multi-step workflows with:

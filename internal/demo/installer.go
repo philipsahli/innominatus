@@ -26,6 +26,9 @@ type Installer struct {
 
 // NewInstaller creates a new installer instance
 func NewInstaller(kubeContext string, dryRun bool) *Installer {
+	// Print deployment mode info
+	PrintDeploymentInfo()
+
 	return &Installer{
 		kubeContext: kubeContext,
 		dryRun:      dryRun,
@@ -1014,6 +1017,19 @@ func (i *Installer) createVaultClient(token string) error {
 
 // createInnominatusClient creates the Innominatus OIDC client in Keycloak
 func (i *Installer) createInnominatusClient(token string) error {
+	// Get appropriate redirect URIs based on deployment mode
+	redirectURIs := []string{"http://localhost:8081/auth/callback", "http://innominatus.localtest.me/auth/callback"}
+	if IsRunningInKubernetes() {
+		// In K8s mode, add service-based callback URL
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			namespace = "innominatus-system"
+		}
+		serviceURL := GetInnominatusURL(namespace)
+		redirectURIs = append(redirectURIs, serviceURL+"/auth/callback")
+		fmt.Printf("   Using K8s redirect URI: %s/auth/callback\n", serviceURL)
+	}
+
 	clientData := map[string]interface{}{
 		"clientId":                  "innominatus",
 		"name":                      "Innominatus",
@@ -1022,7 +1038,7 @@ func (i *Installer) createInnominatusClient(token string) error {
 		"secret":                    "innominatus-client-secret",
 		"publicClient":              false,
 		"protocol":                  "openid-connect",
-		"redirectUris":              []string{"http://localhost:8081/auth/callback", "http://innominatus.localtest.me/auth/callback"},
+		"redirectUris":              redirectURIs,
 		"webOrigins":                []string{"+"},
 		"standardFlowEnabled":       true,
 		"directAccessGrantsEnabled": true,

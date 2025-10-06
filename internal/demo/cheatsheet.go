@@ -2,6 +2,7 @@ package demo
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -135,13 +136,23 @@ func (c *CheatSheet) PrintCredentials() {
 	fmt.Printf("   %-12s %s / %s\n", "demo-user:", "demo-user", "password123")
 	fmt.Printf("   %-12s %s / %s\n", "test-user:", "test-user", "test123")
 	fmt.Println()
+	// Get appropriate innominatus URL based on deployment mode
+	innominatusURL := "http://localhost:8081"
+	if IsRunningInKubernetes() {
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			namespace = "innominatus-system"
+		}
+		innominatusURL = GetInnominatusURL(namespace)
+	}
+
 	fmt.Println("🔗 OIDC-Enabled Services:")
 	fmt.Println("   • ArgoCD      - Login with Keycloak button")
 	fmt.Println("   • Grafana     - Login with Keycloak button")
 	fmt.Println("   • Backstage   - OIDC option on login page")
 	fmt.Println("   • Gitea       - Sign in with Keycloak option")
 	fmt.Println("   • Vault       - OIDC auth method enabled")
-	fmt.Println("   • Innominatus - Visit http://localhost:8081/auth/oidc/login")
+	fmt.Printf("   • Innominatus - Visit %s/auth/oidc/login\n", innominatusURL)
 	fmt.Println()
 	fmt.Println("💡 Tip: Local admin login still works for all services")
 	fmt.Println()
@@ -197,10 +208,20 @@ func (c *CheatSheet) PrintQuickStart() {
 	fmt.Println("   • URL: http://demo.localtest.me")
 	fmt.Println("   • Sample app deployed via Score spec")
 	fmt.Println()
+	// Get innominatus URL dynamically
+	innominatusURL2 := "http://localhost:8081"
+	if IsRunningInKubernetes() {
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			namespace = "innominatus-system"
+		}
+		innominatusURL2 = GetInnominatusURL(namespace)
+	}
+
 	fmt.Println("9. Access Innominatus Server (with SSO):")
-	fmt.Println("   • URL: http://localhost:8081")
+	fmt.Printf("   • URL: %s\n", innominatusURL2)
 	fmt.Println("   • Login Methods:")
-	fmt.Println("     - SSO: http://localhost:8081/auth/oidc/login (demo-user / password123)")
+	fmt.Printf("     - SSO: %s/auth/oidc/login (demo-user / password123)\n", innominatusURL2)
 	fmt.Println("     - Local: users.yaml configuration")
 	fmt.Println("   • Enable OIDC: Set OIDC_ENABLED=true environment variable")
 	fmt.Println()
