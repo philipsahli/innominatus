@@ -1372,6 +1372,115 @@ func (c *Client) revokeAPIKeyCommand(user *users.User, args []string) error {
 	return nil
 }
 
+// LoginCommand authenticates the user, generates an API key, and stores it locally
+func (c *Client) LoginCommand(args []string) error {
+	fs := flag.NewFlagSet("login", flag.ContinueOnError)
+	keyName := fs.String("name", "", "Name for the API key (default: cli-<hostname>-<timestamp>)")
+	expiryDays := fs.Int("expiry-days", 90, "Number of days until API key expiry")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	// Prompt for username and password
+	user, err := users.PromptLogin()
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Authenticate with server to get session token
+	err = c.Login(user.Username, user.Password)
+	if err != nil {
+		return fmt.Errorf("server authentication failed: %w", err)
+	}
+
+	fmt.Printf("✓ Authenticated as %s (%s, %s)\n", user.Username, user.Team, user.Role)
+
+	// Generate default key name if not provided
+	if *keyName == "" {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "unknown"
+		}
+		*keyName = fmt.Sprintf("cli-%s-%d", hostname, time.Now().Unix())
+	}
+
+	// Generate API key via the API
+	req := map[string]interface{}{
+		"name":        *keyName,
+		"expiry_days": *expiryDays,
+	}
+
+	var resp map[string]interface{}
+	err = c.http.POST("/api/profile/api-keys", req, &resp)
+	if err != nil {
+		return fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Extract API key from response
+	apiKey, ok := resp["key"].(string)
+	if !ok || apiKey == "" {
+		return fmt.Errorf("server did not return API key")
+	}
+
+	// Parse timestamps
+	createdAtStr, _ := resp["created_at"].(string)
+	expiresAtStr, _ := resp["expires_at"].(string)
+
+	createdAt, _ := time.Parse(time.RFC3339, createdAtStr)
+	expiresAt, _ := time.Parse(time.RFC3339, expiresAtStr)
+
+	// Save credentials to file
+	creds := &Credentials{
+		ServerURL: c.baseURL,
+		Username:  user.Username,
+		APIKey:    apiKey,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		KeyName:   *keyName,
+	}
+
+	err = SaveCredentials(creds)
+	if err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	credPath, _ := GetCredentialsPath()
+	fmt.Printf("✓ Generated API key '%s'\n", *keyName)
+	fmt.Printf("✓ Expires: %s\n", expiresAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("✓ Credentials saved to: %s\n", credPath)
+	fmt.Printf("\nYou can now use the CLI without authentication prompts.\n")
+	fmt.Printf("To logout, run: %s logout\n", os.Args[0])
+
+	return nil
+}
+
+// LogoutCommand removes the locally stored credentials
+func (c *Client) LogoutCommand() error {
+	// Check if credentials exist
+	credPath, err := GetCredentialsPath()
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(credPath); os.IsNotExist(err) {
+		fmt.Println("No credentials found. You are not logged in.")
+		return nil
+	}
+
+	// Remove credentials file
+	err = ClearCredentials()
+	if err != nil {
+		return fmt.Errorf("failed to clear credentials: %w", err)
+	}
+
+	fmt.Println("✓ Logged out successfully")
+	fmt.Printf("✓ Removed credentials from: %s\n", credPath)
+	fmt.Printf("\nTo login again, run: %s login\n", os.Args[0])
+
+	return nil
+}
+
 // ListResourcesCommand lists all resource instances with optional filtering by application
 func (c *Client) ListResourcesCommand(appName string) error {
 	resources, err := c.ListResources(appName)

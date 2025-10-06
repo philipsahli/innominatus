@@ -22,9 +22,21 @@ func NewClient(baseURL string) *Client {
 	}
 
 	token := ""
-	// Check for API key in environment variable
+	// Priority order for API key:
+	// 1. Environment variable (highest priority - for CI/CD)
+	// 2. Credentials file ($HOME/.idp-o/credentials)
+	// 3. No API key (will prompt for login when needed)
+
 	if apiKey := os.Getenv("IDP_API_KEY"); apiKey != "" {
+		// Environment variable takes precedence
 		token = apiKey
+	} else {
+		// Try to load from credentials file
+		creds, err := LoadCredentials()
+		if err == nil && creds != nil {
+			token = creds.APIKey
+		}
+		// If no credentials or error loading, token remains empty
 	}
 
 	client := &Client{

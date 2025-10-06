@@ -33,6 +33,8 @@ func main() {
 		"demo-time":        true,
 		"demo-nuke":        true,
 		"demo-status":      true,
+		"login":            true,
+		"logout":           true,
 	}
 
 	// Run fast configuration validation for server commands (skip local commands)
@@ -294,6 +296,14 @@ func main() {
 		appName := flag.Args()[1]
 		err = client.GraphStatusCommand(appName)
 
+	case "login":
+		// Login command - authenticate and store credentials
+		err = client.LoginCommand(flag.Args()[1:])
+
+	case "logout":
+		// Logout command - remove stored credentials
+		err = client.LogoutCommand()
+
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n", command)
 		printUsage()
@@ -324,6 +334,8 @@ func printUsage() {
 	fmt.Printf("  graph-status <app>    Show workflow graph status and statistics\n")
 	fmt.Printf("  list-goldenpaths      List available golden paths\n")
 	fmt.Printf("  run <path> [spec]     Run a golden path workflow\n")
+	fmt.Printf("  login [options]       Authenticate and store API key locally\n")
+	fmt.Printf("  logout                Remove stored credentials\n")
 	fmt.Printf("  admin <command>       Admin commands (requires admin role)\n")
 	fmt.Printf("    show                Show admin configuration\n")
 	fmt.Printf("    add-user            Add new user\n")
@@ -360,6 +372,9 @@ func printUsage() {
 	fmt.Printf("  %s demo-time -component gitea,argocd\n", os.Args[0])
 	fmt.Printf("  %s demo-status\n", os.Args[0])
 	fmt.Printf("  %s demo-nuke\n", os.Args[0])
+	fmt.Printf("  %s login\n", os.Args[0])
+	fmt.Printf("  %s login --name my-laptop --expiry-days 30\n", os.Args[0])
+	fmt.Printf("  %s logout\n", os.Args[0])
 	fmt.Printf("  %s admin show\n", os.Args[0])
 	fmt.Printf("  %s admin add-user --username bob --password secret --team dev --role user\n", os.Args[0])
 	fmt.Printf("  %s admin list-users\n", os.Args[0])
