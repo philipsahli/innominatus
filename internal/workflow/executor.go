@@ -676,6 +676,20 @@ func (e *WorkflowExecutor) executeStepGroupParallel(ctx context.Context, appName
 
 // executeSingleStep executes a single step with full database tracking
 func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string, step types.Step, execID int64, stepNumber int) error {
+	// Check dependencies before executing
+	if len(step.DependsOn) > 0 {
+		for _, depStepName := range step.DependsOn {
+			depStatus, found := e.execContext.GetStepStatus(depStepName)
+			if !found {
+				return fmt.Errorf("dependency %s not found for step %s", depStepName, step.Name)
+			}
+			if depStatus != "success" {
+				return fmt.Errorf("dependency %s did not complete successfully (status: %s) for step %s", depStepName, depStatus, step.Name)
+			}
+		}
+		fmt.Printf("      ✓ All dependencies satisfied for %s\n", step.Name)
+	}
+
 	// Check if step should be executed based on conditions
 	shouldExecute, skipReason := e.execContext.ShouldExecuteStep(step)
 	if !shouldExecute {
@@ -1010,7 +1024,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			}
 			// Capture outputs if specified
 			if len(outputNames) > 0 {
-				return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, appName)
+				return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, step)
 			}
 			return nil
 		case "destroy":
@@ -1019,7 +1033,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			}
 			return e.terraformDestroy(ctx, workspaceDir, variables)
 		case "output":
-			return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, appName)
+			return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, step)
 		default:
 			return fmt.Errorf("unsupported terraform operation: %s", operation)
 		}
@@ -1180,8 +1194,15 @@ func (e *WorkflowExecutor) terraformDestroy(ctx context.Context, workspaceDir st
 }
 
 // terraformCaptureOutputs captures terraform outputs and stores them
-func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspaceDir string, outputNames []string, appName string) error {
+func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspaceDir string, outputNames []string, step types.Step) error {
 	fmt.Printf("      📤 Capturing Terraform outputs\n")
+
+	// Determine resource name for storing outputs
+	// Priority: step.Resource > step.Name
+	resourceName := step.Resource
+	if resourceName == "" {
+		resourceName = step.Name
+	}
 
 	// Run terraform output -json
 	cmd := exec.CommandContext(ctx, "terraform", "output", "-json")
@@ -1197,13 +1218,17 @@ func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspac
 		return fmt.Errorf("failed to parse terraform outputs: %w", err)
 	}
 
-	// Extract specified outputs
+	// Extract specified outputs and store in execution context
 	for _, outputName := range outputNames {
 		if outputValue, ok := outputs[outputName]; ok {
 			if outputMap, ok := outputValue.(map[string]interface{}); ok {
 				if value, ok := outputMap["value"]; ok {
-					fmt.Printf("      📊 Output '%s': %v\n", outputName, value)
-					// TODO: Store outputs in workflow context or database for use in subsequent steps
+					valueStr := fmt.Sprintf("%v", value)
+					fmt.Printf("      📊 Output '%s': %s\n", outputName, valueStr)
+
+					// Store output in execution context for interpolation in subsequent steps
+					e.execContext.SetResourceOutput(resourceName, outputName, valueStr)
+					fmt.Printf("      ✓ Stored as ${resources.%s.%s}\n", resourceName, outputName)
 				}
 			}
 		} else {

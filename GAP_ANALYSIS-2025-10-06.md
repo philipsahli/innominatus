@@ -51,14 +51,26 @@ This gap analysis evaluates the innominatus platform orchestration component acr
   - Missing support for `service.ports` networking configuration
   - No support for Score resource types like `dns`, `route`, `topics`, `queues`
   - Limited validation of Score-native resource types
-  - No support for resource parameter interpolation (`${resources.db.host}`)
-  - No support for resource dependencies and ordering
-- **Impact:** HIGH - Developers cannot use standard Score features, limiting portability
-- **Priority:** P1 - High
+  - **PARTIALLY IMPLEMENTED:** Resource parameter interpolation (`${resources.db.host}`)
+    - ✅ Core interpolation engine supports `${resources.name.attr}` syntax (conditions.go:340-351)
+    - ✅ SetResourceOutput/GetResourceOutput functions exist and tested
+    - ✅ Unit tests pass for resource interpolation
+    - ✅ NOW WIRED: Terraform outputs captured and stored via SetResourceOutputs() (executor.go:1216)
+    - ✅ Resource name derived from step.Resource or step.Name fields
+  - **PARTIALLY IMPLEMENTED:** Resource dependencies and ordering
+    - ✅ DependsOn field exists in Step type
+    - ✅ Dependency analysis implemented (analyzer.go builds dependency graphs)
+    - ✅ NOW ENFORCED: Dependencies checked before step execution (executor.go:679-691)
+    - ✅ Steps wait for dependencies to complete successfully
+    - ⚠️ Integration tests needed for end-to-end validation
+- **Impact:** MEDIUM - Core functionality implemented but needs integration testing
+- **Priority:** P2 - Medium (downgraded from P1)
 - **Recommendation:**
-  - Implement full Score v1b1 specification support
+  - ✅ COMPLETED: Resource output interpolation in workflows
+  - ✅ COMPLETED: Resource dependency enforcement
+  - Add integration tests for end-to-end resource interpolation flow
+  - Implement full Score v1b1 specification support for remaining resource types
   - Add comprehensive validation for all Score resource types
-  - Support resource output interpolation in container environment variables
   - Create Score specification compliance test suite
   - Document Score specification deviations and extensions
 

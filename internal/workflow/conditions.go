@@ -58,6 +58,14 @@ func (ctx *ExecutionContext) SetStepStatus(stepName, status string) {
 	ctx.PreviousStepStatus[stepName] = status
 }
 
+// GetStepStatus retrieves the status of a previously executed step
+func (ctx *ExecutionContext) GetStepStatus(stepName string) (string, bool) {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
+	status, found := ctx.PreviousStepStatus[stepName]
+	return status, found
+}
+
 // SetStepOutputs records multiple outputs from a completed step
 func (ctx *ExecutionContext) SetStepOutputs(stepName string, outputs map[string]string) {
 	ctx.mu.Lock()
