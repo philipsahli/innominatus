@@ -425,6 +425,51 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // AI Assistant
+  async getAIStatus(): Promise<ApiResponse<AIStatusResponse>> {
+    return this.request<AIStatusResponse>('/ai/status');
+  }
+
+  async sendAIChat(message: string, context?: string): Promise<ApiResponse<AIChatResponse>> {
+    return this.request('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, context }),
+    });
+  }
+
+  async generateSpec(
+    description: string,
+    metadata?: Record<string, string>
+  ): Promise<ApiResponse<AIGenerateSpecResponse>> {
+    return this.request('/ai/generate-spec', {
+      method: 'POST',
+      body: JSON.stringify({ description, metadata }),
+    });
+  }
+}
+
+export interface AIStatusResponse {
+  enabled: boolean;
+  llm_provider: string;
+  documents_loaded: number;
+  status: string;
+  message?: string;
+}
+
+export interface AIChatResponse {
+  message: string;
+  generated_spec?: string;
+  citations?: string[];
+  tokens_used?: number;
+  timestamp: string;
+}
+
+export interface AIGenerateSpecResponse {
+  spec: string;
+  explanation: string;
+  citations?: string[];
+  tokens_used?: number;
 }
 
 export const api = new ApiClient();

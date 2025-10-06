@@ -35,6 +35,7 @@ func main() {
 		"demo-status":      true,
 		"login":            true,
 		"logout":           true,
+		"chat":             true, // AI assistant chat
 	}
 
 	// Run fast configuration validation for server commands (skip local commands)
@@ -304,6 +305,33 @@ func main() {
 		// Logout command - remove stored credentials
 		err = client.LogoutCommand()
 
+	case "chat":
+		// AI chat command - interactive chat or one-shot question
+		args := flag.Args()[1:]
+		if len(args) == 0 {
+			// Interactive chat mode
+			err = ChatCommand()
+		} else {
+			// Check for flags
+			chatFlags := flag.NewFlagSet("chat", flag.ExitOnError)
+			oneShotFlag := chatFlags.String("one-shot", "", "Ask a single question and exit")
+			generateSpecFlag := chatFlags.String("generate-spec", "", "Generate a Score spec from description")
+			outputFlag := chatFlags.String("o", "spec.yaml", "Output file for generated spec")
+			if err := chatFlags.Parse(args); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing chat flags: %v\n", err)
+				os.Exit(1)
+			}
+
+			if *oneShotFlag != "" {
+				err = OneShotCommand(*oneShotFlag)
+			} else if *generateSpecFlag != "" {
+				err = GenerateSpecCommand(*generateSpecFlag, *outputFlag)
+			} else {
+				// Default: interactive chat
+				err = ChatCommand()
+			}
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n", command)
 		printUsage()
@@ -336,6 +364,10 @@ func printUsage() {
 	fmt.Printf("  run <path> [spec]     Run a golden path workflow\n")
 	fmt.Printf("  login [options]       Authenticate and store API key locally\n")
 	fmt.Printf("  logout                Remove stored credentials\n")
+	fmt.Printf("  chat                  Interactive AI assistant chat\n")
+	fmt.Printf("    --one-shot <q>      Ask a single question and exit\n")
+	fmt.Printf("    --generate-spec <d> Generate Score spec from description\n")
+	fmt.Printf("    -o <file>           Output file for generated spec (default: spec.yaml)\n")
 	fmt.Printf("  admin <command>       Admin commands (requires admin role)\n")
 	fmt.Printf("    show                Show admin configuration\n")
 	fmt.Printf("    add-user            Add new user\n")
@@ -375,6 +407,9 @@ func printUsage() {
 	fmt.Printf("  %s login\n", os.Args[0])
 	fmt.Printf("  %s login --name my-laptop --expiry-days 30\n", os.Args[0])
 	fmt.Printf("  %s logout\n", os.Args[0])
+	fmt.Printf("  %s chat\n", os.Args[0])
+	fmt.Printf("  %s chat --one-shot \"How do I deploy a Node.js app?\"\n", os.Args[0])
+	fmt.Printf("  %s chat --generate-spec \"Python FastAPI app with Redis\" -o my-app.yaml\n", os.Args[0])
 	fmt.Printf("  %s admin show\n", os.Args[0])
 	fmt.Printf("  %s admin add-user --username bob --password secret --team dev --role user\n", os.Args[0])
 	fmt.Printf("  %s admin list-users\n", os.Args[0])

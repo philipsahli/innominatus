@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"innominatus/internal/admin"
+	"innominatus/internal/ai"
 	"innominatus/internal/database"
 	"innominatus/internal/logging"
 	"innominatus/internal/metrics"
@@ -119,6 +120,17 @@ func main() {
 		srv = server.NewServer()
 	}
 
+	// Initialize AI service (optional - continues without AI if not configured)
+	aiService, err := ai.NewServiceFromEnv(context.Background())
+	if err != nil {
+		logger.WarnWithFields("Failed to initialize AI service", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else if aiService.IsEnabled() {
+		srv.SetAIService(aiService)
+		logger.Info("AI assistant service initialized successfully")
+	}
+
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
 	withTrace := func(h http.HandlerFunc) http.HandlerFunc {
 		return srv.TracingMiddleware(srv.TraceIDMiddleware(srv.LoggingMiddleware(h)))
@@ -208,6 +220,14 @@ func main() {
 
 	// Golden path workflow execution API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/workflows/golden-paths/", withTraceCORSAuth(srv.HandleGoldenPathExecution))
+
+	// AI Assistant API routes (with trace ID, logging, CORS, and authentication)
+	if aiService != nil && aiService.IsEnabled() {
+		http.HandleFunc("/api/ai/chat", withTraceCORSAuth(aiService.HandleChat))
+		http.HandleFunc("/api/ai/generate-spec", withTraceCORSAuth(aiService.HandleGenerateSpec))
+		http.HandleFunc("/api/ai/status", withTraceCORS(aiService.HandleStatus))
+		logger.Info("AI assistant API routes registered")
+	}
 
 	// Swagger API documentation routes (with trace ID and logging)
 	http.HandleFunc("/swagger", withTrace(srv.HandleSwagger))

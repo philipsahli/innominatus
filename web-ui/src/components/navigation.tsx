@@ -30,6 +30,7 @@ import {
   Boxes,
   Plug,
   UsersRound,
+  Bot,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -99,6 +100,11 @@ const userNavigation: NavItem[] = [
     href: '/profile',
     label: 'Profile',
     icon: User,
+  },
+  {
+    href: '/ai-assistant',
+    label: 'AI Assistant',
+    icon: Bot,
   },
   {
     href: '/docs',

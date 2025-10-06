@@ -35,6 +35,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// AIService interface for AI assistant functionality
+type AIService interface {
+	HandleChat(w http.ResponseWriter, r *http.Request)
+	HandleGenerateSpec(w http.ResponseWriter, r *http.Request)
+	HandleStatus(w http.ResponseWriter, r *http.Request)
+	IsEnabled() bool
+}
+
 // LogBuffer captures command output for workflow step logging
 type LogBuffer struct {
 	buffer strings.Builder
@@ -115,6 +123,7 @@ type Server struct {
 	healthChecker     *health.HealthChecker
 	rateLimiter       *RateLimiter
 	graphAdapter      *graph.Adapter
+	aiService         AIService // AI assistant service (optional)
 	loginAttempts     map[string][]time.Time
 	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -124,6 +133,11 @@ type Server struct {
 	// Workflow scheduler for periodic execution
 	workflowTicker *time.Ticker
 	stopScheduler  chan struct{}
+}
+
+// SetAIService sets the AI service for the server
+func (s *Server) SetAIService(aiSvc AIService) {
+	s.aiService = aiSvc
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
