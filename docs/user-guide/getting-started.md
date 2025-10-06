@@ -2,6 +2,8 @@
 
 **Your Platform Team has already set up innominatus for you.** This guide will help you start deploying applications.
 
+**⏱️ Time to Success: 15 minutes**
+
 ---
 
 ## What You Have
@@ -12,7 +14,7 @@
 
 ---
 
-## Step 1: Get Access
+## Step 1: Get Access (2 minutes)
 
 ### Option A: SSO Login (Web UI)
 
@@ -40,19 +42,36 @@ echo "api_key: your-api-key-here" > ~/.innominatus/config.yaml
 
 ---
 
-## Step 2: Install the CLI
+## Step 2: Install the CLI (2 minutes)
 
-### Download from Platform Portal
+### Option A: Download from Platform Portal (Recommended)
 
-Your Platform Team provides a download link for the `innominatus-ctl` CLI:
+Your Platform Team typically provides a download link:
 
 ```bash
-# Example (ask your Platform Team for actual URL)
+# Ask Platform Team for the specific download URL, usually:
 curl -L https://platform.company.com/downloads/innominatus-ctl -o innominatus-ctl
 chmod +x innominatus-ctl
-
-# Move to PATH
 sudo mv innominatus-ctl /usr/local/bin/
+```
+
+### Option B: GitHub Releases
+
+If your Platform Team hasn't set up a portal yet:
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/philipsahli/innominatus/releases/latest/download/innominatus-ctl_darwin_arm64.tar.gz -o innominatus-ctl.tar.gz
+tar -xzf innominatus-ctl.tar.gz
+sudo mv innominatus-ctl /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/philipsahli/innominatus/releases/latest/download/innominatus-ctl_darwin_amd64.tar.gz -o innominatus-ctl.tar.gz
+
+# Linux (AMD64)
+curl -L https://github.com/philipsahli/innominatus/releases/latest/download/innominatus-ctl_linux_amd64.tar.gz -o innominatus-ctl.tar.gz
+
+# Windows: Download .zip from releases page
 ```
 
 ### Verify Installation
@@ -64,7 +83,7 @@ innominatus-ctl --version
 
 ---
 
-## Step 3: Configure the CLI
+## Step 3: Configure the CLI (1 minute)
 
 Tell the CLI where your innominatus platform is:
 
@@ -82,7 +101,7 @@ EOF
 
 ---
 
-## Step 4: Test Your Setup
+## Step 4: Test Your Setup (1 minute)
 
 ```bash
 # List deployed applications (should return empty list if you haven't deployed anything)
@@ -96,7 +115,7 @@ If this works, you're ready to deploy! 🚀
 
 ---
 
-## Step 5: Your First Deployment
+## Step 5: Your First Deployment (5 minutes)
 
 Create a simple Score specification:
 
@@ -130,24 +149,83 @@ Output:
 ```
 🚀 Starting deployment: my-first-app
 
-[1/5] ✓ validate-spec - 0.5s
-[2/5] ✓ provision-namespace - 1.2s
-[3/5] ✓ deploy-application - 2.1s
-[4/5] ✓ health-check - 3.0s
-[5/5] ✓ register-app - 0.3s
+Workflow: deploy-app (6 steps)
+═══════════════════════════════════════
 
-✅ Deployed successfully in 7.1 seconds!
-🔗 https://my-first-app.yourcompany.com
+[1/6] ✓ validate-spec          (0.5s)
+      Validating Score specification...
+      ✓ Valid Score spec v1b1
+
+[2/6] ✓ create-namespace        (1.2s)
+      Creating Kubernetes namespace: my-first-app
+      ✓ Namespace created
+
+[3/6] ✓ provision-resources     (2.1s)
+      Creating ingress route...
+      ✓ Route configured: my-first-app.yourcompany.com
+
+[4/6] ✓ deploy-application      (3.8s)
+      Deploying container: nginx:latest
+      ✓ Deployment successful
+
+[5/6] ✓ health-check            (2.3s)
+      Waiting for pods to be ready...
+      ✓ 1/1 pods healthy
+
+[6/6] ✓ register-application    (0.4s)
+      Registering with platform...
+      ✓ Registered
+
+═══════════════════════════════════════
+✅ Deployment completed successfully!
+⏱  Total time: 10.3 seconds
+
+🌐 Your application is available at:
+   https://my-first-app.yourcompany.com
+
+📊 View status:    innominatus-ctl status my-first-app
+📜 View logs:      innominatus-ctl logs my-first-app
+🗑️  Delete app:     innominatus-ctl delete my-first-app
 ```
 
 **🎉 SUCCESS!** Visit the URL and see your app running!
 
-**What just happened:**
-- Created Kubernetes namespace
-- Deployed nginx container
-- Configured ingress route
-- Verified health checks
-- All done automatically by innominatus!
+---
+
+## What Just Happened?
+
+innominatus orchestrated multiple platform operations that would normally require manual setup:
+
+```mermaid
+graph TB
+    A[Your Score Spec<br/>10 lines YAML] -->|innominatus| B[Workflow Orchestration]
+    B --> C[Kubernetes Namespace<br/>Created]
+    B --> D[nginx Container<br/>Deployed]
+    B --> E[Ingress Route<br/>Configured]
+    B --> F[Health Checks<br/>Verified]
+    C & D & E & F --> G[🎉 Live Application]
+
+    style A fill:#e1f5ff
+    style G fill:#d4f4dd
+    style B fill:#fff3cd
+```
+
+**You wrote:** 10 lines of Score specification
+
+**innominatus automated:**
+- ✅ Kubernetes namespace creation
+- ✅ Deployment manifest generation
+- ✅ Ingress/route configuration
+- ✅ Health check setup
+- ✅ Platform registration
+
+**You didn't need to:**
+- ❌ Write Kubernetes YAML (40+ lines saved)
+- ❌ Configure kubectl contexts
+- ❌ Manage ingress controllers
+- ❌ Set up monitoring/health checks
+
+**This is platform orchestration!** 🚀
 
 ---
 
