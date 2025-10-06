@@ -199,17 +199,23 @@ steps:
     when: always
 ```
 
-## Examples
+## Workflow Developer Guide
 
-See the [examples directory](../examples/) for real-world workflows:
+For comprehensive documentation on all workflow capabilities, see the **[Workflow Developer Guide](workflow-developer-guide.md)** which covers:
 
-- [Basic Workflow](../examples/basic-workflow.md)
-- [Database Provisioning](../examples/database.md)
-- [Multi-Region Deployment](../examples/multi-region.md)
-- [GitOps Integration](../examples/gitops.md)
+- **Step Types** - Terraform, Kubernetes, Ansible, Validation, Monitoring
+- **Variable Interpolation** - Workflow variables, step outputs, resource outputs
+- **Conditional Execution** - if/unless conditions, when clauses, comparison operators
+- **Parallel Execution** - Parallel steps and groups for performance
+- **Step Dependencies** - Explicit dependency management with DependsOn
+- **Output Capture** - Capture and reuse outputs between steps
+- **Error Handling** - Rollback strategies and cleanup patterns
+- **Best Practices** - Production-ready workflow patterns
 
 ## Next Steps
 
+- Read the complete **[Workflow Developer Guide](workflow-developer-guide.md)**
 - Learn about [Golden Paths](golden-paths.md)
 - Explore [Conditional Execution](../features/conditional-execution.md)
 - Read about [Variable Context](../features/context-variables.md)
+- Review [Parallel Execution](../features/parallel-execution.md)

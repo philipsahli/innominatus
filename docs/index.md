@@ -126,6 +126,16 @@ Trigger workflows from Git repositories and integrate with ArgoCD.
 | [Monitoring](platform-team-guide/monitoring.md) | Prometheus, Grafana, health checks |
 | [Operations](platform-team-guide/operations.md) | Scaling, backup, troubleshooting |
 
+### For Workflow Developers
+
+| Guide | Description |
+|-------|-------------|
+| [Workflow Developer Guide](guides/workflow-developer-guide.md) | Complete reference for building workflows |
+| [Workflows](guides/workflows.md) | Introduction to workflow concepts |
+| [Conditional Execution](features/conditional-execution.md) | if/unless/when conditions |
+| [Parallel Execution](features/parallel-execution.md) | Run steps concurrently |
+| [Context & Variables](features/context-variables.md) | Variable interpolation and outputs |
+
 ### For Contributors
 
 | Guide | Description |
