@@ -147,11 +147,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Usage: %s admin <show|add-user|list-users|delete-user>\n", os.Args[0])
 			os.Exit(1)
 		}
-		if user == nil {
-			fmt.Fprintf(os.Stderr, "Error: admin command requires authentication\n")
-			os.Exit(1)
-		}
-		err = client.AdminCommand(user, flag.Args()[1:])
+		err = client.AdminCommand(flag.Args()[1:])
 
 	case "list-goldenpaths":
 		err = client.ListGoldenPathsCommand()

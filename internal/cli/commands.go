@@ -347,11 +347,7 @@ func (c *Client) DeprovisionCommand(name string) error {
 	return nil
 }
 
-func (c *Client) AdminCommand(user *users.User, args []string) error {
-	if !user.IsAdmin() {
-		return fmt.Errorf("access denied: admin role required")
-	}
-
+func (c *Client) AdminCommand(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("admin command requires a subcommand")
 	}
@@ -381,13 +377,13 @@ func (c *Client) AdminCommand(user *users.User, args []string) error {
 		return c.deleteUserCommand(args[1])
 
 	case "generate-api-key":
-		return c.generateAPIKeyCommand(user, args[1:])
+		return c.generateAPIKeyCommand(args[1:])
 
 	case "list-api-keys":
-		return c.listAPIKeysCommand(user, args[1:])
+		return c.listAPIKeysCommand(args[1:])
 
 	case "revoke-api-key":
-		return c.revokeAPIKeyCommand(user, args[1:])
+		return c.revokeAPIKeyCommand(args[1:])
 
 	default:
 		return fmt.Errorf("unknown admin subcommand '%s'. Available: show, add-user, list-users, delete-user, generate-api-key, list-api-keys, revoke-api-key", subcommand)
@@ -1236,9 +1232,9 @@ func (c *Client) displayWorkflowSummary(workflows []interface{}, appName string)
 }
 
 // generateAPIKeyCommand generates a new API key for a user
-func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
+func (c *Client) generateAPIKeyCommand(args []string) error {
 	fs := flag.NewFlagSet("generate-api-key", flag.ContinueOnError)
-	username := fs.String("username", "", "Username to generate API key for")
+	username := fs.String("username", "", "Username to generate API key for (required)")
 	keyName := fs.String("name", "", "Name for the API key")
 	expiryDays := fs.Int("expiry-days", 0, "Number of days until expiry (required, must be > 0)")
 
@@ -1246,11 +1242,8 @@ func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
 		return err
 	}
 
-	// Default to current user if not admin
 	if *username == "" {
-		*username = user.Username
-	} else if !user.IsAdmin() && *username != user.Username {
-		return fmt.Errorf("access denied: only admins can generate API keys for other users")
+		return fmt.Errorf("--username is required")
 	}
 
 	if *keyName == "" {
@@ -1284,19 +1277,16 @@ func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
 }
 
 // listAPIKeysCommand lists API keys for a user
-func (c *Client) listAPIKeysCommand(user *users.User, args []string) error {
+func (c *Client) listAPIKeysCommand(args []string) error {
 	fs := flag.NewFlagSet("list-api-keys", flag.ContinueOnError)
-	username := fs.String("username", "", "Username to list API keys for")
+	username := fs.String("username", "", "Username to list API keys for (required)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	// Default to current user if not admin
 	if *username == "" {
-		*username = user.Username
-	} else if !user.IsAdmin() && *username != user.Username {
-		return fmt.Errorf("access denied: only admins can list API keys for other users")
+		return fmt.Errorf("--username is required")
 	}
 
 	store, err := users.LoadUsers()
@@ -1338,20 +1328,17 @@ func (c *Client) listAPIKeysCommand(user *users.User, args []string) error {
 }
 
 // revokeAPIKeyCommand revokes an API key
-func (c *Client) revokeAPIKeyCommand(user *users.User, args []string) error {
+func (c *Client) revokeAPIKeyCommand(args []string) error {
 	fs := flag.NewFlagSet("revoke-api-key", flag.ContinueOnError)
-	username := fs.String("username", "", "Username to revoke API key for")
+	username := fs.String("username", "", "Username to revoke API key for (required)")
 	keyName := fs.String("name", "", "Name of the API key to revoke")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	// Default to current user if not admin
 	if *username == "" {
-		*username = user.Username
-	} else if !user.IsAdmin() && *username != user.Username {
-		return fmt.Errorf("access denied: only admins can revoke API keys for other users")
+		return fmt.Errorf("--username is required")
 	}
 
 	if *keyName == "" {
