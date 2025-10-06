@@ -320,17 +320,257 @@ optional_params:
   namespace_suffix: prod
 ```
 
+## Parameter Validation
+
+### Overview
+
+The Golden Paths parameter validation framework provides comprehensive type checking and constraint enforcement for parameters passed to golden path workflows.
+
+### Parameter Schema Format
+
+**Basic Schema Structure:**
+
+```yaml
+goldenpaths:
+  example-path:
+    workflow: ./workflows/example.yaml
+    description: Example golden path
+    parameters:
+      param_name:
+        type: string              # Parameter type
+        default: default_value    # Default value (optional)
+        description: Description  # Help text for users
+        required: false           # Whether parameter is required
+```
+
+### Supported Types
+
+#### 1. String
+
+```yaml
+app_name:
+  type: string
+  default: ""
+  description: Application name
+  pattern: '^[a-z][a-z0-9\-]*$'  # Optional regex pattern
+  allowed_values: []             # Optional enum-like restriction
+```
+
+**Example usage:**
+```bash
+./innominatus-ctl run deploy-app score.yaml --param app_name=my-app-123
+```
+
+#### 2. Integer
+
+```yaml
+replicas:
+  type: int
+  default: "1"
+  description: Number of replicas
+  min: 1    # Optional minimum value
+  max: 10   # Optional maximum value
+```
+
+**Example usage:**
+```bash
+./innominatus-ctl run ephemeral-env score.yaml --param replicas=3
+```
+
+#### 3. Boolean
+
+```yaml
+enable_monitoring:
+  type: bool
+  default: "false"
+  description: Enable monitoring stack
+```
+
+**Valid values:** `true`, `false`, `yes`, `no`, `1`, `0`, `on`, `off` (case-insensitive)
+
+**Example usage:**
+```bash
+./innominatus-ctl run observability-setup --param enable_monitoring=true
+```
+
+#### 4. Duration
+
+```yaml
+ttl:
+  type: duration
+  default: 2h
+  description: Time-to-live for ephemeral environment
+  pattern: '^\d+[hmd]$'  # Optional: restrict to hours, minutes, days
+```
+
+**Valid values:** Go duration format: `2h`, `30m`, `90s`, `1h30m`, extended formats: `7d` (days), `2w` (weeks)
+
+**Example usage:**
+```bash
+./innominatus-ctl run ephemeral-env score.yaml --param ttl=4h
+```
+
+#### 5. Enum
+
+```yaml
+environment_type:
+  type: enum
+  default: preview
+  description: Type of environment
+  allowed_values: [preview, staging, development, testing]
+```
+
+**Example usage:**
+```bash
+./innominatus-ctl run ephemeral-env score.yaml --param environment_type=staging
+```
+
+### Complete Example with Validation
+
+```yaml
+goldenpaths:
+  ephemeral-env:
+    workflow: ./workflows/ephemeral-env.yaml
+    description: Create temporary environment for testing
+    category: environment
+    tags: [testing, ephemeral, preview]
+    estimated_duration: 3-7 minutes
+    parameters:
+      ttl:
+        type: duration
+        default: 2h
+        description: Time-to-live for ephemeral environment
+        pattern: '^\d+[hmd]$'
+      environment_type:
+        type: enum
+        default: preview
+        description: Type of ephemeral environment to create
+        allowed_values: [preview, staging, development, testing]
+      replicas:
+        type: int
+        default: "1"
+        description: Number of application replicas
+        min: 1
+        max: 10
+      enable_monitoring:
+        type: bool
+        default: "false"
+        description: Enable monitoring and observability stack
+      namespace_prefix:
+        type: string
+        default: ""
+        description: Optional prefix for namespace
+        pattern: '^[a-z0-9\-]*$'
+```
+
+### Validation Error Messages
+
+**Invalid duration format:**
+```
+❌ Parameter validation failed for 'ephemeral-env'
+   Parameter:       ttl
+   Provided Value:  2x
+   Expected Type:   duration
+   Constraint:      invalid duration format
+   Suggestion:      use format like: 2h, 30m, 90s, 7d
+```
+
+**Integer out of range:**
+```
+❌ Parameter validation failed for 'ephemeral-env'
+   Parameter:       replicas
+   Provided Value:  15
+   Expected Type:   int
+   Constraint:      value must be <= 10
+```
+
+**Invalid enum value:**
+```
+❌ Parameter validation failed for 'ephemeral-env'
+   Parameter:       environment_type
+   Provided Value:  production
+   Expected Type:   enum
+   Constraint:      value must be one of: preview, staging, development, testing
+```
+
+### Migration from Legacy Format
+
+**Old format (deprecated but still supported):**
+
+```yaml
+goldenpaths:
+  ephemeral-env:
+    workflow: ./workflows/ephemeral-env.yaml
+    required_params: []
+    optional_params:
+      ttl: 2h
+      environment_type: preview
+```
+
+**New format with validation:**
+
+```yaml
+goldenpaths:
+  ephemeral-env:
+    workflow: ./workflows/ephemeral-env.yaml
+    parameters:
+      ttl:
+        type: duration
+        default: 2h
+        pattern: '^\d+[hmd]$'
+      environment_type:
+        type: enum
+        default: preview
+        allowed_values: [preview, staging, development, testing]
+```
+
+**Backward Compatibility:**
+- If `parameters` is defined, it takes precedence
+- If `parameters` is empty/undefined, falls back to `required_params` and `optional_params`
+- Both formats can coexist during migration
+
+### Common Validation Patterns
+
+**DNS-safe names:**
+```yaml
+pattern: '^[a-z][a-z0-9\-]*[a-z0-9]$'
+```
+
+**Semantic versioning:**
+```yaml
+pattern: '^v?\d+\.\d+\.\d+$'
+```
+
+**Duration (hours/minutes/days only):**
+```yaml
+pattern: '^\d+[hmd]$'
+```
+
+**Email address:**
+```yaml
+pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+```
+
+---
+
 ## Future Enhancements
 
 Planned improvements:
 
-1. **Parameter Types**: Validate parameter types (string, int, bool, enum)
-2. **Parameter Constraints**: Min/max values, regex patterns
-3. **Conditional Parameters**: Parameters that depend on other parameters
-4. **Parameter Documentation**: Help text for each parameter
-5. **Web UI Integration**: Form-based parameter input in web interface
-6. **Parameter Templates**: Reusable parameter sets across golden paths
+1. ✅ **Parameter Types** - String, int, bool, duration, enum (implemented)
+2. ✅ **Parameter Constraints** - Min/max values, regex patterns (implemented)
+3. **Conditional Parameters** - Parameters that depend on other parameters
+4. ✅ **Parameter Documentation** - Help text for each parameter (implemented)
+5. **Web UI Integration** - Form-based parameter input in web interface
+6. **Parameter Templates** - Reusable parameter sets across golden paths
 
 ---
 
-*Last updated: 2025-01-15*
+**See Also:**
+- [CLI Overview](README.md)
+- [Output Formatting](output-formatting.md)
+- [User Guide](../user-guide/README.md)
+
+---
+
+*Last updated: 2025-10-06*

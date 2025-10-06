@@ -101,6 +101,11 @@ const userNavigation: NavItem[] = [
     icon: User,
   },
   {
+    href: '/docs',
+    label: 'Documentation',
+    icon: BookOpen,
+  },
+  {
     href: 'http://localhost:8081/swagger-user',
     label: 'API Docs',
     icon: FileText,

@@ -252,6 +252,11 @@ innominatus-ctl delete my-first-app
 
 ## What's Next?
 
+**Deploy Real Applications:**
+- **[Node.js + PostgreSQL Recipe](recipes/nodejs-postgres.md)** - Production-ready API with database (15 min)
+- **[All Recipes](recipes/README.md)** - Browse real-world deployment examples
+
+**Learn More:**
 - **[First Deployment](first-deployment.md)** - Detailed walkthrough with troubleshooting
 - **[CLI Reference](cli-reference.md)** - Complete command documentation
 - **[Troubleshooting](troubleshooting.md)** - Fix common issues

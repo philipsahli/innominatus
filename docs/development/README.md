@@ -41,6 +41,7 @@ go test ./...
 | **[Building](building.md)** | Build from source |
 | **[Architecture](architecture.md)** | System architecture |
 | **[Testing](testing.md)** | Running tests |
+| **[Graph Integration](graph-integration.md)** | Workflow graph visualization and analysis |
 
 ---
 

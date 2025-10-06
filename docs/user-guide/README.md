@@ -19,7 +19,7 @@ innominatus is a **platform orchestration service** that your Platform Team mana
 
 **What you need:**
 - ✅ Access credentials from your Platform Team
-- ✅ The `innominatus-ctl` CLI tool (download from your platform portal)
+- ✅ The **innominatus-ctl** CLI tool (download from your platform portal)
 - ✅ A Score specification for your application
 
 ---
@@ -29,7 +29,7 @@ innominatus is a **platform orchestration service** that your Platform Team mana
 ### 1. Get Your Credentials
 
 Contact your Platform Team to get:
-- **Platform URL**: `https://innominatus.yourcompany.com`
+- **Platform URL**: https://innominatus.yourcompany.com
 - **API Key**: Generate via Web UI → Profile → API Keys
 
 ### 2. Install the CLI
@@ -52,10 +52,15 @@ See the [First Deployment Guide](first-deployment.md) for a complete walkthrough
 
 | Guide | Description |
 |-------|-------------|
-| **[Getting Started](getting-started.md)** | First steps with innominatus |
+| **[Getting Started](getting-started.md)** | First steps with innominatus - connect, install CLI, deploy |
 | **[First Deployment](first-deployment.md)** | Deploy your first app in 5 minutes |
 | **[CLI Reference](cli-reference.md)** | Complete CLI command reference |
+| **[Recipes](recipes/README.md)** | Real-world deployment examples (Node.js, Python, etc.) |
 | **[Troubleshooting](troubleshooting.md)** | Common issues and solutions |
+
+### Featured Recipes
+
+**[Node.js API with PostgreSQL](recipes/nodejs-postgres.md)** - Deploy a production-ready REST API with database, Redis cache, and auto-scaling in 15 minutes.
 
 ---
 
@@ -97,7 +102,7 @@ innominatus-ctl delete my-app
 **Self-Service Resources:**
 - [Troubleshooting Guide](troubleshooting.md)
 - Platform documentation portal (ask your Platform Team for the link)
-- `innominatus-ctl --help`
+- CLI help: **innominatus-ctl --help**
 
 ---
 
@@ -130,10 +135,12 @@ Learn more at [score.dev](https://score.dev)
 
 ## Next Steps
 
-1. **[Getting Started](getting-started.md)** - Set up your environment
-2. **[First Deployment](first-deployment.md)** - Deploy your first app
-3. **[CLI Reference](cli-reference.md)** - Learn all CLI commands
-4. **[Troubleshooting](troubleshooting.md)** - Fix common issues
+1. **[Getting Started](getting-started.md)** - Set up your environment in 15 minutes
+2. **[First Deployment](first-deployment.md)** - Deploy your first app in 5 minutes
+3. **[Recipes](recipes/README.md)** - Real-world deployment examples
+   - [Node.js + PostgreSQL](recipes/nodejs-postgres.md) - Production-ready API with database
+4. **[CLI Reference](cli-reference.md)** - Learn all CLI commands
+5. **[Troubleshooting](troubleshooting.md)** - Fix common issues
 
 ---
 

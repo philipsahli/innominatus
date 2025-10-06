@@ -90,11 +90,14 @@ See [Operations Guide](operations.md) for monitoring and scaling.
 
 | Guide | Description |
 |-------|-------------|
-| **[Installation](installation.md)** | Docker, Kubernetes, Helm deployment |
+| **[Quick Install](quick-install.md)** | 🚀 Production-ready in 4 hours - recommended starting point |
+| **[Installation](installation.md)** | Docker, Kubernetes, Helm deployment (detailed) |
 | **[Configuration](configuration.md)** | OIDC, RBAC, secrets management |
 | **[Database](database.md)** | PostgreSQL setup and migrations |
-| **[Operations](operations.md)** | Monitoring, scaling, backup, troubleshooting |
-| **[Monitoring](monitoring.md)** | Prometheus metrics, Grafana dashboards |
+| **[Monitoring](monitoring.md)** | Prometheus metrics, Grafana dashboards, health checks |
+| **[Authentication](authentication.md)** | OIDC/SSO setup and API key management |
+| **[Security](security.md)** | API security and best practices |
+| **[Operations](operations.md)** | Scaling, backup, troubleshooting |
 
 ---
 
@@ -217,10 +220,16 @@ pg_dump -h $DB_HOST -U $DB_USER -d idp_orchestrator -F c -f backup.dump
 
 ## Next Steps
 
-1. **[Installation](installation.md)** - Deploy innominatus to your cluster
-2. **[Configuration](configuration.md)** - Set up OIDC and RBAC
-3. **[Database](database.md)** - Configure PostgreSQL for production
-4. **[Operations](operations.md)** - Monitor and scale your deployment
+**New to innominatus?**
+1. **[Quick Install](quick-install.md)** - Get production-ready in 4 hours ⚡
+2. **[Authentication](authentication.md)** - Set up OIDC/SSO for your organization
+3. **[Monitoring](monitoring.md)** - Configure Prometheus and Grafana
+4. **[Operations](operations.md)** - Learn to operate and scale
+
+**Already installed?**
+1. **[Configuration](configuration.md)** - Advanced configuration options
+2. **[Security](security.md)** - API security and best practices
+3. **[Database](database.md)** - Database tuning and optimization
 
 ---
 
