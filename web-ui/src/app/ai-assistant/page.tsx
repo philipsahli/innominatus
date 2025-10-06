@@ -143,6 +143,7 @@ export default function AIAssistantPage() {
           content: response.data.explanation,
           timestamp: new Date().toLocaleTimeString(),
           citations: response.data.citations,
+          spec: response.data.spec, // IMPORTANT: Store spec in message for conversation history!
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
