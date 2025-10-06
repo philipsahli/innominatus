@@ -1,0 +1,40 @@
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: test-graph-app
+  annotations:
+    score.humanitec.io/ttl: "1h"
+    score.humanitec.io/platform: "kubernetes"
+
+containers:
+  web:
+    image: nginx:latest
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+    variables:
+      POSTGRES_HOST: ${resources.database.host}
+      POSTGRES_PORT: ${resources.database.port}
+      POSTGRES_USER: ${resources.database.username}
+      POSTGRES_PASSWORD: ${resources.database.password}
+      POSTGRES_DB: ${resources.database.name}
+
+service:
+  ports:
+    web:
+      port: 80
+      targetPort: 80
+      protocol: TCP
+
+resources:
+  database:
+    type: postgres
+    metadata:
+      annotations:
+        score.humanitec.io/size: "small"
+    properties:
+      version: "15"
