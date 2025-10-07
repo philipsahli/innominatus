@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/philipsahli/platform-ai-sdk/pkg/platformai"
-	"github.com/philipsahli/platform-ai-sdk/pkg/platformai/rag"
+	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai"
+	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai/rag"
 	"github.com/rs/zerolog/log"
 )
 

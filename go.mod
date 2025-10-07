@@ -7,8 +7,8 @@ require (
 	github.com/chzyer/readline v1.5.1
 	github.com/coreos/go-oidc/v3 v3.16.0
 	github.com/lib/pq v1.10.9
+	github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251007053528-20f88711dd07
 	github.com/philipsahli/innominatus-graph v0.0.0-20251005160933-4d0670151100
-	github.com/philipsahli/platform-ai-sdk v0.0.0-00010101000000-000000000000
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/rs/zerolog v1.34.0
@@ -71,5 +71,3 @@ require (
 	google.golang.org/protobuf v1.36.9 // indirect
 	gorm.io/driver/sqlite v1.6.0 // indirect
 )
-
-replace github.com/philipsahli/platform-ai-sdk => ../innominatus-ai-sdk

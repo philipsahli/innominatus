@@ -1,7 +1,7 @@
 package ai
 
 import (
-	"github.com/philipsahli/platform-ai-sdk/pkg/platformai/llm"
+	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai/llm"
 )
 
 // GetAvailableTools returns the list of tools available to the AI assistant

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/philipsahli/platform-ai-sdk/pkg/platformai/llm"
-	"github.com/philipsahli/platform-ai-sdk/pkg/platformai/rag"
+	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai/llm"
+	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai/rag"
 )
 
 // Chat handles chat interactions with the AI assistant with tool calling support
