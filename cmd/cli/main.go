@@ -33,6 +33,9 @@ func main() {
 		"demo-time":        true,
 		"demo-nuke":        true,
 		"demo-status":      true,
+		"login":            true,
+		"logout":           true,
+		"chat":             true, // AI assistant chat
 	}
 
 	// Run fast configuration validation for server commands (skip local commands)
@@ -51,10 +54,14 @@ func main() {
 	var user *users.User
 	var err error
 	if !localCommands[command] {
-		// Check if API key is already set (from environment variable)
-		if os.Getenv("IDP_API_KEY") != "" {
+		// Check if API key is already set (from environment variable or credentials file)
+		if client.HasToken() {
 			// API key authentication - no need to prompt for login
-			fmt.Printf("✓ Using API key authentication\n")
+			if os.Getenv("IDP_API_KEY") != "" {
+				fmt.Printf("✓ Using API key from environment variable\n")
+			} else {
+				fmt.Printf("✓ Using API key from credentials file\n")
+			}
 		} else {
 			// Authenticate user with server for server commands
 			user, err = users.PromptLogin()
@@ -141,11 +148,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Usage: %s admin <show|add-user|list-users|delete-user>\n", os.Args[0])
 			os.Exit(1)
 		}
-		if user == nil {
-			fmt.Fprintf(os.Stderr, "Error: admin command requires authentication\n")
-			os.Exit(1)
-		}
-		err = client.AdminCommand(user, flag.Args()[1:])
+		err = client.AdminCommand(flag.Args()[1:])
 
 	case "list-goldenpaths":
 		err = client.ListGoldenPathsCommand()
@@ -197,7 +200,16 @@ func main() {
 		err = client.RunGoldenPathCommand(goldenPath, scoreFile, paramMap)
 
 	case "demo-time":
-		err = client.DemoTimeCommand()
+		// Parse demo-time specific flags
+		demoFlags := flag.NewFlagSet("demo-time", flag.ExitOnError)
+		componentFilter := demoFlags.String("component", "", "Comma-separated list of components to install (e.g., grafana, gitea,argocd)")
+
+		// Parse remaining arguments for demo-time command
+		if len(flag.Args()) > 1 {
+			_ = demoFlags.Parse(flag.Args()[1:])
+		}
+
+		err = client.DemoTimeCommand(*componentFilter)
 
 	case "demo-nuke":
 		err = client.DemoNukeCommand()
@@ -252,6 +264,74 @@ func main() {
 
 		err = client.LogsCommand(workflowID, options)
 
+	case "graph-export":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: graph-export command requires an application name\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s graph-export <app-name> [--format svg|png|dot] [--output file]\n", os.Args[0])
+			os.Exit(1)
+		}
+		appName := flag.Args()[1]
+
+		// Parse graph-export-specific flags
+		graphFlags := flag.NewFlagSet("graph-export", flag.ExitOnError)
+		formatFlag := graphFlags.String("format", "svg", "Output format (svg, png, dot)")
+		outputFlag := graphFlags.String("output", "", "Output file path (default: stdout)")
+
+		// Parse remaining arguments
+		graphArgs := flag.Args()[2:]
+		if len(graphArgs) > 0 {
+			if err := graphFlags.Parse(graphArgs); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing graph-export flags: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		err = client.GraphExportCommand(appName, *formatFlag, *outputFlag)
+
+	case "graph-status":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: graph-status command requires an application name\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s graph-status <app-name>\n", os.Args[0])
+			os.Exit(1)
+		}
+		appName := flag.Args()[1]
+		err = client.GraphStatusCommand(appName)
+
+	case "login":
+		// Login command - authenticate and store credentials
+		err = client.LoginCommand(flag.Args()[1:])
+
+	case "logout":
+		// Logout command - remove stored credentials
+		err = client.LogoutCommand()
+
+	case "chat":
+		// AI chat command - interactive chat or one-shot question
+		args := flag.Args()[1:]
+		if len(args) == 0 {
+			// Interactive chat mode
+			err = ChatCommand()
+		} else {
+			// Check for flags
+			chatFlags := flag.NewFlagSet("chat", flag.ExitOnError)
+			oneShotFlag := chatFlags.String("one-shot", "", "Ask a single question and exit")
+			generateSpecFlag := chatFlags.String("generate-spec", "", "Generate a Score spec from description")
+			outputFlag := chatFlags.String("o", "spec.yaml", "Output file for generated spec")
+			if err := chatFlags.Parse(args); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing chat flags: %v\n", err)
+				os.Exit(1)
+			}
+
+			if *oneShotFlag != "" {
+				err = OneShotCommand(*oneShotFlag)
+			} else if *generateSpecFlag != "" {
+				err = GenerateSpecCommand(*generateSpecFlag, *outputFlag)
+			} else {
+				// Default: interactive chat
+				err = ChatCommand()
+			}
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n", command)
 		printUsage()
@@ -278,8 +358,16 @@ func printUsage() {
 	fmt.Printf("  list-workflows [app]  List workflow executions (optionally filtered by app)\n")
 	fmt.Printf("  list-resources [app]  List resource instances (optionally filtered by app)\n")
 	fmt.Printf("  logs <workflow-id>    Show workflow execution logs with step details\n")
+	fmt.Printf("  graph-export <app>    Export workflow graph visualization\n")
+	fmt.Printf("  graph-status <app>    Show workflow graph status and statistics\n")
 	fmt.Printf("  list-goldenpaths      List available golden paths\n")
 	fmt.Printf("  run <path> [spec]     Run a golden path workflow\n")
+	fmt.Printf("  login [options]       Authenticate and store API key locally\n")
+	fmt.Printf("  logout                Remove stored credentials\n")
+	fmt.Printf("  chat                  Interactive AI assistant chat\n")
+	fmt.Printf("    --one-shot <q>      Ask a single question and exit\n")
+	fmt.Printf("    --generate-spec <d> Generate Score spec from description\n")
+	fmt.Printf("    -o <file>           Output file for generated spec (default: spec.yaml)\n")
 	fmt.Printf("  admin <command>       Admin commands (requires admin role)\n")
 	fmt.Printf("    show                Show admin configuration\n")
 	fmt.Printf("    add-user            Add new user\n")
@@ -288,7 +376,10 @@ func printUsage() {
 	fmt.Printf("    generate-api-key    Generate API key for user\n")
 	fmt.Printf("    list-api-keys       List API keys for user\n")
 	fmt.Printf("    revoke-api-key      Revoke API key for user\n")
-	fmt.Printf("  demo-time             Install/reconcile demo environment\n")
+	fmt.Printf("  demo-time [options]   Install/reconcile demo environment\n")
+	fmt.Printf("    -component <names>  Comma-separated list of components to install\n")
+	fmt.Printf("                        (e.g., grafana, gitea,argocd). Dependencies are\n")
+	fmt.Printf("                        automatically included. Omit to install all.\n")
 	fmt.Printf("  demo-nuke             Uninstall and clean demo environment\n")
 	fmt.Printf("  demo-status           Check demo environment health and status\n\n")
 	fmt.Printf("Options:\n")
@@ -309,8 +400,16 @@ func printUsage() {
 	fmt.Printf("  %s run deploy-app score-spec.yaml\n", os.Args[0])
 	fmt.Printf("  %s run ephemeral-env\n", os.Args[0])
 	fmt.Printf("  %s demo-time\n", os.Args[0])
+	fmt.Printf("  %s demo-time -component grafana\n", os.Args[0])
+	fmt.Printf("  %s demo-time -component gitea,argocd\n", os.Args[0])
 	fmt.Printf("  %s demo-status\n", os.Args[0])
 	fmt.Printf("  %s demo-nuke\n", os.Args[0])
+	fmt.Printf("  %s login\n", os.Args[0])
+	fmt.Printf("  %s login --name my-laptop --expiry-days 30\n", os.Args[0])
+	fmt.Printf("  %s logout\n", os.Args[0])
+	fmt.Printf("  %s chat\n", os.Args[0])
+	fmt.Printf("  %s chat --one-shot \"How do I deploy a Node.js app?\"\n", os.Args[0])
+	fmt.Printf("  %s chat --generate-spec \"Python FastAPI app with Redis\" -o my-app.yaml\n", os.Args[0])
 	fmt.Printf("  %s admin show\n", os.Args[0])
 	fmt.Printf("  %s admin add-user --username bob --password secret --team dev --role user\n", os.Args[0])
 	fmt.Printf("  %s admin list-users\n", os.Args[0])

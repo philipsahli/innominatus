@@ -5,10 +5,17 @@ goldenpaths:
     category: deployment
     tags: [deployment, gitops, argocd, production]
     estimated_duration: 5-10 minutes
-    required_params: []
-    optional_params:
-      sync_policy: auto
-      namespace_prefix: ""
+    parameters:
+      sync_policy:
+        type: enum
+        default: auto
+        description: ArgoCD sync policy for automatic or manual deployment
+        allowed_values: [auto, manual]
+      namespace_prefix:
+        type: string
+        default: ""
+        description: Optional prefix for Kubernetes namespace
+        pattern: '^[a-z0-9\-]*$'
 
   undeploy-app:
     workflow: ./workflows/undeploy-app.yaml
@@ -16,8 +23,7 @@ goldenpaths:
     category: cleanup
     tags: [cleanup, teardown, removal]
     estimated_duration: 2-5 minutes
-    required_params: []
-    optional_params: {}
+    parameters: {}
 
   ephemeral-env:
     workflow: ./workflows/ephemeral-env.yaml
@@ -25,10 +31,23 @@ goldenpaths:
     category: environment
     tags: [testing, ephemeral, temporary, preview]
     estimated_duration: 3-7 minutes
-    required_params: []
-    optional_params:
-      ttl: 2h
-      environment_type: preview
+    parameters:
+      ttl:
+        type: duration
+        default: 2h
+        description: Time-to-live for ephemeral environment (hours, minutes, or days)
+        pattern: '^\d+[hmd]$'
+      environment_type:
+        type: enum
+        default: preview
+        description: Type of ephemeral environment to create
+        allowed_values: [preview, staging, development, testing]
+      replicas:
+        type: int
+        default: "1"
+        description: Number of application replicas
+        min: 1
+        max: 10
 
   db-lifecycle:
     workflow: ./workflows/db-lifecycle.yaml
@@ -36,10 +55,21 @@ goldenpaths:
     category: database
     tags: [database, backup, migration, maintenance]
     estimated_duration: 5-15 minutes
-    required_params: []
-    optional_params:
-      operation: health-check
-      backup_retention: 7d
+    parameters:
+      operation:
+        type: enum
+        default: health-check
+        description: Database operation to perform
+        allowed_values: [health-check, backup, migration, restore]
+      backup_retention:
+        type: duration
+        default: 7d
+        description: Retention period for database backups
+        pattern: '^\d+[dw]$'
+      enable_compression:
+        type: bool
+        default: "true"
+        description: Enable backup compression to save storage space
 
   observability-setup:
     workflow: ./workflows/observability-setup.yaml
@@ -47,8 +77,22 @@ goldenpaths:
     category: observability
     tags: [monitoring, observability, metrics, logging, tracing]
     estimated_duration: 10-20 minutes
-    required_params: []
-    optional_params:
-      enable_metrics: "true"
-      enable_logs: "true"
-      enable_tracing: "false"
+    parameters:
+      enable_metrics:
+        type: bool
+        default: "true"
+        description: Enable Prometheus metrics collection
+      enable_logs:
+        type: bool
+        default: "true"
+        description: Enable centralized logging with Loki
+      enable_tracing:
+        type: bool
+        default: "false"
+        description: Enable distributed tracing with Tempo
+      retention_days:
+        type: int
+        default: "30"
+        description: Metrics and logs retention period in days
+        min: 7
+        max: 365

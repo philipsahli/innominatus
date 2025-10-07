@@ -160,25 +160,21 @@ func (sm *SessionManager) cleanupExpiredSessions() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	//nolint:gosimple,staticcheck // for-select with single case is intentional for cleanup goroutine pattern
-	for {
-		select {
-		case <-ticker.C:
-			sm.mutex.Lock()
-			now := time.Now()
-			changed := false
-			for id, session := range sm.sessions {
-				if now.After(session.ExpiresAt) {
-					delete(sm.sessions, id)
-					changed = true
-				}
+	for range ticker.C {
+		sm.mutex.Lock()
+		now := time.Now()
+		changed := false
+		for id, session := range sm.sessions {
+			if now.After(session.ExpiresAt) {
+				delete(sm.sessions, id)
+				changed = true
 			}
-			sm.mutex.Unlock()
+		}
+		sm.mutex.Unlock()
 
-			// Save sessions if any were deleted
-			if changed {
-				sm.saveSessions()
-			}
+		// Save sessions if any were deleted
+		if changed {
+			sm.saveSessions()
 		}
 	}
 }

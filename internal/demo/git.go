@@ -243,6 +243,8 @@ func (g *GitManager) createManifests() error {
 		"apps/infrastructure",
 		"apps/monitoring",
 		"apps/demo",
+		"backstage-templates",
+		"backstage-templates/skeleton",
 	}
 
 	for _, dir := range dirs {
@@ -263,6 +265,11 @@ func (g *GitManager) createManifests() error {
 
 	// Create demo app manifests
 	if err := g.createDemoAppManifests(); err != nil {
+		return err
+	}
+
+	// Create Backstage templates
+	if err := g.createBackstageTemplates(); err != nil {
 		return err
 	}
 
@@ -408,15 +415,15 @@ data:
     </head>
     <body>
         <div class="container">
-            <h1>🚀 OpenAlps Demo Environment</h1>
+            <h1>OpenAlps Demo Environment</h1>
             <p>Welcome to your demo platform! This application was deployed from a Score specification.</p>
             <div class="links">
-                <a href="http://gitea.localtest.me" class="link">📚 Gitea</a>
-                <a href="http://argocd.localtest.me" class="link">🔄 ArgoCD</a>
-                <a href="http://vault.localtest.me" class="link">🔒 Vault</a>
-                <a href="http://grafana.localtest.me" class="link">📊 Grafana</a>
-                <a href="http://prometheus.localtest.me" class="link">📈 Prometheus</a>
-                <a href="http://k8s.localtest.me" class="link">🎛️ Dashboard</a>
+                <a href="http://gitea.localtest.me" class="link">Gitea</a>
+                <a href="http://argocd.localtest.me" class="link">ArgoCD</a>
+                <a href="http://vault.localtest.me" class="link">Vault</a>
+                <a href="http://grafana.localtest.me" class="link">Grafana</a>
+                <a href="http://prometheus.localtest.me" class="link">Prometheus</a>
+                <a href="http://k8s.localtest.me" class="link">Dashboard</a>
             </div>
         </div>
     </body>
@@ -460,6 +467,50 @@ func (g *GitManager) writeFile(filename, content string) error {
 		return fmt.Errorf("failed to write file %s: %v", filename, err)
 	}
 
+	return nil
+}
+
+// createBackstageTemplates creates Backstage Software Templates
+func (g *GitManager) createBackstageTemplates() error {
+	// Read the local backstage-templates directory
+	templateFiles := map[string]string{
+		"backstage-templates/score-app-template.yaml":        "backstage-templates/score-app-template.yaml",
+		"backstage-templates/skeleton/score.yaml.njk":        "backstage-templates/skeleton/score.yaml.njk",
+		"backstage-templates/skeleton/catalog-info.yaml.njk": "backstage-templates/skeleton/catalog-info.yaml.njk",
+		"backstage-templates/README.md":                      "backstage-templates/README.md",
+	}
+
+	for dest, src := range templateFiles {
+		// #nosec G304 - Reading Backstage template files from known local paths
+		content, err := os.ReadFile(src)
+		if err != nil {
+			// If files don't exist locally, skip
+			fmt.Printf("⚠️  Could not read %s: %v\n", src, err)
+			continue
+		}
+
+		if err := g.writeFile(dest, string(content)); err != nil {
+			return fmt.Errorf("failed to write backstage template %s: %v", dest, err)
+		}
+	}
+
+	// Create catalog-info.yaml for registering templates
+	// Note: Use internal service URL to avoid Gitea integration issues
+	catalogInfo := `apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: innominatus-templates
+  description: Score application templates for innominatus
+spec:
+  type: url
+  targets:
+    - http://gitea-http.gitea.svc.cluster.local:3000/giteaadmin/platform-config/raw/branch/main/backstage-templates/score-app-template.yaml
+`
+	if err := g.writeFile("backstage-templates/catalog-info.yaml", catalogInfo); err != nil {
+		return fmt.Errorf("failed to write catalog-info.yaml: %v", err)
+	}
+
+	fmt.Printf("✅ Backstage templates added to repository\n")
 	return nil
 }
 

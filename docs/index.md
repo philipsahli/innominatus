@@ -1,36 +1,72 @@
 # innominatus Documentation
 
-Welcome to **innominatus** - a Score-based platform orchestration component designed for integration into enterprise Internal Developer Platform (IDP) ecosystems.
+**Score-based platform orchestration for enterprise Internal Developer Platforms**
+
+> A workflow orchestration component that executes multi-step deployments from Score specifications. Built for platform teams, used by developers.
+
+---
+
+## 👋 Choose Your Path
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🧑‍💻 I'm a Developer
+
+**I want to deploy my applications**
+
+Your Platform Team has set up innominatus for you!
+
+**What you need:**
+- ✅ Access to your company's innominatus platform
+- ✅ API credentials (via SSO or API key)
+- ✅ The CLI tool
+
+**Get started:**
+→ **[User Guide](user-guide/README.md)** - Deploy your first app in 15 minutes
+
+**Quick Links:**
+- [Getting Started](user-guide/getting-started.md) - Connect and deploy
+- [Recipes](user-guide/recipes/README.md) - Real-world examples
+- [Node.js + PostgreSQL](user-guide/recipes/nodejs-postgres.md) - Production API
+
+</td>
+<td width="50%" valign="top">
+
+### ⚙️ I'm a Platform Engineer
+
+**I want to set up innominatus for my organization**
+
+You're building an Internal Developer Platform.
+
+**What you need:**
+- ✅ Kubernetes cluster (1.24+)
+- ✅ PostgreSQL database (15+)
+- ✅ Helm for installation
+
+**Get started:**
+→ **[Platform Team Guide](platform-team-guide/README.md)** - Install and operate innominatus
+
+**Quick Links:**
+- [Quick Install](platform-team-guide/quick-install.md) - Production-ready in 4 hours
+- [Authentication](platform-team-guide/authentication.md) - OIDC/SSO setup
+- [Monitoring](platform-team-guide/monitoring.md) - Prometheus & Grafana
+
+</td>
+</tr>
+</table>
+
+---
 
 ## What is innominatus?
 
-innominatus provides centralized execution of multi-step workflows from Score specifications with database persistence and RESTful API integration. It acts as the orchestration layer in your IDP, handling everything from infrastructure provisioning to application deployment.
+innominatus orchestrates complex deployment workflows from [Score specifications](https://score.dev).
 
-## Key Features
-
-- **Score-Based**: Native support for Score specifications
-- **Multi-Step Workflows**: Orchestrate complex deployments with Terraform, Kubernetes, Ansible
-- **Golden Paths**: Pre-defined workflows for common platform patterns
-- **Variable Context**: Share data between workflow steps with powerful interpolation
-- **Conditional Execution**: Dynamic workflows that adapt based on results
-- **Parallel Execution**: Run independent steps concurrently for faster deployments
-- **API-First**: RESTful API for platform integration
-- **Database Persistence**: Track workflow execution history and audit trails
-
-## Quick Start
-
-```bash
-# Start the server
-./innominatus
-
-# Deploy an application
-./innominatus-ctl run deploy-app score-spec.yaml
-
-# Check status
-./innominatus-ctl status my-app
-```
-
-[Get Started →](getting-started/quick-start.md){ .md-button .md-button--primary }
+**Core Value:**
+- **For Platform Teams:** Centralized workflow orchestration with audit trails
+- **For Developers:** Self-service deployment via simple Score specs
+- **For Organizations:** Standardized golden paths with compliance built-in
 
 ## Architecture
 
@@ -67,40 +103,58 @@ Trigger workflows from Git repositories and integrate with ArgoCD.
 - **Issues**: [GitHub Issues](https://github.com/innominatus/innominatus/issues)
 - **CLI Help**: Run `./innominatus-ctl --help`
 
-## Next Steps
+---
 
-<div class="grid cards" markdown>
+## Documentation by Persona
 
--   :material-clock-fast:{ .lg .middle } __Quick Start__
+### For Developers (Platform Users)
 
-    ---
+| Guide | Description |
+|-------|-------------|
+| [Getting Started](user-guide/getting-started.md) | Connect, install CLI, deploy in 15 minutes |
+| [Recipes](user-guide/recipes/README.md) | Real-world deployment examples |
+| [CLI Reference](user-guide/cli-reference.md) | Complete command documentation |
+| [Troubleshooting](user-guide/troubleshooting.md) | Fix common issues |
 
-    Get innominatus running in 5 minutes
+### For Platform Teams
 
-    [:octicons-arrow-right-24: Quick Start](getting-started/quick-start.md)
+| Guide | Description |
+|-------|-------------|
+| [Quick Install](platform-team-guide/quick-install.md) | Production-ready in 4 hours |
+| [Installation](platform-team-guide/installation.md) | Docker, Kubernetes, Helm deployment |
+| [Configuration](platform-team-guide/configuration.md) | OIDC, RBAC, secrets management |
+| [Monitoring](platform-team-guide/monitoring.md) | Prometheus, Grafana, health checks |
+| [Operations](platform-team-guide/operations.md) | Scaling, backup, troubleshooting |
 
--   :material-book-open-variant:{ .lg .middle } __User Guide__
+### For Workflow Developers
 
-    ---
+| Guide | Description |
+|-------|-------------|
+| [Workflow Developer Guide](guides/workflow-developer-guide.md) | Complete reference for building workflows |
+| [Workflows](guides/workflows.md) | Introduction to workflow concepts |
+| [Delegated Resources](features/delegated-resources.md) | External resource tracking and GitOps integration |
+| [Conditional Execution](features/conditional-execution.md) | if/unless/when conditions |
+| [Parallel Execution](features/parallel-execution.md) | Run steps concurrently |
+| [Context & Variables](features/context-variables.md) | Variable interpolation and outputs |
 
-    Learn about workflows, golden paths, and Score specs
+### For Contributors
 
-    [:octicons-arrow-right-24: User Guide](guides/workflows.md)
+| Guide | Description |
+|-------|-------------|
+| [Building](development/building.md) | Build from source |
+| [Architecture](development/architecture.md) | System design and components |
+| [Testing](development/testing.md) | Test suite and quality assurance |
 
--   :material-api:{ .lg .middle } __API Reference__
+---
 
-    ---
+## Key Features
 
-    Integrate innominatus with your platform
-
-    [:octicons-arrow-right-24: API Docs](api/rest-api.md)
-
--   :material-code-braces:{ .lg .middle } __Examples__
-
-    ---
-
-    Real-world workflow examples
-
-    [:octicons-arrow-right-24: Examples](examples/basic-workflow.md)
-
-</div>
+- **Score-Based**: Native support for Score specifications
+- **Multi-Step Workflows**: Orchestrate complex deployments with Terraform, Kubernetes, Ansible
+- **Golden Paths**: Pre-defined workflows for common platform patterns
+- **Delegated Resources**: Track externally-managed infrastructure (GitOps, Terraform Enterprise) in unified inventory
+- **Variable Context**: Share data between workflow steps with powerful interpolation
+- **Conditional Execution**: Dynamic workflows that adapt based on results
+- **Parallel Execution**: Run independent steps concurrently for faster deployments
+- **API-First**: RESTful API for platform integration
+- **Database Persistence**: Track workflow execution history and audit trails

@@ -1,4 +1,6 @@
-@import 'tailwindcss';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   :root {
@@ -257,7 +259,9 @@
   .theme-black-white .workflow-completed,
   .theme-black-white .workflow-failed,
   .theme-black-white .workflow-pending {
-    @apply bg-white text-black border border-gray-300;
+    background-color: rgb(255 255 255);
+    color: rgb(0 0 0);
+    border: 1px solid rgb(209 213 219);
   }
 
   /* Navigation overrides for black/white theme */
@@ -265,7 +269,8 @@
   .theme-black-white .bg-white,
   .theme-black-white .bg-slate-50,
   .theme-black-white .bg-gray-50 {
-    @apply bg-white text-black;
+    background-color: rgb(255 255 255);
+    color: rgb(0 0 0);
   }
 
   /* Override navigation sidebar colors */

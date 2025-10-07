@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -105,7 +106,12 @@ type ContextLogger struct {
 func NewContextLogger(ctx context.Context, component string) *ContextLogger {
 	logger := GetLogger(ctx)
 	if logger == nil {
-		logger = NewLogger(component)
+		// Try to use structured logger if available, fallback to original
+		if useStructuredLogging() {
+			logger = &Logger{} // Placeholder - will be wrapped by structured logger
+		} else {
+			logger = NewLogger(component)
+		}
 	}
 
 	cl := &ContextLogger{
@@ -129,6 +135,14 @@ func NewContextLogger(ctx context.Context, component string) *ContextLogger {
 	}
 
 	return cl
+}
+
+// useStructuredLogging checks if structured logging is enabled
+func useStructuredLogging() bool {
+	// Check if LOG_FORMAT is set to json or ENV is production
+	logFormat := os.Getenv("LOG_FORMAT")
+	env := os.Getenv("ENV")
+	return logFormat == "json" || env == "production"
 }
 
 // WithField adds a field to the context logger

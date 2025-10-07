@@ -8,11 +8,28 @@ import (
 )
 
 func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
-	html := `<!DOCTYPE html>
+	s.renderSwaggerUI(w, "User API Documentation", "/swagger-user.yaml", "/swagger-user", "/swagger-admin")
+}
+
+func (s *Server) HandleSwaggerAdmin(w http.ResponseWriter, r *http.Request) {
+	s.renderSwaggerUI(w, "Admin API Documentation", "/swagger-admin.yaml", "/swagger-admin", "/swagger-user")
+}
+
+func (s *Server) HandleSwaggerUser(w http.ResponseWriter, r *http.Request) {
+	s.renderSwaggerUI(w, "User API Documentation", "/swagger-user.yaml", "/swagger-user", "/swagger-admin")
+}
+
+func (s *Server) renderSwaggerUI(w http.ResponseWriter, title, specURL, currentPath, otherPath string) {
+	otherTitle := "Admin API"
+	if currentPath == "/swagger-admin" {
+		otherTitle = "User API"
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Score Orchestrator API Documentation</title>
+    <title>innominatus - %s</title>
     <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui.css" />
     <style>
         html {
@@ -58,14 +75,18 @@ func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
         .nav-links a.active {
             background: rgba(255,255,255,0.3);
         }
+        .api-selector {
+            float: right;
+        }
     </style>
 </head>
 <body>
     <nav class="nav">
-        <h1>Score Orchestrator</h1>
+        <h1>innominatus</h1>
         <div class="nav-links">
             <a href="/">Dashboard</a>
-            <a href="/swagger" class="active">API Docs</a>
+            <a href="%s" class="active">%s</a>
+            <a href="%s">%s</a>
         </div>
     </nav>
 
@@ -75,7 +96,7 @@ func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
     <script>
         window.onload = function() {
             const ui = SwaggerUIBundle({
-                url: '/swagger.yaml',
+                url: '%s',
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [
@@ -90,7 +111,7 @@ func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
         };
     </script>
 </body>
-</html>`
+</html>`, title, currentPath, title, otherPath, otherTitle, specURL)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if _, err := w.Write([]byte(html)); err != nil {
@@ -103,6 +124,34 @@ func (s *Server) HandleSwaggerYAML(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile("swagger.yaml")
 	if err != nil {
 		http.Error(w, "Could not read swagger.yaml", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if _, err := w.Write(data); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write response: %v\n", err)
+	}
+}
+
+func (s *Server) HandleSwaggerAdminYAML(w http.ResponseWriter, r *http.Request) {
+	data, err := os.ReadFile("swagger-admin.yaml")
+	if err != nil {
+		http.Error(w, "Could not read swagger-admin.yaml", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if _, err := w.Write(data); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to write response: %v\n", err)
+	}
+}
+
+func (s *Server) HandleSwaggerUserYAML(w http.ResponseWriter, r *http.Request) {
+	data, err := os.ReadFile("swagger-user.yaml")
+	if err != nil {
+		http.Error(w, "Could not read swagger-user.yaml", http.StatusInternalServerError)
 		return
 	}
 

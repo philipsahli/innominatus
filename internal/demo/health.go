@@ -97,6 +97,8 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkGrafana(resp, status)
 	case "prometheus":
 		status = h.checkPrometheus(resp, status)
+	case "pushgateway":
+		status = h.checkPushgateway(resp, status)
 	case "demo-app":
 		status = h.checkDemoApp(resp, status)
 	case "kubernetes-dashboard":
@@ -105,6 +107,10 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkVaultSecretsOperator(component, status)
 	case "minio":
 		status = h.checkMinio(resp, status)
+	case "backstage":
+		status = h.checkBackstage(resp, status)
+	case "keycloak":
+		status = h.checkKeycloak(resp, status)
 	default:
 		status = h.checkGeneric(resp, status)
 	}
@@ -120,6 +126,21 @@ func (h *HealthChecker) CheckAll(env *DemoEnvironment) []HealthStatus {
 	for _, component := range env.GetSystemComponents() {
 		result := h.CheckComponent(component)
 		results = append(results, result)
+	}
+
+	return results
+}
+
+// CheckComponents performs health checks on specific components
+func (h *HealthChecker) CheckComponents(components []DemoComponent) []HealthStatus {
+	var results []HealthStatus
+
+	// Check only the specified components that have ingress or are system components
+	for _, component := range components {
+		if component.IngressHost != "" || component.Name == "vault-secrets-operator" {
+			result := h.CheckComponent(component)
+			results = append(results, result)
+		}
 	}
 
 	return results
@@ -198,6 +219,17 @@ func (h *HealthChecker) checkGrafana(resp *http.Response, status HealthStatus) H
 
 // checkPrometheus performs Prometheus-specific health check
 func (h *HealthChecker) checkPrometheus(resp *http.Response, status HealthStatus) HealthStatus {
+	if resp.StatusCode == 200 {
+		status.Healthy = true
+		status.Status = "Ready"
+	} else {
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return status
+}
+
+// checkPushgateway performs Pushgateway health check
+func (h *HealthChecker) checkPushgateway(resp *http.Response, status HealthStatus) HealthStatus {
 	if resp.StatusCode == 200 {
 		status.Healthy = true
 		status.Status = "Ready"
@@ -318,6 +350,32 @@ func (h *HealthChecker) checkMinio(resp *http.Response, status HealthStatus) Hea
 	return status
 }
 
+// checkBackstage performs Backstage-specific health check
+func (h *HealthChecker) checkBackstage(resp *http.Response, status HealthStatus) HealthStatus {
+	if resp.StatusCode == 200 {
+		status.Healthy = true
+		status.Status = "Available"
+	} else {
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return status
+}
+
+// checkKeycloak performs Keycloak-specific health check
+func (h *HealthChecker) checkKeycloak(resp *http.Response, status HealthStatus) HealthStatus {
+	// CloudPirates Keycloak chart returns HTTP 302 (redirect to /admin/) when healthy
+	switch resp.StatusCode {
+	case 302, 200:
+		status.Healthy = true
+		status.Status = "Running"
+	case 503:
+		status.Status = "Starting"
+	default:
+		status.Status = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	return status
+}
+
 // WaitForHealthy waits for all components to become healthy
 func (h *HealthChecker) WaitForHealthy(env *DemoEnvironment, maxRetries int, delay time.Duration) error {
 	fmt.Printf("⏳ Waiting for all services to become healthy...\n")
@@ -329,6 +387,47 @@ func (h *HealthChecker) WaitForHealthy(env *DemoEnvironment, maxRetries int, del
 		}
 
 		results := h.CheckAll(env)
+		healthy, total, _ := h.GetHealthSummary(results)
+
+		if healthy == total {
+			fmt.Printf("✅ All services are healthy!\n")
+			return nil
+		}
+
+		// Show which services are still unhealthy
+		unhealthy := []string{}
+		for _, result := range results {
+			if !result.Healthy {
+				unhealthy = append(unhealthy, result.Name)
+			}
+		}
+
+		fmt.Printf("   Waiting for: %s\n", strings.Join(unhealthy, ", "))
+	}
+
+	return fmt.Errorf("services did not become healthy after %d retries", maxRetries)
+}
+
+// WaitForComponentsHealthy waits for specific components to become healthy
+func (h *HealthChecker) WaitForComponentsHealthy(components []DemoComponent, maxRetries int, delay time.Duration) error {
+	fmt.Printf("⏳ Waiting for %d services to become healthy...\n", len(components))
+
+	for retry := 0; retry < maxRetries; retry++ {
+		if retry > 0 {
+			fmt.Printf("   Retry %d/%d...\n", retry+1, maxRetries)
+			time.Sleep(delay)
+		}
+
+		// Check only the specified components
+		var results []HealthStatus
+		for _, component := range components {
+			// Only check components with ingress or specific system components
+			if component.IngressHost != "" || component.Name == "vault-secrets-operator" {
+				result := h.CheckComponent(component)
+				results = append(results, result)
+			}
+		}
+
 		healthy, total, _ := h.GetHealthSummary(results)
 
 		if healthy == total {

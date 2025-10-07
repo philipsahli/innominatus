@@ -130,6 +130,32 @@ export interface ResourceInstance {
   error_message?: string;
 }
 
+export interface UserProfile {
+  username: string;
+  team: string;
+  role: string;
+}
+
+export interface APIKeyInfo {
+  name: string;
+  masked_key: string;
+  created_at: string;
+  last_used_at?: string;
+  expires_at: string;
+}
+
+export interface APIKeyFull {
+  key: string;
+  name: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface AuthConfig {
+  oidc_enabled: boolean;
+  oidc_provider_name: string;
+}
+
 class ApiClient {
   private getAuthToken(): string | null {
     if (typeof window === 'undefined') return null;
@@ -150,6 +176,7 @@ class ApiClient {
 
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers,
+        credentials: 'include', // Include cookies for session-based auth
         ...options,
       });
 
@@ -320,6 +347,10 @@ class ApiClient {
   }
 
   // Authentication
+  async getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
+    return this.request<AuthConfig>('/auth/config');
+  }
+
   async login(
     username: string,
     password: string
@@ -372,6 +403,84 @@ class ApiClient {
       body: yamlContent,
     });
   }
+
+  // Profile
+  async getProfile(): Promise<ApiResponse<UserProfile>> {
+    return this.request<UserProfile>('/profile');
+  }
+
+  async getAPIKeys(): Promise<ApiResponse<APIKeyInfo[]>> {
+    return this.request<APIKeyInfo[]>('/profile/api-keys');
+  }
+
+  async generateAPIKey(name: string, expiryDays: number): Promise<ApiResponse<APIKeyFull>> {
+    return this.request('/profile/api-keys', {
+      method: 'POST',
+      body: JSON.stringify({ name, expiry_days: expiryDays }),
+    });
+  }
+
+  async revokeAPIKey(name: string): Promise<ApiResponse<void>> {
+    return this.request(`/profile/api-keys/${name}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // AI Assistant
+  async getAIStatus(): Promise<ApiResponse<AIStatusResponse>> {
+    return this.request<AIStatusResponse>('/ai/status');
+  }
+
+  async sendAIChat(
+    message: string,
+    conversationHistory?: ConversationMessage[],
+    context?: string
+  ): Promise<ApiResponse<AIChatResponse>> {
+    return this.request('/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, conversation_history: conversationHistory, context }),
+    });
+  }
+
+  async generateSpec(
+    description: string,
+    metadata?: Record<string, string>
+  ): Promise<ApiResponse<AIGenerateSpecResponse>> {
+    return this.request('/ai/generate-spec', {
+      method: 'POST',
+      body: JSON.stringify({ description, metadata }),
+    });
+  }
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  spec?: string;
+}
+
+export interface AIStatusResponse {
+  enabled: boolean;
+  llm_provider: string;
+  documents_loaded: number;
+  status: string;
+  message?: string;
+}
+
+export interface AIChatResponse {
+  message: string;
+  generated_spec?: string;
+  citations?: string[];
+  tokens_used?: number;
+  timestamp: string;
+}
+
+export interface AIGenerateSpecResponse {
+  spec: string;
+  explanation: string;
+  citations?: string[];
+  tokens_used?: number;
 }
 
 export const api = new ApiClient();

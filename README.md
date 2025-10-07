@@ -1,230 +1,304 @@
 # innominatus
 
-A **Score-based platform orchestration component** designed for integration into enterprise Internal Developer Platform (IDP) ecosystems.
+**Score-based platform orchestration for enterprise Internal Developer Platforms**
+
+> A workflow orchestration component that executes multi-step deployments from Score specifications. Built for platform teams, used by developers.
 
 [![codecov](https://codecov.io/github/philipsahli/idp-o/graph/badge.svg?token=757WSWZMKD)](https://codecov.io/github/philipsahli/idp-o) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Tests](https://github.com/philipsahli/idp-o/actions/workflows/test.yml/badge.svg)](https://github.com/philipsahli/idp-o/actions/workflows/test.yml) [![Security](https://github.com/philipsahli/idp-o/actions/workflows/security.yml/badge.svg)](https://github.com/philipsahli/idp-o/actions/workflows/security.yml)
 
-## Overview
+---
 
-innominatus provides centralized execution of multi-step workflows from [Score specifications](https://score.dev), enabling platform teams to automate complex deployment and infrastructure provisioning workflows. It's designed as an integration component for existing IDP platforms rather than a standalone solution.
+## 👋 Choose Your Path
 
-## Architecture
+<table>
+<tr>
+<td width="50%" valign="top">
 
-### Integration Component Design
-- **API-First**: RESTful interface for platform integration
-- **Database Persistence**: Workflow execution tracking and history
-- **Kubernetes-Native**: Built for container orchestration environments
-- **Modular Workflows**: Pluggable step execution framework
+### 🧑‍💻 I'm a Developer
 
-### Enterprise Integration
-innominatus is designed to integrate with popular IDP platforms:
-- **Backstage**: Software catalog and developer portal integration
-- **CNOE**: Cloud Native Operational Excellence platforms
-- **Custom IDPs**: Any platform supporting REST API integration
-- **CI/CD Systems**: Jenkins, GitLab, GitHub Actions, etc.
+**I want to deploy my applications**
 
-## Core Capabilities
+Your Platform Team has set up innominatus for you!
 
-### Score Specification Orchestration
-- Parse and validate Score specifications with workflow definitions
-- Execute multi-step workflows with proper error handling and rollback
-- Database persistence for execution tracking and audit trails
-- Real-time status monitoring and progress reporting
+**What you need:**
+- ✅ Access to your company's innominatus platform
+- ✅ API credentials from your Platform Team
+- ✅ The `innominatus-ctl` CLI tool
 
-### Supported Workflow Steps
-- **Kubernetes**: Namespace creation, manifest generation, `kubectl apply`
-- **Terraform**: Infrastructure provisioning via TFE integration
-- **Ansible**: Configuration management with playbook execution
-- **Git Operations**: Repository creation, manifest commits, PR automation
-- **ArgoCD**: GitOps application onboarding and sync management
-- **Custom Steps**: Extensible framework for additional integrations
+**Get started:**
 
-## Getting Started
+→ **[User Guide](docs/user-guide/README.md)** - Deploy your first app in 5 minutes
 
-### Prerequisites
-- Go 1.21+
-- Kubernetes cluster access
-- PostgreSQL database (for persistence)
+</td>
+<td width="50%" valign="top">
 
-### Building the Components
+### ⚙️ I'm a Platform Engineer
 
-**Build the Server:**
+**I want to set up innominatus for my organization**
+
+You're building an Internal Developer Platform.
+
+**What you need:**
+- ✅ Kubernetes cluster
+- ✅ PostgreSQL database
+- ✅ OIDC provider (optional)
+
+**Get started:**
+
+→ **[Platform Team Guide](docs/platform-team-guide/README.md)** - Install and operate innominatus
+
+</td>
+</tr>
+</table>
+
+**Contributing?** → [Development Guide](docs/development/README.md) | [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
+
+## What is innominatus?
+
+innominatus orchestrates complex deployment workflows from [Score specifications](https://score.dev).
+
+**Core Value:**
+- **For Platform Teams:** Centralized workflow orchestration with audit trails and observability
+- **For Developers:** Self-service deployment via simple Score specs - no infrastructure knowledge required
+- **For Organizations:** Standardized golden paths with compliance and governance built-in
+
+### How it Works
+
+```mermaid
+graph LR
+    A[Developer] -->|Score Spec| B[innominatus]
+    B -->|Orchestrates| C[Kubernetes]
+    B -->|Orchestrates| D[Terraform]
+    B -->|Orchestrates| E[Ansible]
+    B -->|Orchestrates| F[ArgoCD/Git]
+    B -->|Tracks| G[(PostgreSQL)]
+    B -->|Metrics| H[Prometheus]
+```
+
+**Example:** Deploy app with database and monitoring in one command:
+
 ```bash
-go build -o innominatus cmd/server/main.go
+innominatus-ctl deploy my-app.yaml
+# → Creates: Namespace, Database, Deployment, Ingress, Monitoring
 ```
 
-**Build the CLI:**
-```bash
-go build -o innominatus-ctl cmd/cli/main.go
-```
+---
 
-### Running the Server
+## Key Features
 
-```bash
-# Start with database persistence
-export DB_USER=your_user
-export DB_NAME=orchestrator_db
-./innominatus
+### For Developers (Platform Users)
 
-# Server runs on http://localhost:8081
-# API Documentation: http://localhost:8081/swagger
-```
+- ✅ **Simple Score Specs** - Declare what you need, not how to provision it
+- ✅ **Golden Paths** - Pre-defined workflows for common use cases (deploy, ephemeral environments, database lifecycle)
+- ✅ **Self-Service** - Deploy without waiting for Platform Team approval
+- ✅ **Visibility** - Real-time status, logs, and workflow history via Web UI or CLI
 
-### API Integration
+### For Platform Teams
 
-innominatus provides REST endpoints for platform integration:
+- ✅ **Multi-Step Workflows** - Kubernetes, Terraform, Ansible, ArgoCD, Git operations
+- ✅ **Database Persistence** - Full audit trails and workflow history in PostgreSQL
+- ✅ **RESTful API** - Integrate with Backstage, CNOE, custom IDPs, CI/CD pipelines
+- ✅ **Enterprise Ready** - OIDC/SSO authentication, RBAC, rate limiting, Prometheus metrics, HA deployment
+- ✅ **Extensible** - Custom workflow steps and golden path templates
 
-```bash
-# Deploy Score specification with workflows
-POST /api/specs
-Content-Type: application/yaml
-[Score specification with workflows]
-
-# Monitor workflow execution
-GET /api/workflows?app=my-app
-
-# Get workflow execution details
-GET /api/workflows/{id}
-```
-
-### Score Specification Example
-
-```yaml
-apiVersion: score.dev/v1b1
-metadata:
-  name: my-application
-
-workflows:
-  deploy:
-    steps:
-    - name: "Create repository"
-      type: "gitea-repo"
-      repoName: "my-application"
-      description: "Application repository"
-
-    - name: "Generate Kubernetes manifests"
-      type: "git-commit-manifests"
-      repoName: "my-application"
-      manifestPath: "."
-
-    - name: "Onboard to ArgoCD"
-      type: "argocd-app"
-      appName: "my-application"
-      repoURL: "http://gitea.example.com/platform/my-application"
-      targetPath: "."
-      syncPolicy: "auto"
-
-containers:
-  web:
-    image: nginx:latest
-    variables:
-      APP_NAME: my-application
-
-resources: {}
-```
-
-## Demo Environment
-
-**Important**: The demo environment is provided for **demonstration and development purposes only**. Enterprise deployments should integrate with existing platform infrastructure.
-
-### Demo Components
-- Gitea (Git hosting)
-- ArgoCD (GitOps)
-- Vault (Secrets)
-- Grafana/Prometheus (Monitoring)
-- Kubernetes Dashboard
-
-### Demo Commands
-```bash
-# Install demo environment (requires Docker Desktop + Kubernetes)
-./innominatus-ctl demo-time
-
-# Check demo status
-./innominatus-ctl demo-status
-
-# Remove demo environment
-./innominatus-ctl demo-nuke
-```
-
-## Enterprise Usage
-
-### Integration Patterns
-
-**1. API Integration**
-```bash
-# Deploy via platform API
-curl -X POST http://orchestrator.company.com/api/specs \
-  -H "Content-Type: application/yaml" \
-  -H "Authorization: Bearer $PLATFORM_TOKEN" \
-  --data-binary @score-spec.yaml
-```
-
-**2. Backstage Plugin Integration**
-```typescript
-// Example Backstage plugin integration
-const response = await fetch('/api/proxy/orchestrator/specs', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/yaml' },
-  body: scoreSpecification
-});
-```
-
-**3. GitOps Integration**
-- Score specifications stored in Git repositories
-- Platform triggers orchestrator via webhooks
-- Workflow execution results update platform status
-
-### Production Considerations
-- **Authentication**: Integrate with enterprise identity providers
-- **Authorization**: Role-based access control (RBAC)
-- **Monitoring**: Prometheus metrics and distributed tracing
-- **Scaling**: Horizontal pod autoscaling for workflow execution
-- **Security**: Network policies and secret management integration
-
-## Development
-
-### CLI Usage (Development)
-```bash
-# Validate Score specification
-./innominatus-ctl validate score-spec.yaml
-
-# List deployed applications
-./innominatus-ctl list
-
-# Show admin configuration
-./innominatus-ctl admin show
-```
-
-### Configuration
-```yaml
-# admin-config.yaml
-admin:
-  defaultCostCenter: "engineering"
-  defaultRuntime: "kubernetes"
-
-resourceDefinitions:
-  postgres: "managed-postgres-cluster"
-  redis: "redis-cluster"
-
-policies:
-  enforceBackups: true
-  allowedEnvironments: ["dev", "staging", "prod"]
-```
-
-## Contributing
-
-innominatus is designed as a focused platform component. Contributions should maintain:
-- **Single Responsibility**: Score specification orchestration
-- **Integration Focus**: API-first design for platform integration
-- **Enterprise Ready**: Security, monitoring, and scalability considerations
-- **Standard Compliance**: Follow Score specification standards
+---
 
 ## Documentation
 
-- [Score Specification](https://score.dev) - Official Score documentation
-- [TFE Workflow Extension](./TFE-WORKFLOW-README.md) - Terraform Enterprise integration
-- [Development Guide](./CLAUDE.md) - Development and testing instructions
+| For Developers | For Platform Teams | For Contributors |
+|----------------|-------------------|------------------|
+| [Getting Started](docs/user-guide/getting-started.md) | [Installation](docs/platform-team-guide/installation.md) | [Contributing](CONTRIBUTING.md) |
+| [First Deployment](docs/user-guide/first-deployment.md) | [Configuration](docs/platform-team-guide/configuration.md) | [Building from Source](docs/development/building.md) |
+| [CLI Reference](docs/user-guide/cli-reference.md) | [Database Setup](docs/platform-team-guide/database.md) | [Architecture](docs/development/architecture.md) |
+| [Troubleshooting](docs/user-guide/troubleshooting.md) | [Operations Guide](docs/platform-team-guide/operations.md) | [Testing](docs/development/testing.md) |
+| | [Monitoring & Metrics](docs/platform-team-guide/monitoring.md) | |
+
+### Additional Resources
+
+- **[OIDC Authentication Guide](docs/OIDC_AUTHENTICATION.md)** - Enterprise SSO and API key management
+- **[Golden Paths Documentation](docs/GOLDEN_PATHS_PARAMETERS.md)** - Pre-defined workflow templates
+- **[Health Monitoring](docs/HEALTH_MONITORING.md)** - Liveness, readiness, and metrics endpoints
+- **[Database Migrations](migrations/README.md)** - Schema management and API key storage
+- **[Score Specification](https://score.dev)** - Official Score documentation
+
+---
+
+## Quickstart
+
+### For Developers
+
+Your Platform Team has already set up innominatus. To get started:
+
+```bash
+# 1. Get credentials from your Platform Team
+export INNOMINATUS_API_KEY="your-api-key"
+
+# 2. Create a Score specification
+cat <<EOF > my-app.yaml
+apiVersion: score.dev/v1b1
+metadata:
+  name: my-app
+containers:
+  web:
+    image: nginx:latest
+resources:
+  route:
+    type: route
+    params:
+      host: my-app.yourcompany.com
+EOF
+
+# 3. Deploy
+innominatus-ctl deploy my-app.yaml
+```
+
+**Next:** [User Guide](docs/user-guide/README.md)
+
+### For Platform Teams
+
+Install innominatus on your Kubernetes cluster:
+
+```bash
+# 1. Pull Docker image
+docker pull ghcr.io/philipsahli/innominatus:latest
+
+# 2. Deploy to Kubernetes
+kubectl apply -f deployment.yaml
+
+# 3. Configure database
+export DB_HOST=postgres.production.internal
+export DB_NAME=idp_orchestrator
+export DB_USER=orchestrator_service
+```
+
+**Next:** [Installation Guide](docs/platform-team-guide/installation.md)
+
+---
+
+## Demo Environment
+
+**Note:** The demo environment is for **local development and testing only**. Production deployments should use the [Installation Guide](docs/platform-team-guide/installation.md).
+
+Try innominatus locally with a complete platform stack:
+
+```bash
+# Prerequisites: Docker Desktop with Kubernetes enabled
+
+# 1. Build CLI
+go build -o innominatus-ctl cmd/cli/main.go
+
+# 2. Install demo environment (Gitea, ArgoCD, Vault, Grafana, Keycloak)
+./innominatus-ctl demo-time
+
+# 3. Check status
+./innominatus-ctl demo-status
+
+# 4. Access services
+# - Web UI: http://localhost:8081 (demo-user/password123)
+# - Gitea: http://gitea.localtest.me (admin/admin)
+# - ArgoCD: http://argocd.localtest.me (admin/argocd123)
+# - Grafana: http://grafana.localtest.me (admin/admin)
+
+# 5. Clean up
+./innominatus-ctl demo-nuke
+```
+
+---
+
+## Getting Help
+
+### Platform Users (Developers)
+
+**First, contact your Platform Team** - they manage innominatus and can help with access issues, deployment failures, and resource provisioning.
+
+**Self-Service Resources:**
+- [User Troubleshooting Guide](docs/user-guide/troubleshooting.md)
+- Platform documentation portal (ask your Platform Team)
+- `innominatus-ctl --help`
+
+### Platform Teams
+
+- **[Operations Guide](docs/platform-team-guide/operations.md)** - Troubleshooting and monitoring
+- **[GitHub Discussions](https://github.com/philipsahli/innominatus/discussions)** - Community support
+- **[GitHub Issues](https://github.com/philipsahli/innominatus/issues)** - Report bugs and request features
+
+### Contributors
+
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute
+- **[Development Guide](docs/development/README.md)** - Build and test locally
+- **[GitHub Issues](https://github.com/philipsahli/innominatus/issues)** - Find issues to work on
+
+---
+
+## Integration Examples
+
+innominatus is designed to integrate with existing platform tools:
+
+### Backstage Software Catalog
+
+```typescript
+const response = await orchestratorApi.deploySpec(scoreSpec);
+console.log('Workflow started:', response.workflow_id);
+```
+
+### CNOE Platform
+
+```yaml
+steps:
+  - name: orchestrate-deployment
+    type: http
+    config:
+      url: "http://innominatus.platform.svc:8081/api/specs"
+      method: POST
+      body: ${scoreSpecification}
+```
+
+### GitOps Webhooks
+
+```bash
+curl -X POST http://innominatus.platform.svc:8081/api/specs \
+  -H "Content-Type: application/yaml" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-binary @score-spec.yaml
+```
+
+### CI/CD Pipelines
+
+```yaml
+# GitHub Actions example
+- name: Deploy via innominatus
+  run: |
+    curl -X POST ${{ secrets.INNOMINATUS_URL }}/api/specs \
+      -H "Authorization: Bearer ${{ secrets.INNOMINATUS_TOKEN }}" \
+      --data-binary @score.yaml
+```
+
+**More:** [Platform Team Guide - Integration Patterns](docs/platform-team-guide/README.md#integration-patterns)
+
+---
+
+## Status & Disclaimer
+
+**⚠️ This project is early-stage and experimental.**
+
+innominatus is provided **"AS IS"** without warranty of any kind, express or implied. Use at your own risk in non-production environments. For production deployments, thorough testing and validation are required.
+
+Licensed under [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) – see [LICENSE](./LICENSE) for full terms.
+
+---
 
 ## License
 
-Open source - designed for integration into enterprise platforms and CNCF ecosystem components.
+Copyright © 2024-2025 innominatus contributors
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+---
+
+**Built for platform teams, by platform engineers.** 🚀

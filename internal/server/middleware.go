@@ -2,12 +2,18 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"innominatus/internal/auth"
+	"innominatus/internal/logging"
 	"innominatus/internal/users"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -31,8 +37,9 @@ func (s *Server) CorsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Trace-Id")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Trace-Id")
 
 		// Handle preflight OPTIONS request
 		if r.Method == "OPTIONS" {
@@ -41,6 +48,89 @@ func (s *Server) CorsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		next(w, r)
+	}
+}
+
+// TraceIDMiddleware adds trace ID to request context and response headers
+// This enables request tracing across the entire request lifecycle
+func (s *Server) TraceIDMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Check if trace ID is provided in request header (for distributed tracing)
+		traceID := r.Header.Get("X-Trace-Id")
+
+		// If no custom trace ID, try to get from OpenTelemetry span context
+		if traceID == "" {
+			span := trace.SpanFromContext(r.Context())
+			if span.SpanContext().IsValid() {
+				traceID = span.SpanContext().TraceID().String()
+			}
+		}
+
+		if traceID == "" {
+			// Generate new trace ID if not provided and no span context
+			traceID = logging.GenerateTraceID()
+		}
+
+		// Add trace ID to request context
+		ctx := logging.WithTraceID(r.Context(), traceID)
+
+		// Also add as request ID for backward compatibility
+		ctx = logging.WithRequestID(ctx, traceID)
+
+		// Update request with new context
+		r = r.WithContext(ctx)
+
+		// Add trace ID to response headers for client visibility
+		w.Header().Set("X-Trace-Id", traceID)
+
+		// Call next handler
+		next(w, r)
+	}
+}
+
+// TracingMiddleware creates OpenTelemetry spans for HTTP requests
+// This provides distributed tracing for all HTTP requests
+func (s *Server) TracingMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	tracer := otel.Tracer("innominatus/http")
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Start a new span for this HTTP request
+		ctx, span := tracer.Start(r.Context(), r.Method+" "+r.URL.Path,
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("http.method", r.Method),
+				attribute.String("http.url", r.URL.String()),
+				attribute.String("http.scheme", r.URL.Scheme),
+				attribute.String("http.host", r.Host),
+				attribute.String("http.target", r.URL.Path),
+				attribute.String("http.user_agent", r.UserAgent()),
+				attribute.String("http.client_ip", getClientIP(r)),
+			),
+		)
+		defer span.End()
+
+		// Update request with span context
+		r = r.WithContext(ctx)
+
+		// Wrap response writer to capture status code
+		rw := &responseWriter{
+			ResponseWriter: w,
+			statusCode:     200,
+		}
+
+		// Call next handler
+		next(rw, r)
+
+		// Add response attributes to span
+		span.SetAttributes(
+			attribute.Int("http.status_code", rw.statusCode),
+			attribute.Int("http.response_size", rw.size),
+		)
+
+		// Record error if status code indicates an error
+		if rw.statusCode >= 400 {
+			span.SetAttributes(attribute.Bool("http.error", true))
+		}
 	}
 }
 
@@ -189,13 +279,34 @@ func (s *Server) getSessionFromRequestWithToken(r *http.Request) (*auth.Session,
 }
 
 // authenticateWithAPIKey validates an API key and returns the associated user
+// Checks both file-based users (users.yaml) and database-stored API keys (OIDC users)
 func (s *Server) authenticateWithAPIKey(apiKey string) (*users.User, error) {
+	// First try file-based users (users.yaml)
 	store, err := users.LoadUsers()
-	if err != nil {
-		return nil, err
+	if err == nil {
+		if user, err := store.AuthenticateWithAPIKey(apiKey); err == nil {
+			return user, nil
+		}
 	}
 
-	return store.AuthenticateWithAPIKey(apiKey)
+	// Then try database API keys (for OIDC users)
+	if s.db != nil {
+		keyHash := hashAPIKey(apiKey)
+		username, team, role, err := s.db.GetUserByAPIKeyHash(keyHash)
+		if err == nil {
+			// Update last used timestamp
+			_ = s.db.UpdateAPIKeyLastUsed(keyHash)
+
+			// Return user object (OIDC user from database)
+			return &users.User{
+				Username: username,
+				Team:     team,
+				Role:     role,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid API key")
 }
 
 // responseWriter wraps http.ResponseWriter to capture status code and size
@@ -216,7 +327,7 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return size, err
 }
 
-// LoggingMiddleware logs HTTP requests in access log format
+// LoggingMiddleware logs HTTP requests in access log format with trace IDs
 func (s *Server) LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -239,6 +350,12 @@ func (s *Server) LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		proto := r.Proto
 		userAgent := r.UserAgent()
 
+		// Get trace ID from context if available
+		traceID := logging.GetTraceID(r.Context())
+		if traceID == "" {
+			traceID = "-"
+		}
+
 		// Call the next handler
 		next(rw, r)
 
@@ -251,8 +368,8 @@ func (s *Server) LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		// Calculate duration
 		duration := time.Since(start)
 
-		// Log in Common Log Format (CLF) with additional info
-		log.Printf("%s - %s [%s] \"%s %s %s\" %d %d %v \"%s\"",
+		// Log in Common Log Format (CLF) with trace ID and additional info
+		log.Printf("%s - %s [%s] \"%s %s %s\" %d %d %v \"%s\" trace_id=%s",
 			clientIP,
 			username,
 			start.Format("02/Jan/2006:15:04:05 -0700"),
@@ -263,6 +380,7 @@ func (s *Server) LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			rw.size,
 			duration,
 			userAgent,
+			traceID,
 		)
 	}
 }

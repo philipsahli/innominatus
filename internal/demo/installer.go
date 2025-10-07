@@ -3,8 +3,13 @@ package demo
 // #nosec G204 - Demo installer executes kubectl and helm with controlled parameters for local demo setup only
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,6 +26,9 @@ type Installer struct {
 
 // NewInstaller creates a new installer instance
 func NewInstaller(kubeContext string, dryRun bool) *Installer {
+	// Print deployment mode info
+	PrintDeploymentInfo()
+
 	return &Installer{
 		kubeContext: kubeContext,
 		dryRun:      dryRun,
@@ -107,7 +115,15 @@ func (i *Installer) AddHelmRepo(repoName, repoURL string) error {
 // InstallComponent installs a single component using Helm
 func (i *Installer) InstallComponent(component DemoComponent) error {
 	fmt.Printf("🚀 Installing component: %s\n", component.Name)
-	fmt.Printf("   Chart: %s/%s version %s\n", component.Repo, component.Chart, component.Version)
+
+	// Detect if this is an OCI chart (starts with oci://)
+	isOCI := strings.HasPrefix(component.Chart, "oci://")
+
+	if isOCI {
+		fmt.Printf("   Chart: %s version %s (OCI registry)\n", component.Chart, component.Version)
+	} else {
+		fmt.Printf("   Chart: %s/%s version %s\n", component.Repo, component.Chart, component.Version)
+	}
 
 	// Create namespace first
 	if err := i.CreateNamespace(component.Namespace); err != nil {
@@ -115,21 +131,35 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	}
 
 	if i.dryRun {
-		fmt.Printf("   [DRY RUN] Would install: %s/%s version %s\n",
-			component.Repo, component.Chart, component.Version)
+		if isOCI {
+			fmt.Printf("   [DRY RUN] Would install: %s version %s\n", component.Chart, component.Version)
+		} else {
+			fmt.Printf("   [DRY RUN] Would install: %s/%s version %s\n",
+				component.Repo, component.Chart, component.Version)
+		}
 		return nil
 	}
 
-	// Extract repo name from URL
-	repoName := i.getRepoName(component.Repo)
-	fmt.Printf("   Using repo name: %s\n", repoName)
+	var chartRef string
 
-	// Add repository
-	fmt.Printf("   Adding Helm repository...\n")
-	if err := i.AddHelmRepo(repoName, component.Repo); err != nil {
-		return err
+	if isOCI {
+		// OCI charts don't need helm repo add, use chart directly
+		chartRef = component.Chart
+		fmt.Printf("   Using OCI chart: %s\n", chartRef)
+	} else {
+		// Extract repo name from URL for traditional Helm repos
+		repoName := i.getRepoName(component.Repo)
+		fmt.Printf("   Using repo name: %s\n", repoName)
+
+		// Add repository
+		fmt.Printf("   Adding Helm repository...\n")
+		if err := i.AddHelmRepo(repoName, component.Repo); err != nil {
+			return err
+		}
+		fmt.Printf("   Repository added successfully\n")
+
+		chartRef = fmt.Sprintf("%s/%s", repoName, component.Chart)
 	}
-	fmt.Printf("   Repository added successfully\n")
 
 	// Create values file
 	valuesFile, err := i.createValuesFile(component)
@@ -139,7 +169,6 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	defer func() { _ = os.Remove(valuesFile) }()
 
 	// Install or upgrade with Helm
-	chartRef := fmt.Sprintf("%s/%s", repoName, component.Chart)
 	helmCmd := []string{"helm", "upgrade", "--install", component.Name,
 		chartRef,
 		"--version", component.Version,
@@ -164,7 +193,7 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 		"--wait",
 		"--timeout", "10m")
 
-	fmt.Printf("   Starting Helm installation (timeout: 15 minutes)...\n")
+	fmt.Printf("   Starting Helm chart %s installation (timeout: 15 minutes)...\n", chartRef)
 	fmt.Printf("   This may take several minutes for database initialization...\n")
 	fmt.Printf("   Progress: ")
 
@@ -338,14 +367,19 @@ func (i *Installer) CheckHelmRelease(releaseName, namespace string) (bool, error
 
 // getRepoName extracts a repository name from URL
 func (i *Installer) getRepoName(repoURL string) string {
-	// Simple extraction - take the last part of the domain
-	parts := strings.Split(repoURL, "/")
-	for _, part := range parts {
-		if strings.Contains(part, ".") && !strings.HasPrefix(part, "http") {
-			return strings.Split(part, ".")[0]
-		}
-	}
-	return "repo"
+	// Remove protocol
+	url := strings.TrimPrefix(repoURL, "https://")
+	url = strings.TrimPrefix(url, "http://")
+
+	// Replace dots and slashes with dashes to create unique name
+	name := strings.ReplaceAll(url, ".", "-")
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.TrimSuffix(name, "-")
+
+	// Ensure it's a valid Helm repo name (lowercase alphanumeric and dashes)
+	name = strings.ToLower(name)
+
+	return name
 }
 
 // createValuesFile creates a temporary values file for Helm
@@ -452,6 +486,828 @@ spec:
 	return nil
 }
 
+// ApplyKeycloakConfig applies Keycloak realm configuration and OIDC integration for all services
+func (i *Installer) ApplyKeycloakConfig() error {
+	fmt.Printf("🔐 Configuring Keycloak realm and OIDC integration for all services...\n")
+
+	if i.dryRun {
+		fmt.Printf("   [DRY RUN] Would configure Keycloak and OIDC for all services\n")
+		return nil
+	}
+
+	// Wait for Keycloak to be ready
+	fmt.Printf("   Waiting for Keycloak to be ready...\n")
+	time.Sleep(10 * time.Second)
+
+	// Get Keycloak admin token
+	token, err := i.getKeycloakAdminToken()
+	if err != nil {
+		return fmt.Errorf("failed to get admin token: %v", err)
+	}
+
+	// Create demo-realm
+	if err := i.createKeycloakRealm(token); err != nil {
+		fmt.Printf("   Realm creation: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Realm created\n")
+	}
+
+	// Create OIDC clients for all services
+	if err := i.createArgoCDClient(token); err != nil {
+		fmt.Printf("   ArgoCD client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ ArgoCD client created\n")
+	}
+
+	if err := i.createGrafanaClient(token); err != nil {
+		fmt.Printf("   Grafana client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Grafana client created\n")
+	}
+
+	if err := i.createBackstageClient(token); err != nil {
+		fmt.Printf("   Backstage client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Backstage client created\n")
+	}
+
+	if err := i.createGiteaClient(token); err != nil {
+		fmt.Printf("   Gitea client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Gitea client created\n")
+	}
+
+	if err := i.createVaultClient(token); err != nil {
+		fmt.Printf("   Vault client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Vault client created\n")
+	}
+
+	if err := i.createInnominatusClient(token); err != nil {
+		fmt.Printf("   Innominatus client: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Innominatus client created\n")
+	}
+
+	// Create demo users
+	if err := i.createKeycloakUser(token, "demo-user", "password123", "demo-user@example.com"); err != nil {
+		fmt.Printf("   User demo-user: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ demo-user created\n")
+	}
+
+	if err := i.createKeycloakUser(token, "test-user", "test123", "test-user@example.com"); err != nil {
+		fmt.Printf("   User test-user: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ test-user created\n")
+	}
+
+	// Patch ArgoCD ConfigMap for OIDC (using direct client secret, not secret reference)
+	oidcConfigPatch := `
+{
+  "data": {
+    "url": "http://argocd.localtest.me",
+    "oidc.config": "name: Keycloak\nissuer: http://keycloak.localtest.me/realms/demo-realm\nclientID: argocd\nclientSecret: argocd-client-secret-change-me\nrequestedScopes:\n  - openid\n  - profile\n  - email\n  - roles\nredirectURL: http://argocd.localtest.me/auth/callback\n"
+  }
+}
+`
+
+	fmt.Printf("   Patching ArgoCD ConfigMap for OIDC...\n")
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "patch", "configmap", "argocd-cm", // #nosec G204 - kubectl patch command
+		"-n", "argocd",
+		"--type", "merge",
+		"-p", oidcConfigPatch)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch ArgoCD ConfigMap: %v\nOutput: %s", err, string(output))
+	}
+
+	// Get ingress controller ClusterIP for hostAliases
+	ingressIP, err := i.getIngressControllerIP()
+	if err != nil {
+		return fmt.Errorf("failed to get ingress controller IP: %v", err)
+	}
+
+	// Add hostAliases to ArgoCD deployment for DNS resolution
+	hostAliasesPatch := fmt.Sprintf(`
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "hostAliases": [{
+          "ip": "%s",
+          "hostnames": ["keycloak.localtest.me"]
+        }]
+      }
+    }
+  }
+}
+`, ingressIP)
+
+	fmt.Printf("   Adding hostAliases to ArgoCD deployment (keycloak.localtest.me -> %s)...\n", ingressIP)
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "patch", "deployment", "argocd-server", // #nosec G204 - kubectl patch command
+		"-n", "argocd",
+		"--type", "strategic",
+		"-p", hostAliasesPatch)
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch ArgoCD deployment: %v\nOutput: %s", err, string(output))
+	}
+
+	// Add hostAliases to Grafana deployment for DNS resolution
+	grafanaHostAliasesPatch := fmt.Sprintf(`
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "hostAliases": [{
+          "ip": "%s",
+          "hostnames": ["keycloak.localtest.me"]
+        }]
+      }
+    }
+  }
+}
+`, ingressIP)
+
+	fmt.Printf("   Adding hostAliases to Grafana deployment (keycloak.localtest.me -> %s)...\n", ingressIP)
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "patch", "deployment", "grafana", // #nosec G204 - kubectl patch command
+		"-n", "monitoring",
+		"--type", "strategic",
+		"-p", grafanaHostAliasesPatch)
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch Grafana deployment: %v\nOutput: %s", err, string(output))
+	}
+
+	// Add hostAliases to Gitea deployment for DNS resolution
+	giteaHostAliasesPatch := fmt.Sprintf(`
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "hostAliases": [{
+          "ip": "%s",
+          "hostnames": ["keycloak.localtest.me"]
+        }]
+      }
+    }
+  }
+}
+`, ingressIP)
+
+	fmt.Printf("   Adding hostAliases to Gitea deployment (keycloak.localtest.me -> %s)...\n", ingressIP)
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "patch", "deployment", "gitea", // #nosec G204 - kubectl patch command
+		"-n", "gitea",
+		"--type", "strategic",
+		"-p", giteaHostAliasesPatch)
+
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to patch Gitea deployment: %v\nOutput: %s", err, string(output))
+	}
+
+	// Wait for services to restart with new hostAliases
+	fmt.Printf("   Waiting for services to restart...\n")
+	time.Sleep(15 * time.Second)
+
+	// Configure Gitea OAuth2
+	fmt.Printf("   Configuring Gitea OAuth2...\n")
+	if err := i.configureGiteaOIDC(); err != nil {
+		fmt.Printf("   Gitea OAuth2: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Gitea OAuth2 configured\n")
+	}
+
+	// Configure Vault OIDC
+	fmt.Printf("   Configuring Vault OIDC...\n")
+	if err := i.configureVaultOIDC(); err != nil {
+		fmt.Printf("   Vault OIDC: %v (might already exist)\n", err)
+	} else {
+		fmt.Printf("   ✅ Vault OIDC configured\n")
+	}
+
+	fmt.Printf("✅ Keycloak realm and OIDC integration configured for all services\n")
+	return nil
+}
+
+// getKeycloakAdminToken retrieves an admin access token from Keycloak
+func (i *Installer) getKeycloakAdminToken() (string, error) {
+	data := url.Values{}
+	data.Set("client_id", "admin-cli")
+	data.Set("username", "admin")
+	data.Set("password", "adminpassword")
+	data.Set("grant_type", "password")
+
+	resp, err := http.PostForm("http://keycloak.localtest.me/realms/master/protocol/openid-connect/token", data)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get token, status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	token, ok := result["access_token"].(string)
+	if !ok {
+		return "", fmt.Errorf("access_token not found in response")
+	}
+
+	return token, nil
+}
+
+// createKeycloakRealm creates the demo-realm in Keycloak
+func (i *Installer) createKeycloakRealm(token string) error {
+	realmData := map[string]interface{}{
+		"realm":       "demo-realm",
+		"enabled":     true,
+		"displayName": "Demo Realm",
+	}
+
+	jsonData, err := json.Marshal(realmData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createArgoCDClient creates the ArgoCD OIDC client in Keycloak
+func (i *Installer) createArgoCDClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "argocd",
+		"name":                      "ArgoCD",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "argocd-client-secret-change-me",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"*"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createGrafanaClient creates the Grafana OIDC client in Keycloak
+func (i *Installer) createGrafanaClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "grafana",
+		"name":                      "Grafana",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "grafana-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://grafana.localtest.me/login/generic_oauth"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createBackstageClient creates the Backstage OIDC client in Keycloak
+func (i *Installer) createBackstageClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "backstage",
+		"name":                      "Backstage",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "backstage-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://backstage.localtest.me/api/auth/oidc/handler/frame"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createGiteaClient creates the Gitea OIDC client in Keycloak
+func (i *Installer) createGiteaClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "gitea",
+		"name":                      "Gitea",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "gitea-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://gitea.localtest.me/user/oauth2/Keycloak/callback"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createVaultClient creates the Vault OIDC client in Keycloak
+func (i *Installer) createVaultClient(token string) error {
+	clientData := map[string]interface{}{
+		"clientId":                  "vault",
+		"name":                      "Vault",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "vault-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              []string{"http://vault.localtest.me/ui/vault/auth/oidc/oidc/callback", "http://localhost:8250/oidc/callback"},
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createInnominatusClient creates the Innominatus OIDC client in Keycloak
+func (i *Installer) createInnominatusClient(token string) error {
+	// Get appropriate redirect URIs based on deployment mode
+	redirectURIs := []string{"http://localhost:8081/auth/callback", "http://innominatus.localtest.me/auth/callback"}
+	if IsRunningInKubernetes() {
+		// In K8s mode, add service-based callback URL
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			namespace = "innominatus-system"
+		}
+		serviceURL := GetInnominatusURL(namespace)
+		redirectURIs = append(redirectURIs, serviceURL+"/auth/callback")
+		fmt.Printf("   Using K8s redirect URI: %s/auth/callback\n", serviceURL)
+	}
+
+	clientData := map[string]interface{}{
+		"clientId":                  "innominatus",
+		"name":                      "Innominatus",
+		"enabled":                   true,
+		"clientAuthenticatorType":   "client-secret",
+		"secret":                    "innominatus-client-secret",
+		"publicClient":              false,
+		"protocol":                  "openid-connect",
+		"redirectUris":              redirectURIs,
+		"webOrigins":                []string{"+"},
+		"standardFlowEnabled":       true,
+		"directAccessGrantsEnabled": true,
+		"fullScopeAllowed":          true,
+	}
+
+	jsonData, err := json.Marshal(clientData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/clients", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// configureGiteaOIDC configures Gitea to use Keycloak as OAuth2 provider
+func (i *Installer) configureGiteaOIDC() error {
+	// Get Gitea pod name
+	getPodCmd := exec.Command("kubectl", "--context", i.kubeContext, // #nosec G204 - kubectl get pods command
+		"get", "pods", "-n", "gitea",
+		"-l", "app.kubernetes.io/name=gitea",
+		"-o", "jsonpath={.items[0].metadata.name}")
+
+	podNameBytes, err := getPodCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get Gitea pod name: %v", err)
+	}
+	podName := string(podNameBytes)
+	if podName == "" {
+		return fmt.Errorf("no Gitea pod found")
+	}
+
+	// Use Gitea CLI to add OAuth2 authentication source
+	// Note: This command may fail if the source already exists, which is acceptable
+	addAuthCmd := exec.Command("kubectl", "--context", i.kubeContext, // #nosec G204 - kubectl exec gitea command
+		"exec", "-n", "gitea", podName, "--",
+		"gitea", "admin", "auth", "add-oauth",
+		"--name", "Keycloak",
+		"--provider", "openidConnect",
+		"--key", "gitea",
+		"--secret", "gitea-client-secret",
+		"--auto-discover-url", "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration")
+
+	output, err := addAuthCmd.CombinedOutput()
+	if err != nil {
+		// If the error is about the source already existing, that's fine
+		if strings.Contains(string(output), "already exists") || strings.Contains(string(output), "duplicate") {
+			return nil
+		}
+		return fmt.Errorf("failed to add OAuth2 source: %v\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+// configureVaultOIDC configures Vault to use Keycloak as OIDC provider
+func (i *Installer) configureVaultOIDC() error {
+	vaultAddr := "http://vault.localtest.me"
+	vaultToken := "root"
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	// 1. Enable OIDC auth method
+	enableAuthData := map[string]interface{}{
+		"type": "oidc",
+	}
+	if err := i.vaultAPIRequest(client, vaultAddr, vaultToken, "POST", "/v1/sys/auth/oidc", enableAuthData); err != nil {
+		// Ignore error if already enabled
+		if !strings.Contains(err.Error(), "path is already in use") {
+			return fmt.Errorf("failed to enable OIDC auth: %w", err)
+		}
+	}
+
+	// 2. Configure OIDC auth method
+	oidcConfigData := map[string]interface{}{
+		"oidc_discovery_url": "http://keycloak.localtest.me/realms/demo-realm",
+		"oidc_client_id":     "vault",
+		"oidc_client_secret": "vault-client-secret",
+		"default_role":       "default",
+		"bound_issuer":       "http://keycloak.localtest.me/realms/demo-realm",
+	}
+	if err := i.vaultAPIRequest(client, vaultAddr, vaultToken, "POST", "/v1/auth/oidc/config", oidcConfigData); err != nil {
+		return fmt.Errorf("failed to configure OIDC: %w", err)
+	}
+
+	// 3. Create OIDC role
+	roleData := map[string]interface{}{
+		"bound_audiences": []string{"vault"},
+		"allowed_redirect_uris": []string{
+			"http://vault.localtest.me/ui/vault/auth/oidc/oidc/callback",
+			"http://localhost:8250/oidc/callback",
+		},
+		"user_claim":     "sub",
+		"policies":       []string{"default"},
+		"ttl":            "1h",
+		"token_policies": []string{"default"},
+	}
+	if err := i.vaultAPIRequest(client, vaultAddr, vaultToken, "POST", "/v1/auth/oidc/role/default", roleData); err != nil {
+		return fmt.Errorf("failed to create OIDC role: %w", err)
+	}
+
+	return nil
+}
+
+// vaultAPIRequest is a helper function for making Vault API requests
+func (i *Installer) vaultAPIRequest(client *http.Client, vaultAddr, token, method, path string, data map[string]interface{}) error {
+	var reqBody io.Reader
+	if data != nil {
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewBuffer(jsonData)
+	}
+
+	req, err := http.NewRequest(method, vaultAddr+path, reqBody)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("X-Vault-Token", token)
+	if data != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	// Accept 200/204 success codes and 400 for "already exists" type errors
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// createKeycloakUser creates a user in the demo-realm
+func (i *Installer) createKeycloakUser(token, username, password, email string) error {
+	userData := map[string]interface{}{
+		"username":      username,
+		"enabled":       true,
+		"email":         email,
+		"emailVerified": true,
+		"credentials": []map[string]interface{}{
+			{
+				"type":      "password",
+				"value":     password,
+				"temporary": false,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(userData)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", "http://keycloak.localtest.me/admin/realms/demo-realm/users", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Warning: failed to close response body: %v\n", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// getIngressControllerIP gets the ClusterIP of the ingress controller
+func (i *Installer) getIngressControllerIP() (string, error) {
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "get", "svc", // #nosec G204 - kubectl command
+		"-n", "ingress-nginx",
+		"-l", "app.kubernetes.io/name=ingress-nginx",
+		"-o", "jsonpath={.items[0].spec.clusterIP}")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	ip := strings.TrimSpace(string(output))
+	if ip == "" {
+		return "", fmt.Errorf("no ingress controller found")
+	}
+
+	return ip, nil
+}
+
+// RestartArgoCDServer restarts the ArgoCD server to apply configuration changes
+func (i *Installer) RestartArgoCDServer() error {
+	fmt.Printf("🔄 Restarting ArgoCD server to apply OIDC configuration...\n")
+
+	if i.dryRun {
+		fmt.Printf("   [DRY RUN] Would restart ArgoCD server\n")
+		return nil
+	}
+
+	// Rollout restart
+	cmd := exec.Command("kubectl", "--context", i.kubeContext, "rollout", "restart", // #nosec G204 - kubectl rollout command
+		"deployment", "argocd-server",
+		"-n", "argocd")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to restart ArgoCD server: %v\nOutput: %s", err, string(output))
+	}
+
+	// Wait for rollout
+	fmt.Printf("   Waiting for ArgoCD server to be ready...\n")
+	cmd = exec.Command("kubectl", "--context", i.kubeContext, "rollout", "status", // #nosec G204 - kubectl rollout status
+		"deployment", "argocd-server",
+		"-n", "argocd",
+		"--timeout=300s")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ArgoCD server did not become ready: %v", err)
+	}
+
+	fmt.Printf("✅ ArgoCD server restarted\n")
+	return nil
+}
+
 // InstallDemoApp installs the demo application
 func (i *Installer) InstallDemoApp() error {
 	fmt.Printf("🚀 Installing Demo Application...\n")
@@ -532,7 +1388,7 @@ data:
                 <a href="http://argocd.localtest.me" class="link">🔄 ArgoCD</a>
                 <a href="http://vault.localtest.me" class="link">🔒 Vault</a>
                 <a href="http://grafana.localtest.me" class="link">📊 Grafana</a>
-                <a href="http://prometheus.localtest.me" class="link">📈 Prometheus</a>
+                <a href="http://backstage.localtest.me" class="link">🚪 Backstage</a>
                 <a href="http://k8s.localtest.me" class="link">🎛️ Dashboard</a>
             </div>
         </div>

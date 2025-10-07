@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>innominatus - Mermaid Diagrams</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            securityLevel: 'loose'
+        });
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        nav {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        nav a {
+            color: #667eea;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            transition: background 0.2s;
+            font-weight: 500;
+        }
+
+        nav a:hover {
+            background: #e9ecef;
+        }
+
+        main {
+            padding: 40px 30px;
+        }
+
+        section {
+            margin-bottom: 60px;
+        }
+
+        section h2 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        section h3 {
+            color: #764ba2;
+            font-size: 1.5em;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+
+        .diagram-container {
+            background: #fafafa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 30px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+
+        .diagram-container .mermaid {
+            display: flex;
+            justify-content: center;
+            min-height: 200px;
+        }
+
+        .source-link {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f1f3f5;
+            border-left: 4px solid #667eea;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .source-link a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .source-link a:hover {
+            text-decoration: underline;
+        }
+
+        footer {
+            background: #f8f9fa;
+            padding: 20px 30px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #dee2e6;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            section h2 {
+                font-size: 1.5em;
+            }
+
+            nav ul {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 innominatus Mermaid Diagrams</h1>
+            <p>Visual Documentation - Architecture & Workflows</p>
+        </header>
+
+        <nav>
+            <ul>
+                <li><a href="#concepts">Core Concepts</a></li>
+                <li><a href="#getting-started">Getting Started</a></li>
+                <li><a href="#architecture">Architecture</a></li>
+                <li><a href="#nodejs-recipe">Node.js Recipe</a></li>
+                <li><a href="#quick-install">Quick Install</a></li>
+            </ul>
+        </nav>
+
+        <main>
+            <!-- Core Concepts -->
+            <section id="concepts">
+                <h2>Core Concepts</h2>
+                <div class="source-link">
+                    📄 Source: <a href="getting-started/concepts.md">docs/getting-started/concepts.md</a>
+                </div>
+
+                <h3>Architecture Overview</h3>
+                <div class="diagram-container">
+                    <div class="mermaid">
+graph TB
+    A[Score Specification] --> B[innominatus Server]
+    B --> C[Workflow Executor]
+    C --> D[Execution Context]
+    D --> E[Step 1: Terraform]
+    D --> F[Step 2: Kubernetes]
+    D --> G[Step 3: Monitoring]
+    E --> H[(Database)]
+    F --> H
+    G --> H
+    B --> I[REST API]
+    I --> J[Web UI]
+    I --> K[CLI]
+    I --> L[Platform Integration]
+                    </div>
+                </div>
+
+                <h3>Data Flow</h3>
+                <div class="diagram-container">
+                    <div class="mermaid">
+sequenceDiagram
+    participant S as Score Spec
+    participant W as Workflow
+    participant C as Context
+    participant E as Executor
+    participant I as Infrastructure
+
+    S->>W: Load workflow definition
+    W->>C: Initialize context with variables
+    E->>I: Execute step 1 (Terraform)
+    I-->>C: Store outputs (db.host, db.port)
+    E->>I: Execute step 2 (Kubernetes)
+    Note over E,I: Uses ${resources.database.host}
+    I-->>C: Store deployment status
+    E->>E: Execute step 3 (conditional)
+    Note over E: Only if step 2 succeeded
+                    </div>
+                </div>
+            </section>
+
+            <!-- Getting Started -->
+            <section id="getting-started">
+                <h2>Getting Started</h2>
+                <div class="source-link">
+                    📄 Source: <a href="user-guide/getting-started.md">docs/user-guide/getting-started.md</a>
+                </div>
+
+                <h3>What Just Happened?</h3>
+                <div class="diagram-container">
+                    <div class="mermaid">
+graph TB
+    A[Your Score Spec<br/>10 lines YAML] -->|innominatus| B[Workflow Orchestration]
+    B --> C[Kubernetes Namespace<br/>Created]
+    B --> D[nginx Container<br/>Deployed]
+    B --> E[Ingress Route<br/>Configured]
+    B --> F[Health Checks<br/>Verified]
+    C & D & E & F --> G[🎉 Live Application]
+
+    style A fill:#e1f5ff
+    style G fill:#d4f4dd
+    style B fill:#fff3cd
+                    </div>
+                </div>
+            </section>
+
+            <!-- Architecture -->
+            <section id="architecture">
+                <h2>Architecture</h2>
+                <div class="source-link">
+                    📄 Source: <a href="development/architecture.md">docs/development/architecture.md</a>
+                </div>
+
+                <h3>System Overview</h3>
+                <div class="diagram-container">
+                    <div class="mermaid">
+graph LR
+    A[Client] --> B[API Server]
+    B --> C[Workflow Executor]
+    C --> D[Kubernetes]
+    C --> E[Terraform]
+    C --> F[Ansible]
+    B --> G[(PostgreSQL)]
+                    </div>
+                </div>
+            </section>
+
+            <!-- Node.js Recipe -->
+            <section id="nodejs-recipe">
+                <h2>Node.js + PostgreSQL Recipe</h2>
+                <div class="source-link">
+                    📄 Source: <a href="user-guide/recipes/nodejs-postgres.md">docs/user-guide/recipes/nodejs-postgres.md</a>
+                </div>
+
+                <h3>Application Architecture</h3>
+                <div class="diagram-container">
+                    <div class="mermaid">
+graph LR
+    A[Internet] -->|HTTPS| B[Ingress]
+    B --> C[Node.js API]
+    C --> D[PostgreSQL]
+    C --> E[Redis]
+
+    style C fill:#61DAFB
+    style D fill:#336791
+    style E fill:#DC382D
+                    </div>
+                </div>
+            </section>
+
+            <!-- Quick Install -->
+            <section id="quick-install">
+                <h2>Quick Install Guide</h2>
+                <div class="source-link">
+                    📄 Source: <a href="platform-team-guide/quick-install.md">docs/platform-team-guide/quick-install.md</a>
+                </div>
+
+                <h3>Production Architecture</h3>
+                <div class="diagram-container">
+                    <div class="mermaid">
+graph TB
+    A[Users] -->|HTTPS| B[Ingress]
+    B --> C[innominatus Server]
+    C --> D[PostgreSQL]
+    C --> E[OIDC Provider]
+    F[Prometheus] -->|Scrape| C
+    G[Grafana] -->|Query| F
+
+    subgraph Kubernetes Cluster
+        B
+        C
+        F
+        G
+    end
+
+    subgraph External
+        D
+        E
+    end
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Generated from innominatus documentation • <a href="https://github.com/philipsahli/innominatus" style="color: #667eea;">View on GitHub</a></p>
+        </footer>
+    </div>
+</body>
+</html>

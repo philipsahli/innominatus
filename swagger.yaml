@@ -354,6 +354,936 @@ paths:
               schema:
                 type: string
 
+  /swagger.yaml:
+    get:
+      summary: Get Swagger specification
+      description: Returns the OpenAPI/Swagger YAML specification file
+      operationId: getSwaggerYAML
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: Swagger YAML file
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+
+  /auth/login:
+    post:
+      summary: Web-based user login
+      description: Authenticates a user via form submission (web interface)
+      operationId: loginWeb
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: "alice"
+                password:
+                  type: string
+                  format: password
+      responses:
+        '302':
+          description: Redirect to dashboard on success
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /logout:
+    post:
+      summary: Logout current user
+      description: Logs out the current user and clears session
+      operationId: logout
+      tags:
+        - Authentication
+      responses:
+        '302':
+          description: Redirect to login page
+        '200':
+          description: Logout successful
+
+  /api/login:
+    post:
+      summary: API login
+      description: Authenticates a user via JSON API (returns session token)
+      operationId: loginAPI
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: "alice"
+                password:
+                  type: string
+                  format: password
+                  example: "password123"
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                  username:
+                    type: string
+                  team:
+                    type: string
+                  role:
+                    type: string
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/user-info:
+    get:
+      summary: Get current user information
+      description: Returns information about the currently authenticated user
+      operationId: getUserInfo
+      tags:
+        - Authentication
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  team:
+                    type: string
+                  role:
+                    type: string
+                  is_admin:
+                    type: boolean
+                  api_keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  impersonation:
+                    type: object
+                    nullable: true
+                    properties:
+                      is_impersonating:
+                        type: boolean
+                      original_user:
+                        type: object
+                      impersonated_user:
+                        type: object
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/profile:
+    get:
+      summary: Get user profile
+      description: Returns the profile of the currently authenticated user
+      operationId: getProfile
+      tags:
+        - Profile
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  team:
+                    type: string
+                  role:
+                    type: string
+                  is_admin:
+                    type: boolean
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/profile/api-keys:
+    get:
+      summary: List API keys
+      description: Returns all API keys for the current user
+      operationId: listAPIKeys
+      tags:
+        - Profile
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIKey'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Generate new API key
+      description: Creates a new API key for the current user
+      operationId: generateAPIKey
+      tags:
+        - Profile
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Descriptive name for the API key
+                  example: "CI/CD Pipeline Key"
+      responses:
+        '201':
+          description: API key created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  key:
+                    type: string
+                    description: The actual API key (only shown once)
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/profile/api-keys/{id}:
+    delete:
+      summary: Revoke API key
+      description: Revokes a specific API key for the current user
+      operationId: revokeAPIKey
+      tags:
+        - Profile
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: API key ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: API key revoked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/impersonate:
+    post:
+      summary: Impersonate user (admin only)
+      description: Start impersonating another user (admin only)
+      operationId: impersonateUser
+      tags:
+        - Admin
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+              properties:
+                username:
+                  type: string
+                  description: Username to impersonate
+                  example: "bob"
+      responses:
+        '200':
+          description: Impersonation started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  impersonating:
+                    type: string
+                  impersonating_team:
+                    type: string
+                  impersonating_role:
+                    type: string
+        '403':
+          description: Not an admin or impersonation not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Stop impersonation
+      description: Stop impersonating and return to original user
+      operationId: stopImpersonation
+      tags:
+        - Admin
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Impersonation stopped successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Not currently impersonating
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/users:
+    get:
+      summary: List all users (admin only)
+      description: Returns a list of all users in the system
+      operationId: listUsers
+      tags:
+        - Admin
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    username:
+                      type: string
+                    team:
+                      type: string
+                    role:
+                      type: string
+                    is_admin:
+                      type: boolean
+        '403':
+          description: Not an admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/stats:
+    get:
+      summary: Get dashboard statistics
+      description: Returns statistics for the dashboard
+      operationId: getStats
+      tags:
+        - Dashboard
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_specs:
+                    type: integer
+                  total_environments:
+                    type: integer
+                  total_workflows:
+                    type: integer
+                  running_workflows:
+                    type: integer
+                  failed_workflows:
+                    type: integer
+
+  /api/workflow-analysis:
+    get:
+      summary: Analyze workflow
+      description: Analyzes workflow dependencies and structure
+      operationId: analyzeWorkflow
+      tags:
+        - Workflows
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Workflow analysis results
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Analyze workflow (POST)
+      description: Analyzes workflow dependencies and structure via POST
+      operationId: analyzeWorkflowPost
+      tags:
+        - Workflows
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Workflow analysis results
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/workflow-analysis/preview:
+    get:
+      summary: Preview workflow analysis
+      description: Preview workflow analysis results
+      operationId: previewWorkflowAnalysis
+      tags:
+        - Workflows
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Workflow analysis preview
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Preview workflow analysis (POST)
+      description: Preview workflow analysis results via POST
+      operationId: previewWorkflowAnalysisPost
+      tags:
+        - Workflows
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Workflow analysis preview
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/resources:
+    get:
+      summary: List resources
+      description: Returns all resources, optionally filtered by application
+      operationId: listResources
+      tags:
+        - Resources
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: app
+          in: query
+          description: Filter by application name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of resources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Resource'
+
+  /api/resources/{id}:
+    get:
+      summary: Get resource details
+      description: Returns details of a specific resource
+      operationId: getResourceDetail
+      tags:
+        - Resources
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Resource ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resource details including state transitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDetail'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Transition resource state
+      description: Transitions a resource to a new state
+      operationId: transitionResourceState
+      tags:
+        - Resources
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Resource ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - state
+              properties:
+                state:
+                  type: string
+                  enum: [requested, provisioning, ready, failed, deprovisioning, deleted]
+                reason:
+                  type: string
+                metadata:
+                  type: object
+      responses:
+        '200':
+          description: Resource state updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+    patch:
+      summary: Update resource health
+      description: Updates the health status of a resource
+      operationId: updateResourceHealth
+      tags:
+        - Resources
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Resource ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                health_status:
+                  type: string
+                  enum: [healthy, unhealthy, unknown]
+                error_message:
+                  type: string
+      responses:
+        '200':
+          description: Resource health updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+    delete:
+      summary: Delete resource
+      description: Deletes a specific resource
+      operationId: deleteResource
+      tags:
+        - Resources
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Resource ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resource deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/applications/{name}:
+    delete:
+      summary: Delete application
+      description: Deletes an application and all associated resources
+      operationId: deleteApplication
+      tags:
+        - Applications
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Application name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Application deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Application not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/applications/{name}/deprovision:
+    post:
+      summary: Deprovision application infrastructure
+      description: Deprovisions all infrastructure for an application without deleting the spec
+      operationId: deprovisionApplication
+      tags:
+        - Applications
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Application name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deprovisioning started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Application not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/workflows/golden-paths/{path}/execute:
+    post:
+      summary: Execute golden path workflow
+      description: Executes a predefined golden path workflow (e.g., deploy-app)
+      operationId: executeGoldenPath
+      tags:
+        - Golden Paths
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: path
+          in: path
+          required: true
+          description: Golden path name (e.g., deploy-app)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Input parameters for the golden path workflow
+      responses:
+        '200':
+          description: Golden path workflow executed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow_id:
+                    type: integer
+                  message:
+                    type: string
+        '404':
+          description: Golden path not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/demo/status:
+    get:
+      summary: Get demo environment status
+      description: Returns the current status of the demo environment
+      operationId: getDemoStatus
+      tags:
+        - Demo
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Demo environment status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  resources:
+                    type: array
+                    items:
+                      type: object
+
+  /api/demo/time:
+    get:
+      summary: Get demo environment time
+      description: Returns the current time in the demo environment
+      operationId: getDemoTime
+      tags:
+        - Demo
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Demo environment time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_time:
+                    type: string
+                    format: date-time
+
+  /api/demo/nuke:
+    post:
+      summary: Reset demo environment
+      description: Destroys and resets the demo environment
+      operationId: nukeDemoEnvironment
+      tags:
+        - Demo
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Demo environment reset successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the service
+      operationId: healthCheck
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+
+  /ready:
+    get:
+      summary: Readiness check
+      description: Returns whether the service is ready to accept traffic
+      operationId: readinessCheck
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns metrics in Prometheus format
+      operationId: getMetrics
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
   schemas:
     SpecResponse:
@@ -633,9 +1563,81 @@ components:
           description: Error message
           example: "No spec loaded"
 
+    APIKey:
+      type: object
+      required:
+        - id
+        - name
+        - created_at
+      properties:
+        id:
+          type: string
+          description: Unique API key identifier
+          example: "key_abc123"
+        name:
+          type: string
+          description: Descriptive name for the API key
+          example: "CI/CD Pipeline Key"
+        created_at:
+          type: string
+          format: date-time
+          description: API key creation timestamp
+        last_used:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last time the API key was used
+
+    ResourceDetail:
+      allOf:
+        - $ref: '#/components/schemas/Resource'
+        - type: object
+          properties:
+            state_transitions:
+              type: array
+              description: History of state transitions for this resource
+              items:
+                type: object
+                properties:
+                  from_state:
+                    type: string
+                  to_state:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  user:
+                    type: string
+                  reason:
+                    type: string
+            health_status:
+              type: string
+              enum: [healthy, unhealthy, unknown]
+            error_message:
+              type: string
+              nullable: true
+
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+      description: Session-based authentication via cookies
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: API key authentication (use "Bearer <api_key>" format)
+
 tags:
   - name: UI
     description: Web interface endpoints
+  - name: Authentication
+    description: User authentication and session management
+  - name: Profile
+    description: User profile and API key management
+  - name: Admin
+    description: Administrative endpoints (admin users only)
   - name: Specs
     description: Score specification management
   - name: Environments
@@ -644,6 +1646,18 @@ tags:
     description: Workflow execution tracking
   - name: Teams
     description: Team management
+  - name: Resources
+    description: Resource lifecycle management
+  - name: Applications
+    description: Application lifecycle and infrastructure management
+  - name: Golden Paths
+    description: Golden path workflow execution
+  - name: Dashboard
+    description: Dashboard statistics and metrics
+  - name: Demo
+    description: Demo environment management
+  - name: Monitoring
+    description: Health checks and metrics endpoints
   - name: Legacy
     description: Legacy API endpoints for backward compatibility
   - name: Documentation

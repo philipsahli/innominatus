@@ -1,0 +1,218 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: innominatus-demo-app
+  annotations:
+    description: "Demonstration of innominatus workflow features with interpolation"
+    team: "platform-engineering"
+    docs: "https://innominatus.dev/features"
+
+# Workflow-level variables accessible to all steps
+variables:
+  APP_NAME: innominatus-demo
+  ENVIRONMENT: production
+  REGION: us-east-1
+  VERSION: "1.0.0"
+
+# Workflow orchestration
+workflows:
+  deploy:
+    steps:
+      # Step 1: Build and capture outputs
+      - name: build
+        type: validation
+        outputFile: /tmp/build-outputs.json
+        # Expected outputs: version, image_url, commit_sha, build_id
+
+      # Step 2: Infrastructure sizing based on environment
+      - name: sizing
+        type: validation
+        setVariables:
+          DB_INSTANCE: "db.r5.large"
+          CACHE_NODES: "2"
+          APP_REPLICAS: "3"
+        env:
+          ENVIRONMENT: ${workflow.ENVIRONMENT}
+
+      # Step 3: Provision database (runs in parallel with cache)
+      - name: provision-database
+        type: terraform
+        path: ./terraform/postgres
+        parallel: true
+        # Outputs: db_host, db_port, db_name, db_password
+
+      # Step 4: Provision cache (runs in parallel with database)
+      - name: provision-cache
+        type: terraform
+        path: ./terraform/redis
+        parallel: true
+        # Outputs: cache_endpoint, cache_port
+
+      # Step 5: Deploy application (waits for database and cache)
+      - name: deploy-app
+        type: kubernetes
+        namespace: ${workflow.ENVIRONMENT}
+        if: ${build.version} matches ^v[0-9]+
+        env:
+          # Workflow variable interpolation
+          APP_NAME: ${workflow.APP_NAME}
+          ENVIRONMENT: ${workflow.ENVIRONMENT}
+          REGION: ${workflow.REGION}
+
+          # Step output interpolation
+          VERSION: ${build.version}
+          IMAGE: ${build.image_url}
+          COMMIT: ${build.commit_sha}
+
+          # Resource output interpolation
+          DATABASE_URL: "postgresql://${provision-database.db_host}:${provision-database.db_port}/${provision-database.db_name}"
+          CACHE_URL: "redis://${provision-cache.cache_endpoint}:${provision-cache.cache_port}"
+
+      # Step 6: Run smoke tests
+      - name: smoke-tests
+        type: validation
+        when: on_success
+        env:
+          APP_URL: "https://${workflow.APP_NAME}.${workflow.REGION}.example.com"
+          VERSION: ${build.version}
+
+      # Step 7: Notify on success
+      - name: notify-success
+        type: monitoring
+        when: on_success
+        env:
+          MESSAGE: "Deployed ${workflow.APP_NAME} version ${build.version} to ${workflow.ENVIRONMENT}"
+          COMMIT: ${build.commit_sha}
+
+      # Step 8: Rollback on failure
+      - name: rollback
+        type: kubernetes
+        when: on_failure
+        namespace: ${workflow.ENVIRONMENT}
+
+# Container specification
+containers:
+  app:
+    image: ${build.image_url}  # Interpolated from build step output
+    command: ["/app/server"]
+    variables:
+      # Environment-specific configuration
+      APP_NAME: ${workflow.APP_NAME}
+      ENVIRONMENT: ${workflow.ENVIRONMENT}
+      VERSION: ${build.version}
+
+      # Database connection (from provisioned resource)
+      DATABASE_HOST: ${resources.database.host}
+      DATABASE_PORT: ${resources.database.port}
+      DATABASE_NAME: ${resources.database.name}
+
+      # Cache connection (from provisioned resource)
+      REDIS_HOST: ${resources.cache.endpoint}
+      REDIS_PORT: ${resources.cache.port}
+
+      # Feature flags (workflow variables)
+      FEATURE_A_ENABLED: ${workflow.FEATURE_A}
+      FEATURE_B_ENABLED: ${workflow.FEATURE_B}
+
+      # Build metadata (step outputs)
+      BUILD_ID: ${build.build_id}
+      COMMIT_SHA: ${build.commit_sha}
+
+    resources:
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 30
+      periodSeconds: 10
+
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+# Resource definitions with interpolation
+resources:
+  # PostgreSQL database with dynamic configuration
+  database:
+    type: postgres
+    params:
+      # Workflow variable interpolation
+      identifier: "${workflow.APP_NAME}-db-${workflow.ENVIRONMENT}"
+      region: "${workflow.REGION}"
+
+      # Step output interpolation for sizing
+      instance_class: "${sizing.DB_INSTANCE}"
+
+      # Static configuration
+      engine_version: "15"
+      allocated_storage: 100
+      backup_retention_period: 7
+
+      # Nested configuration with interpolation
+      backup:
+        enabled: true
+        window: "02:00-04:00"
+        retention_days: 30
+
+      # Tags with mixed interpolation
+      tags:
+        - "app:${workflow.APP_NAME}"
+        - "env:${workflow.ENVIRONMENT}"
+        - "region:${workflow.REGION}"
+        - "version:${build.version}"
+        - "managed-by:innominatus"
+
+  # Redis cache with dynamic configuration
+  cache:
+    type: redis
+    params:
+      cluster_id: "${workflow.APP_NAME}-cache-${workflow.ENVIRONMENT}"
+      region: "${workflow.REGION}"
+
+      # Step output for sizing
+      num_cache_nodes: "${sizing.CACHE_NODES}"
+
+      # Static configuration
+      node_type: "cache.r5.large"
+      engine_version: "7.0"
+
+      # Nested configuration
+      cluster:
+        automatic_failover: true
+        multi_az: true
+        snapshot_retention_limit: 5
+
+  # Route/Ingress with interpolation
+  route:
+    type: route
+    params:
+      # Build hostname from variables
+      host: "${workflow.APP_NAME}.${workflow.REGION}.example.com"
+      port: 443
+
+      # Reference resource outputs
+      certificate_arn: "${resources.tls-cert.arn}"
+
+      # Backend configuration
+      backend:
+        protocol: "HTTPS"
+        port: 8080
+        health_check: "/health"
+        timeout: 30
+
+# Service configuration
+service:
+  ports:
+    http:
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

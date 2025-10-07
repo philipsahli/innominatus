@@ -1,0 +1,297 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: score-application-template
+  title: Deploy Application with Score
+  description: Create and deploy an application using Score specification via innominatus orchestrator
+  tags:
+    - score
+    - deployment
+    - kubernetes
+    - innominatus
+spec:
+  owner: platform-team
+  type: service
+
+  parameters:
+    - title: Application Details
+      required:
+        - name
+        - owner
+        - environment
+      properties:
+        name:
+          title: Application Name
+          type: string
+          description: Unique name for your application (lowercase, alphanumeric, dashes)
+          pattern: '^[a-z][a-z0-9-]*$'
+          maxLength: 50
+          ui:autofocus: true
+          ui:help: 'Example: my-api-service'
+        description:
+          title: Description
+          type: string
+          description: Brief description of your application
+          ui:widget: textarea
+          ui:options:
+            rows: 3
+        owner:
+          title: Team Owner
+          type: string
+          description: Team responsible for this application
+          ui:field: OwnerPicker
+          ui:options:
+            allowedKinds:
+              - Group
+        environment:
+          title: Environment
+          type: string
+          description: Target deployment environment
+          enum:
+            - development
+            - staging
+            - production
+          enumNames:
+            - Development
+            - Staging
+            - Production
+          default: development
+
+    - title: Container Configuration
+      required:
+        - containerImage
+      properties:
+        containerImage:
+          title: Container Image
+          type: string
+          description: Docker image for your application
+          ui:help: 'Example: registry.example.com/my-app:v1.0.0'
+        containerPort:
+          title: Container Port
+          type: number
+          description: Port your application listens on
+          default: 8080
+          minimum: 1
+          maximum: 65535
+        replicas:
+          title: Replicas
+          type: number
+          description: Number of pod replicas to run
+          default: 2
+          minimum: 1
+          maximum: 10
+        resources:
+          title: Resource Configuration
+          type: object
+          properties:
+            cpu:
+              title: CPU Request
+              type: string
+              description: CPU resource request
+              default: "100m"
+              enum:
+                - "100m"
+                - "250m"
+                - "500m"
+                - "1000m"
+              enumNames:
+                - 100m (0.1 CPU)
+                - 250m (0.25 CPU)
+                - 500m (0.5 CPU)
+                - 1000m (1 CPU)
+            memory:
+              title: Memory Request
+              type: string
+              description: Memory resource request
+              default: "256Mi"
+              enum:
+                - "128Mi"
+                - "256Mi"
+                - "512Mi"
+                - "1Gi"
+                - "2Gi"
+              enumNames:
+                - 128 MB
+                - 256 MB
+                - 512 MB
+                - 1 GB
+                - 2 GB
+        environmentVariables:
+          title: Environment Variables
+          type: array
+          description: Environment variables for your application
+          items:
+            type: object
+            required:
+              - key
+              - value
+            properties:
+              key:
+                type: string
+                title: Variable Name
+              value:
+                type: string
+                title: Variable Value
+          ui:options:
+            addable: true
+            orderable: true
+            removable: true
+
+    - title: Resource Provisioning
+      properties:
+        enableS3:
+          title: Provision S3 Storage
+          type: boolean
+          description: Create an S3-compatible bucket for your application
+          default: false
+        enableDatabase:
+          title: Provision Database
+          type: boolean
+          description: Create a database for your application
+          default: false
+      dependencies:
+        enableS3:
+          oneOf:
+            - properties:
+                enableS3:
+                  const: false
+            - properties:
+                enableS3:
+                  const: true
+                s3BucketName:
+                  title: S3 Bucket Name
+                  type: string
+                  description: Name for the S3 bucket
+                  pattern: '^[a-z][a-z0-9-]*$'
+        enableDatabase:
+          oneOf:
+            - properties:
+                enableDatabase:
+                  const: false
+            - properties:
+                enableDatabase:
+                  const: true
+                databaseType:
+                  title: Database Type
+                  type: string
+                  description: Type of database to provision
+                  enum:
+                    - postgresql
+                    - mysql
+                    - redis
+                  enumNames:
+                    - PostgreSQL
+                    - MySQL
+                    - Redis
+                  default: postgresql
+                databaseSize:
+                  title: Database Storage Size
+                  type: string
+                  description: Storage size for the database
+                  enum:
+                    - "1Gi"
+                    - "5Gi"
+                    - "10Gi"
+                    - "20Gi"
+                  enumNames:
+                    - 1 GB
+                    - 5 GB
+                    - 10 GB
+                    - 20 GB
+                  default: "5Gi"
+
+    - title: Workflow Configuration
+      properties:
+        workflowSteps:
+          title: Deployment Workflow Steps
+          type: array
+          description: Select the workflow steps to execute
+          items:
+            type: string
+            enum:
+              - create-namespace
+              - deploy-app
+              - provision-storage
+              - setup-gitops
+              - create-repository
+          uniqueItems: true
+          ui:widget: checkboxes
+          default:
+            - create-namespace
+            - deploy-app
+
+  steps:
+    - id: fetch-template
+      name: Fetch Score Template
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          environment: ${{ parameters.environment }}
+          containerImage: ${{ parameters.containerImage }}
+          containerPort: ${{ parameters.containerPort }}
+          replicas: ${{ parameters.replicas }}
+          cpuRequest: ${{ parameters.resources.cpu }}
+          memoryRequest: ${{ parameters.resources.memory }}
+          environmentVariables: ${{ parameters.environmentVariables }}
+          enableS3: ${{ parameters.enableS3 }}
+          s3BucketName: ${{ parameters.s3BucketName }}
+          enableDatabase: ${{ parameters.enableDatabase }}
+          databaseType: ${{ parameters.databaseType }}
+          databaseSize: ${{ parameters.databaseSize }}
+          workflowSteps: ${{ parameters.workflowSteps }}
+
+    - id: log-message
+      name: Log Generated Files
+      action: debug:log
+      input:
+        message: 'Generated Score specification for application: ${{ parameters.name }}'
+
+  output:
+    links:
+      - title: View Score Specification
+        icon: catalog
+        url: ${{ steps['fetch-template'].output.targetPath }}/score.yaml
+      - title: Deploy to innominatus
+        icon: dashboard
+        description: Use innominatus CLI or API to deploy this Score specification
+        url: http://innominatus.localtest.me
+
+    text:
+      - title: Next Steps
+        content: |
+          ## Your Score specification has been generated!
+
+          **Application**: ${{ parameters.name }}
+          **Environment**: ${{ parameters.environment }}
+          **Owner**: ${{ parameters.owner }}
+
+          ### To deploy using innominatus:
+
+          **Option 1: Using the CLI**
+          ```bash
+          ./innominatus-ctl run deploy-app score.yaml
+          ```
+
+          **Option 2: Using the API**
+          ```bash
+          curl -X POST http://innominatus.localtest.me/api/specs \
+            -H "Content-Type: application/yaml" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            --data-binary @score.yaml
+          ```
+
+          **Option 3: Via Backstage (if custom action is installed)**
+          - The template can be extended with a custom action to automatically deploy to innominatus
+
+          ### Files Generated:
+          - `score.yaml` - Score specification
+          - `catalog-info.yaml` - Backstage catalog entry
+
+          ### Workflow Steps Selected:
+          {%- for step in parameters.workflowSteps %}
+          - {{ step }}
+          {%- endfor %}

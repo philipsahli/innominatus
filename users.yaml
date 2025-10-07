@@ -9,16 +9,25 @@ users:
           created_at: 2025-09-24T21:13:16.239792+02:00
           last_used_at: 2025-09-24T21:14:36.280085+02:00
           expires_at: 0001-01-01T00:00:00Z
-        - key: 5bf80ac9bb8f1dfb39db0af78fd922a2874530f093a8da75c3f6daf6aa0161a2
-          name: valid-key
-          created_at: 2025-09-24T21:17:19.463202+02:00
-          last_used_at: 2025-09-24T21:17:46.031539+02:00
-          expires_at: 2025-10-01T21:17:19.463203+02:00
         - key: cf1d1f5afb8c1f1b2e17079c835b1f22d3719f651b4673f1bc4e3a006ebeb5db
           name: cli-key
           created_at: 2025-09-25T11:04:05.646963+02:00
-          last_used_at: 2025-10-01T15:23:22.88341+02:00
+          last_used_at: 2025-10-05T19:41:52.294373+02:00
           expires_at: 2025-12-24T11:04:05.646963+01:00
+        - key: da703e772b3e0dffd8fc7eef1cc0a13819b2bb32a6c5f270c12fba1c9874e4d3
+          name: aaa
+          created_at: 2025-10-03T18:24:42.099817+02:00
+          last_used_at: 2025-10-04T16:05:15.110242+02:00
+          expires_at: 2026-01-01T18:24:42.099817+01:00
+        - key: 70aac99f631dc959a070515be48844389441bd6bf5fd5b1a0d2defe7c7b93eaa
+          name: aaaa
+          created_at: 2025-10-04T16:40:57.836629+02:00
+          last_used_at: 2025-10-04T19:52:11.020511+02:00
+          expires_at: 2026-01-02T16:40:57.83663+01:00
+        - key: cf6a54b479e0126fe616fa6c3cfe73682a7e05c7280abc9498659ca54223578c
+          name: aaaaaaa
+          created_at: 2025-10-05T19:36:17.49289+02:00
+          expires_at: 2026-01-03T19:36:17.49289+01:00
     - username: alice
       password: alice123
       team: frontend

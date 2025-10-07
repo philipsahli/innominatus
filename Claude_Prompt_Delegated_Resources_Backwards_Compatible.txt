@@ -1,0 +1,188 @@
+You are working on the Go project “innominatus” (IDP Orchestrator).
+
+Goal:
+Extend the orchestrator’s resource model and workflow engine to support **Delegated Resources**, which are managed externally (e.g., via GitOps or external Terraform Enterprise workspaces).
+These resources should be integrated in a backwards-compatible way with the existing “native” resource handling and visible to developers in a unified inventory view.
+
+---
+
+# 🧠 Concept Overview
+
+## Problem
+Some infrastructure resources (VPCs, DNS zones, Vault spaces, etc.) are provisioned through **external GitOps workflows** that use pull requests and CI/CD pipelines.
+The orchestrator does not own the lifecycle of these resources directly but still needs to:
+- track their intent and state,
+- visualize them together with native resources, and
+- wait for them during workflow execution when required.
+
+## Solution: Delegated Resource Concept
+A **Delegated Resource** represents an external resource managed by another system.
+The orchestrator only keeps metadata, current state, and external references (e.g., PR URL, build URL, Git commit hash).
+
+### Resource Types
+| Type | Description | Managed By | Reconciliation |
+|------|--------------|-------------|----------------|
+| native | Resource directly managed by orchestrator (e.g., via Terraform, Ansible) | Orchestrator | Active |
+| delegated | Resource requested through GitOps or external system | External System | Passive |
+| external | Imported resource (read-only reference) | External | None |
+
+### Resource States
+`Pending`, `WaitingExternal`, `BuildingExternal`, `Healthy`, `Error`, `Unknown`
+
+---
+
+# 🧱 Implementation Tasks
+
+## 1. Schema and Model Updates (Backwards Compatible)
+
+Update `internal/database/schema.go` and `internal/resources/model.go`:
+
+- Add fields to `Resource` struct:
+  ```go
+  Type          string // "native" (default) or "delegated"
+  Provider      string // e.g., "gitops", "terraform-enterprise", "manual"
+  ReferenceURL  string // PR URL, external ID, or build link
+  ExternalState string // "WaitingExternal", "BuildingExternal", "Healthy", "Error", etc.
+  LastSync      time.Time
+  ```
+- Default all existing rows to `Type="native"`.
+
+Add migration:
+```sql
+ALTER TABLE resources
+  ADD COLUMN type TEXT DEFAULT 'native',
+  ADD COLUMN provider TEXT,
+  ADD COLUMN reference_url TEXT,
+  ADD COLUMN external_state TEXT,
+  ADD COLUMN last_sync TIMESTAMP;
+```
+
+---
+
+## 2. Workflow Engine Support
+
+In `internal/workflow/executor.go`:
+
+- Recognize resources of type `delegated`.
+- When a workflow step references a delegated resource:
+  - If it’s provisioned by a `gitops-provision` step, update its `ReferenceURL` and mark `ExternalState="WaitingExternal"`.
+  - When the GitOps step completes successfully, set `ExternalState="Healthy"`.
+- For `native` resources, continue current behavior.
+
+Add a helper in `internal/resources/status.go`:
+```go
+func UpdateExternalResourceState(ctx context.Context, id string, state string, reference string)
+```
+
+---
+
+## 3. API & UI Integration
+
+### REST API (`/api/v1/resources`)
+- Add new fields (`type`, `provider`, `reference_url`, `external_state`, `last_sync`) to responses.
+- Add filtering query param `?type=delegated` or `?provider=gitops`.
+- When a delegated resource has `ReferenceURL`, include it in the response.
+
+### Web UI
+- In the Resource list view, show both native and delegated resources.
+- Add new column “Managed By” (Orchestrator / External / GitOps).
+- Display external resources with link badge:
+  - Example: `🔗 GitOps (View PR)` → opens `reference_url`.
+- Status color coding:
+  - Gray: WaitingExternal
+  - Yellow: BuildingExternal
+  - Green: Healthy
+  - Red: Error
+
+---
+
+## 4. Documentation Update
+
+Add a new documentation page:
+`docs/DELEGATED_RESOURCES.md`
+
+Include sections:
+
+### What Are Delegated Resources
+Explain that they represent resources managed by external systems (GitOps, Terraform Enterprise, etc.).
+
+### Lifecycle & State
+Show example state transitions:
+```
+Pending → WaitingExternal → BuildingExternal → Healthy
+                      ↘ Error
+```
+
+### YAML Example
+```yaml
+resources:
+  vpc:
+    type: delegated
+    provider: gitops
+    reference: https://github.com/postinfra/vpc-configs/pull/123
+    state: WaitingExternal
+```
+
+### Workflow Example
+```yaml
+workflows:
+  provision-vpc:
+    steps:
+      - name: request-vpc
+        type: gitops-provision
+        repo: postinfra/vpc-configs
+        branch: feature/add-vpc-demo
+        base: main
+        ci_provider: github
+        ci_check: workflow/vpc-provision
+```
+
+### DevEx Guidance
+- Developers see all resources in one list, even if externally managed.
+- The orchestrator automatically tracks PR links and build states.
+- Once external systems finish provisioning, the orchestrator marks the resource as `Healthy`.
+
+---
+
+## 5. Metrics & Observability
+
+Add new metrics:
+- `innominatus_resources_total{type="delegated"}`
+- `innominatus_resources_external_healthy_total`
+- `innominatus_resources_external_failed_total`
+- `innominatus_gitops_wait_duration_seconds`
+
+Expose them via the existing `/metrics` endpoint.
+
+---
+
+## 6. Testing
+
+- Unit test resource state transitions.
+- Mock delegated resource with GitOps client.
+- Validate existing resources unaffected (default type="native").
+- Add integration test verifying API returns both types.
+
+---
+
+## 7. Documentation Index Update
+
+Update `docs/README.md`:
+- Add link under “Core Concepts”:
+  ```
+  - [Delegated Resources and External Reconciliation](DELEGATED_RESOURCES.md)
+  ```
+
+---
+
+Design Principles:
+- **Backwards Compatibility:** default `type="native"` for all existing data.
+- **KISS:** minimal, non-intrusive schema extensions.
+- **SOLID:** introduce `ResourceProvider` interface later, but keep it simple now.
+- **Transparency:** Developers always see one inventory, regardless of ownership.
+- **Extensibility:** Ready for future reconciliation or webhook feedback loops.
+
+Claude Code should:
+- Generate all code changes (schema, structs, handlers, migrations, tests).
+- Create and populate the new documentation file.
+- Keep all naming consistent with “innominatus” conventions.

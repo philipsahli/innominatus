@@ -104,7 +104,7 @@ fi
 echo ""
 echo "Step 4: Verifying Terraform code generation"
 echo "───────────────────────────────────────────────────────────────"
-TERRAFORM_DIR="workspaces/$APP_NAME/terraform"
+TERRAFORM_DIR="workspaces/${APP_NAME}-default/terraform"
 if [ -f "$TERRAFORM_DIR/main.tf" ]; then
     print_success "Terraform code generated: $TERRAFORM_DIR/main.tf"
     echo "  Generated Terraform configuration:"

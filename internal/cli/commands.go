@@ -347,11 +347,7 @@ func (c *Client) DeprovisionCommand(name string) error {
 	return nil
 }
 
-func (c *Client) AdminCommand(user *users.User, args []string) error {
-	if !user.IsAdmin() {
-		return fmt.Errorf("access denied: admin role required")
-	}
-
+func (c *Client) AdminCommand(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("admin command requires a subcommand")
 	}
@@ -381,13 +377,13 @@ func (c *Client) AdminCommand(user *users.User, args []string) error {
 		return c.deleteUserCommand(args[1])
 
 	case "generate-api-key":
-		return c.generateAPIKeyCommand(user, args[1:])
+		return c.generateAPIKeyCommand(args[1:])
 
 	case "list-api-keys":
-		return c.listAPIKeysCommand(user, args[1:])
+		return c.listAPIKeysCommand(args[1:])
 
 	case "revoke-api-key":
-		return c.revokeAPIKeyCommand(user, args[1:])
+		return c.revokeAPIKeyCommand(args[1:])
 
 	default:
 		return fmt.Errorf("unknown admin subcommand '%s'. Available: show, add-user, list-users, delete-user, generate-api-key, list-api-keys, revoke-api-key", subcommand)
@@ -559,6 +555,24 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 
 	// Validate required parameters
 	if err := config.ValidateParameters(pathName, params); err != nil {
+		// Check if it's a parameter validation error for better messaging
+		if paramErr, ok := err.(*goldenpaths.ParameterValidationError); ok {
+			formatter.PrintError(fmt.Sprintf("Parameter validation failed for '%s'", pathName))
+			formatter.PrintKeyValue(1, "Parameter", paramErr.ParameterName)
+			if paramErr.ProvidedValue != "" {
+				formatter.PrintKeyValue(1, "Provided Value", paramErr.ProvidedValue)
+			}
+			if paramErr.ExpectedType != "" {
+				formatter.PrintKeyValue(1, "Expected Type", paramErr.ExpectedType)
+			}
+			if paramErr.Constraint != "" {
+				formatter.PrintKeyValue(1, "Constraint", paramErr.Constraint)
+			}
+			if paramErr.Suggestion != "" {
+				formatter.PrintKeyValue(1, "Suggestion", paramErr.Suggestion)
+			}
+			return fmt.Errorf("parameter validation failed")
+		}
 		return fmt.Errorf("parameter validation failed: %w", err)
 	}
 
@@ -719,7 +733,20 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 }
 
 // DemoTimeCommand installs/reconciles the demo environment
-func (c *Client) DemoTimeCommand() error {
+func (c *Client) DemoTimeCommand(componentFilter string) error {
+	// Parse component filter
+	var filter []string
+	if componentFilter != "" {
+		// Split by comma and trim whitespace
+		parts := strings.Split(componentFilter, ",")
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				filter = append(filter, trimmed)
+			}
+		}
+	}
+
 	// Create demo environment configuration
 	env := demo.NewDemoEnvironment()
 
@@ -741,6 +768,12 @@ func (c *Client) DemoTimeCommand() error {
 	// Print welcome message
 	cheatSheet.PrintWelcome()
 
+	// Print filter information if components are filtered
+	if len(filter) > 0 {
+		fmt.Printf("\n🎯 Component filter active: %s\n", strings.Join(filter, ", "))
+		fmt.Printf("   (Dependencies will be automatically included)\n\n")
+	}
+
 	// Kill any processes using port 8081 to prevent conflicts
 	cheatSheet.PrintProgress("Cleaning up port 8081...")
 	if err := killProcessesOnPort(8081); err != nil {
@@ -753,10 +786,11 @@ func (c *Client) DemoTimeCommand() error {
 		return err
 	}
 
-	// Install components
-	cheatSheet.PrintProgress("Installing demo environment components...")
+	// Install components (filtered or all)
+	componentsToInstall := env.GetFilteredComponents(filter)
+	cheatSheet.PrintProgress(fmt.Sprintf("Installing %d demo environment components...", len(componentsToInstall)))
 
-	for _, component := range env.GetHelmComponents() {
+	for _, component := range componentsToInstall {
 		cheatSheet.PrintProgress(fmt.Sprintf("Installing %s...", component.Name))
 		if err := installer.InstallComponent(component); err != nil {
 			cheatSheet.PrintError(fmt.Sprintf("Installing %s", component.Name), err)
@@ -764,46 +798,93 @@ func (c *Client) DemoTimeCommand() error {
 		}
 	}
 
-	// Install Kubernetes Dashboard
-	cheatSheet.PrintProgress("Installing Kubernetes Dashboard...")
-	if err := installer.InstallKubernetesDashboard(); err != nil {
-		cheatSheet.PrintError("Installing Kubernetes Dashboard", err)
-		return err
+	// Build list of all installed components for health checking
+	allInstalledComponents := componentsToInstall
+
+	// Install Kubernetes Dashboard (if requested)
+	if env.IsComponentRequested("kubernetes-dashboard", filter) {
+		cheatSheet.PrintProgress("Installing Kubernetes Dashboard...")
+		if err := installer.InstallKubernetesDashboard(); err != nil {
+			cheatSheet.PrintError("Installing Kubernetes Dashboard", err)
+			return err
+		}
+		// Add to health check list
+		for _, comp := range env.Components {
+			if comp.Name == "kubernetes-dashboard" {
+				allInstalledComponents = append(allInstalledComponents, comp)
+				break
+			}
+		}
 	}
 
-	// Install Demo App
-	cheatSheet.PrintProgress("Installing Demo Application...")
-	if err := installer.InstallDemoApp(); err != nil {
-		cheatSheet.PrintError("Installing Demo Application", err)
-		return err
+	// Install Demo App (if requested)
+	if env.IsComponentRequested("demo-app", filter) {
+		cheatSheet.PrintProgress("Installing Demo Application...")
+		if err := installer.InstallDemoApp(); err != nil {
+			cheatSheet.PrintError("Installing Demo Application", err)
+			return err
+		}
+		// Add to health check list
+		for _, comp := range env.Components {
+			if comp.Name == "demo-app" {
+				allInstalledComponents = append(allInstalledComponents, comp)
+				break
+			}
+		}
 	}
 
-	// Wait for services to be healthy
+	// Wait for services to be healthy (only check installed components)
 	cheatSheet.PrintProgress("Waiting for services to become healthy...")
-	if err := healthChecker.WaitForHealthy(env, 30, 10*time.Second); err != nil {
+	if err := healthChecker.WaitForComponentsHealthy(allInstalledComponents, 30, 10*time.Second); err != nil {
 		cheatSheet.PrintError("Health Check", err)
 		return err
 	}
 
-	// Seed Git repository
-	cheatSheet.PrintProgress("Seeding Git repository...")
-	if err := gitManager.SeedRepository(); err != nil {
-		cheatSheet.PrintError("Git Repository Seeding", err)
-		return err
+	// Configure Keycloak realm and ArgoCD OIDC (if Keycloak and ArgoCD are installed)
+	if env.IsComponentRequested("keycloak", filter) && env.IsComponentRequested("argocd", filter) {
+		cheatSheet.PrintProgress("Configuring Keycloak realm and ArgoCD OIDC...")
+		if err := installer.ApplyKeycloakConfig(); err != nil {
+			cheatSheet.PrintError("Keycloak Configuration", err)
+			return err
+		}
+
+		// Restart ArgoCD server to apply OIDC configuration
+		cheatSheet.PrintProgress("Restarting ArgoCD server...")
+		if err := installer.RestartArgoCDServer(); err != nil {
+			cheatSheet.PrintError("ArgoCD Restart", err)
+			return err
+		}
 	}
 
-	// Install Grafana dashboards
-	cheatSheet.PrintProgress("Installing Grafana dashboards...")
-	if err := grafanaManager.InstallClusterHealthDashboard(); err != nil {
-		cheatSheet.PrintError("Grafana Dashboard Installation", err)
-		return err
+	// Seed Git repository (if Gitea is installed)
+	if env.IsComponentRequested("gitea", filter) {
+		cheatSheet.PrintProgress("Seeding Git repository...")
+		if err := gitManager.SeedRepository(); err != nil {
+			cheatSheet.PrintError("Git Repository Seeding", err)
+			return err
+		}
+	}
+
+	// Install Grafana dashboards (if Grafana is installed)
+	if env.IsComponentRequested("grafana", filter) {
+		cheatSheet.PrintProgress("Installing Grafana dashboards...")
+		if err := grafanaManager.InstallClusterHealthDashboard(); err != nil {
+			cheatSheet.PrintError("Grafana Dashboard Installation", err)
+			return err
+		}
+
+		// Install Innominatus Platform Metrics Dashboard
+		if err := grafanaManager.InstallInnominatusDashboard(); err != nil {
+			cheatSheet.PrintError("Innominatus Dashboard Installation", err)
+			return err
+		}
 	}
 
 	// Print installation complete
 	cheatSheet.PrintInstallationComplete()
 
-	// Print status and credentials
-	healthResults := healthChecker.CheckAll(env)
+	// Print status and credentials (only for installed components)
+	healthResults := healthChecker.CheckComponents(allInstalledComponents)
 	cheatSheet.PrintStatus(healthResults)
 	cheatSheet.PrintCredentials()
 	cheatSheet.PrintQuickStart()
@@ -836,8 +917,27 @@ func (c *Client) DemoNukeCommand() error {
 		}
 	}
 
+	// Remove ArgoCD OIDC configuration before deleting namespaces
+	cheatSheet.PrintProgress("Removing ArgoCD OIDC configuration...")
+	// #nosec G204 - kubectl context from controlled demo environment
+	removeOIDCCmd := exec.Command("kubectl", "--context", env.KubeContext, "patch", "configmap", "argocd-cm",
+		"-n", "argocd",
+		"--type", "json",
+		"-p", `[{"op": "remove", "path": "/data/oidc.config"}]`)
+	if err := removeOIDCCmd.Run(); err != nil {
+		fmt.Printf("Warning: Failed to remove OIDC config: %v\n", err)
+	}
+
+	// #nosec G204 - kubectl context from controlled demo environment
+	removeSecretCmd := exec.Command("kubectl", "--context", env.KubeContext, "delete", "secret", "argocd-oidc-secret",
+		"-n", "argocd",
+		"--ignore-not-found=true")
+	if err := removeSecretCmd.Run(); err != nil {
+		fmt.Printf("Warning: Failed to remove OIDC secret: %v\n", err)
+	}
+
 	// Delete namespaces
-	namespaces := []string{"demo", "monitoring", "vault", "argocd", "gitea", "minio-system", "ingress-nginx", "kubernetes-dashboard"}
+	namespaces := []string{"demo", "monitoring", "vault", "argocd", "gitea", "minio-system", "keycloak", "ingress-nginx", "kubernetes-dashboard"}
 	for _, namespace := range namespaces {
 		cheatSheet.PrintProgress(fmt.Sprintf("Deleting namespace %s...", namespace))
 		if err := installer.DeleteNamespace(namespace); err != nil {
@@ -1132,9 +1232,9 @@ func (c *Client) displayWorkflowSummary(workflows []interface{}, appName string)
 }
 
 // generateAPIKeyCommand generates a new API key for a user
-func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
+func (c *Client) generateAPIKeyCommand(args []string) error {
 	fs := flag.NewFlagSet("generate-api-key", flag.ContinueOnError)
-	username := fs.String("username", "", "Username to generate API key for")
+	username := fs.String("username", "", "Username to generate API key for (required)")
 	keyName := fs.String("name", "", "Name for the API key")
 	expiryDays := fs.Int("expiry-days", 0, "Number of days until expiry (required, must be > 0)")
 
@@ -1142,11 +1242,8 @@ func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
 		return err
 	}
 
-	// Default to current user if not admin
 	if *username == "" {
-		*username = user.Username
-	} else if !user.IsAdmin() && *username != user.Username {
-		return fmt.Errorf("access denied: only admins can generate API keys for other users")
+		return fmt.Errorf("--username is required")
 	}
 
 	if *keyName == "" {
@@ -1180,19 +1277,16 @@ func (c *Client) generateAPIKeyCommand(user *users.User, args []string) error {
 }
 
 // listAPIKeysCommand lists API keys for a user
-func (c *Client) listAPIKeysCommand(user *users.User, args []string) error {
+func (c *Client) listAPIKeysCommand(args []string) error {
 	fs := flag.NewFlagSet("list-api-keys", flag.ContinueOnError)
-	username := fs.String("username", "", "Username to list API keys for")
+	username := fs.String("username", "", "Username to list API keys for (required)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	// Default to current user if not admin
 	if *username == "" {
-		*username = user.Username
-	} else if !user.IsAdmin() && *username != user.Username {
-		return fmt.Errorf("access denied: only admins can list API keys for other users")
+		return fmt.Errorf("--username is required")
 	}
 
 	store, err := users.LoadUsers()
@@ -1234,20 +1328,17 @@ func (c *Client) listAPIKeysCommand(user *users.User, args []string) error {
 }
 
 // revokeAPIKeyCommand revokes an API key
-func (c *Client) revokeAPIKeyCommand(user *users.User, args []string) error {
+func (c *Client) revokeAPIKeyCommand(args []string) error {
 	fs := flag.NewFlagSet("revoke-api-key", flag.ContinueOnError)
-	username := fs.String("username", "", "Username to revoke API key for")
+	username := fs.String("username", "", "Username to revoke API key for (required)")
 	keyName := fs.String("name", "", "Name of the API key to revoke")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	// Default to current user if not admin
 	if *username == "" {
-		*username = user.Username
-	} else if !user.IsAdmin() && *username != user.Username {
-		return fmt.Errorf("access denied: only admins can revoke API keys for other users")
+		return fmt.Errorf("--username is required")
 	}
 
 	if *keyName == "" {
@@ -1265,6 +1356,115 @@ func (c *Client) revokeAPIKeyCommand(user *users.User, args []string) error {
 	}
 
 	fmt.Printf("✓ Revoked API key '%s' for user '%s'\n", *keyName, *username)
+	return nil
+}
+
+// LoginCommand authenticates the user, generates an API key, and stores it locally
+func (c *Client) LoginCommand(args []string) error {
+	fs := flag.NewFlagSet("login", flag.ContinueOnError)
+	keyName := fs.String("name", "", "Name for the API key (default: cli-<hostname>-<timestamp>)")
+	expiryDays := fs.Int("expiry-days", 90, "Number of days until API key expiry")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	// Prompt for username and password
+	user, err := users.PromptLogin()
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// Authenticate with server to get session token
+	err = c.Login(user.Username, user.Password)
+	if err != nil {
+		return fmt.Errorf("server authentication failed: %w", err)
+	}
+
+	fmt.Printf("✓ Authenticated as %s (%s, %s)\n", user.Username, user.Team, user.Role)
+
+	// Generate default key name if not provided
+	if *keyName == "" {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "unknown"
+		}
+		*keyName = fmt.Sprintf("cli-%s-%d", hostname, time.Now().Unix())
+	}
+
+	// Generate API key via the API
+	req := map[string]interface{}{
+		"name":        *keyName,
+		"expiry_days": *expiryDays,
+	}
+
+	var resp map[string]interface{}
+	err = c.http.POST("/api/profile/api-keys", req, &resp)
+	if err != nil {
+		return fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Extract API key from response
+	apiKey, ok := resp["key"].(string)
+	if !ok || apiKey == "" {
+		return fmt.Errorf("server did not return API key")
+	}
+
+	// Parse timestamps
+	createdAtStr, _ := resp["created_at"].(string)
+	expiresAtStr, _ := resp["expires_at"].(string)
+
+	createdAt, _ := time.Parse(time.RFC3339, createdAtStr)
+	expiresAt, _ := time.Parse(time.RFC3339, expiresAtStr)
+
+	// Save credentials to file
+	creds := &Credentials{
+		ServerURL: c.baseURL,
+		Username:  user.Username,
+		APIKey:    apiKey,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		KeyName:   *keyName,
+	}
+
+	err = SaveCredentials(creds)
+	if err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	credPath, _ := GetCredentialsPath()
+	fmt.Printf("✓ Generated API key '%s'\n", *keyName)
+	fmt.Printf("✓ Expires: %s\n", expiresAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("✓ Credentials saved to: %s\n", credPath)
+	fmt.Printf("\nYou can now use the CLI without authentication prompts.\n")
+	fmt.Printf("To logout, run: %s logout\n", os.Args[0])
+
+	return nil
+}
+
+// LogoutCommand removes the locally stored credentials
+func (c *Client) LogoutCommand() error {
+	// Check if credentials exist
+	credPath, err := GetCredentialsPath()
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(credPath); os.IsNotExist(err) {
+		fmt.Println("No credentials found. You are not logged in.")
+		return nil
+	}
+
+	// Remove credentials file
+	err = ClearCredentials()
+	if err != nil {
+		return fmt.Errorf("failed to clear credentials: %w", err)
+	}
+
+	fmt.Println("✓ Logged out successfully")
+	fmt.Printf("✓ Removed credentials from: %s\n", credPath)
+	fmt.Printf("\nTo login again, run: %s login\n", os.Args[0])
+
 	return nil
 }
 

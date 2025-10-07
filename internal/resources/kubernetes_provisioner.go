@@ -193,6 +193,7 @@ func (kp *KubernetesProvisioner) generateDeployment(appName string, namespace st
 	containerName := "web"
 	containerImage := "nginx:1.25"
 	containerPort := 80
+	var containerVars map[string]string
 
 	// Extract from Score spec if available
 	if scoreSpec != nil && scoreSpec.Containers != nil {
@@ -201,6 +202,8 @@ func (kp *KubernetesProvisioner) generateDeployment(appName string, namespace st
 			if container.Image != "" {
 				containerImage = container.Image
 			}
+			// Extract environment variables
+			containerVars = container.Variables
 			// Note: Ports are not yet in the Container type definition
 			// Using default port 80 for now
 			break // Use first container
@@ -230,10 +233,26 @@ spec:
         image: %s
         ports:
         - containerPort: %d
-          protocol: TCP`,
-		appName, namespace, appName, appName, appName, containerName, containerImage, containerPort)
+          protocol: TCP%s`,
+		appName, namespace, appName, appName, appName, containerName, containerImage, containerPort,
+		kp.generateEnvSection(containerVars))
 
 	return manifest
+}
+
+// generateEnvSection creates the environment variables section for deployment
+func (kp *KubernetesProvisioner) generateEnvSection(variables map[string]string) string {
+	if len(variables) == 0 {
+		return ""
+	}
+
+	var envVars []string
+	for key, value := range variables {
+		envVars = append(envVars, fmt.Sprintf(`        - name: %s
+          value: %q`, key, value))
+	}
+
+	return fmt.Sprintf("\n        env:\n%s", strings.Join(envVars, "\n"))
 }
 
 // generateService creates a Kubernetes Service manifest

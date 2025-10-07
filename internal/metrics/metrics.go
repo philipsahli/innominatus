@@ -23,6 +23,14 @@ type Metrics struct {
 	// Database metrics
 	dbQueriesTotal int64
 	dbQueryErrors  int64
+
+	// Resource metrics
+	resourcesNative          int64
+	resourcesDelegated       int64
+	resourcesExternal        int64
+	resourcesExternalHealthy int64
+	resourcesExternalFailed  int64
+	gitopsWaitDurations      []time.Duration // For calculating average GitOps wait time
 }
 
 // Global metrics instance
@@ -82,6 +90,42 @@ func (m *Metrics) RecordDBQuery(err error) {
 	if err != nil {
 		m.dbQueryErrors++
 	}
+}
+
+// RecordResourceCount records resource counts by type
+func (m *Metrics) RecordResourceCount(resourceType string, count int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	switch resourceType {
+	case "native":
+		m.resourcesNative = count
+	case "delegated":
+		m.resourcesDelegated = count
+	case "external":
+		m.resourcesExternal = count
+	}
+}
+
+// RecordExternalResourceHealth records health status of external resources
+func (m *Metrics) RecordExternalResourceHealth(healthy, failed int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.resourcesExternalHealthy = healthy
+	m.resourcesExternalFailed = failed
+}
+
+// RecordGitOpsWaitDuration records the duration waited for GitOps operations
+func (m *Metrics) RecordGitOpsWaitDuration(duration time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Keep last 100 durations for average calculation
+	if len(m.gitopsWaitDurations) >= 100 {
+		m.gitopsWaitDurations = m.gitopsWaitDurations[1:]
+	}
+	m.gitopsWaitDurations = append(m.gitopsWaitDurations, duration)
 }
 
 // Export exports metrics in Prometheus format
@@ -163,6 +207,37 @@ func (m *Metrics) Export() string {
 	output += "# TYPE innominatus_db_query_errors_total counter\n"
 	output += fmt.Sprintf("innominatus_db_query_errors_total %d\n", m.dbQueryErrors)
 	output += "\n"
+
+	// Resource metrics
+	output += "# HELP innominatus_resources_total Total resources by type\n"
+	output += "# TYPE innominatus_resources_total gauge\n"
+	output += fmt.Sprintf("innominatus_resources_total{type=\"native\"} %d\n", m.resourcesNative)
+	output += fmt.Sprintf("innominatus_resources_total{type=\"delegated\"} %d\n", m.resourcesDelegated)
+	output += fmt.Sprintf("innominatus_resources_total{type=\"external\"} %d\n", m.resourcesExternal)
+	output += "\n"
+
+	output += "# HELP innominatus_resources_external_healthy_total Total healthy external resources\n"
+	output += "# TYPE innominatus_resources_external_healthy_total gauge\n"
+	output += fmt.Sprintf("innominatus_resources_external_healthy_total %d\n", m.resourcesExternalHealthy)
+	output += "\n"
+
+	output += "# HELP innominatus_resources_external_failed_total Total failed external resources\n"
+	output += "# TYPE innominatus_resources_external_failed_total gauge\n"
+	output += fmt.Sprintf("innominatus_resources_external_failed_total %d\n", m.resourcesExternalFailed)
+	output += "\n"
+
+	// GitOps wait duration
+	if len(m.gitopsWaitDurations) > 0 {
+		var total time.Duration
+		for _, d := range m.gitopsWaitDurations {
+			total += d
+		}
+		avgSeconds := (total / time.Duration(len(m.gitopsWaitDurations))).Seconds()
+		output += "# HELP innominatus_gitops_wait_duration_seconds Average GitOps wait duration (last 100 operations)\n"
+		output += "# TYPE innominatus_gitops_wait_duration_seconds gauge\n"
+		output += fmt.Sprintf("innominatus_gitops_wait_duration_seconds %.2f\n", avgSeconds)
+		output += "\n"
+	}
 
 	// Go runtime metrics
 	var memStats runtime.MemStats

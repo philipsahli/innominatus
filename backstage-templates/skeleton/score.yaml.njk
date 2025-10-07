@@ -1,0 +1,158 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: ${{ values.name }}
+  {%- if values.description %}
+  description: ${{ values.description }}
+  {%- endif %}
+  labels:
+    owner: ${{ values.owner }}
+    environment: ${{ values.environment }}
+    managed-by: backstage
+
+containers:
+  main:
+    image: ${{ values.containerImage }}
+    {%- if values.containerPort %}
+    ports:
+      - port: ${{ values.containerPort }}
+        protocol: TCP
+    {%- endif %}
+    {%- if values.environmentVariables or values.enableS3 or values.enableDatabase %}
+    variables:
+      {%- if values.environmentVariables %}
+      {%- for var in values.environmentVariables %}
+      {{ var.key }}: "{{ var.value }}"
+      {%- endfor %}
+      {%- endif %}
+      {%- if values.enableS3 %}
+      # S3 Storage configuration (populated by Terraform outputs)
+      S3_BUCKET: ${{ values.s3BucketName | default(values.name + '-storage') }}
+      S3_ENDPOINT: http://minio.minio-system.svc.cluster.local:9000
+      S3_REGION: us-east-1
+      {%- endif %}
+      {%- if values.enableDatabase %}
+      # Database configuration (populated by workflow)
+      DB_TYPE: ${{ values.databaseType }}
+      DB_HOST: ${{ values.name }}-{{ values.databaseType }}.{{ values.environment }}.svc.cluster.local
+      DB_PORT: {% if values.databaseType == 'postgresql' %}5432{% elif values.databaseType == 'mysql' %}3306{% elif values.databaseType == 'redis' %}6379{% endif %}
+      DB_NAME: ${{ values.name }}
+      {%- endif %}
+    {%- endif %}
+    {%- if values.cpuRequest or values.memoryRequest %}
+    resources:
+      requests:
+        {%- if values.cpuRequest %}
+        cpu: ${{ values.cpuRequest }}
+        {%- endif %}
+        {%- if values.memoryRequest %}
+        memory: ${{ values.memoryRequest }}
+        {%- endif %}
+      limits:
+        {%- if values.cpuRequest %}
+        cpu: {% if values.cpuRequest == '100m' %}200m{% elif values.cpuRequest == '250m' %}500m{% elif values.cpuRequest == '500m' %}1000m{% else %}2000m{% endif %}
+        {%- endif %}
+        {%- if values.memoryRequest %}
+        memory: {% if values.memoryRequest == '128Mi' %}256Mi{% elif values.memoryRequest == '256Mi' %}512Mi{% elif values.memoryRequest == '512Mi' %}1Gi{% elif values.memoryRequest == '1Gi' %}2Gi{% else %}4Gi{% endif %}
+        {%- endif %}
+    {%- endif %}
+
+{%- if values.enableS3 or values.enableDatabase %}
+
+resources:
+  {%- if values.enableS3 %}
+  storage:
+    type: minio-s3-bucket
+    metadata:
+      annotations:
+        provisioner: terraform
+    properties:
+      bucket_name: ${{ values.s3BucketName | default(values.name + '-storage') }}
+      endpoint: http://minio.minio-system.svc.cluster.local:9000
+      region: us-east-1
+  {%- endif %}
+  {%- if values.enableDatabase %}
+  database:
+    type: ${{ values.databaseType }}
+    metadata:
+      annotations:
+        provisioner: helm
+    properties:
+      name: ${{ values.name }}-db
+      storage: ${{ values.databaseSize }}
+      {%- if values.databaseType == 'postgresql' %}
+      version: "15"
+      {%- elif values.databaseType == 'mysql' %}
+      version: "8.0"
+      {%- elif values.databaseType == 'redis' %}
+      version: "7.0"
+      {%- endif %}
+  {%- endif %}
+{%- endif %}
+
+{%- if values.workflowSteps %}
+
+# Workflow steps configuration for innominatus orchestrator
+workflows:
+  deploy:
+    description: Deploy ${{ values.name }} to ${{ values.environment }}
+    steps:
+      {%- if 'create-namespace' in values.workflowSteps %}
+      - name: Create Kubernetes namespace
+        type: kubernetes
+        config:
+          operation: create-namespace
+          namespace: ${{ values.environment }}
+      {%- endif %}
+      {%- if 'provision-storage' in values.workflowSteps and values.enableS3 %}
+      - name: Provision S3 bucket
+        type: terraform
+        config:
+          operation: apply
+          working_dir: ./terraform/minio-bucket
+          variables:
+            bucket_name: ${{ values.s3BucketName | default(values.name + '-storage') }}
+            minio_endpoint: http://minio.minio-system.svc.cluster.local:9000
+          outputs:
+            - minio_url
+            - bucket_name
+      {%- endif %}
+      {%- if 'provision-storage' in values.workflowSteps and values.enableDatabase %}
+      - name: Provision ${{ values.databaseType }} database
+        type: helm
+        config:
+          chart: bitnami/${{ values.databaseType }}
+          release_name: ${{ values.name }}-db
+          namespace: ${{ values.environment }}
+          values:
+            auth:
+              database: ${{ values.name }}
+            persistence:
+              size: ${{ values.databaseSize }}
+      {%- endif %}
+      {%- if 'deploy-app' in values.workflowSteps %}
+      - name: Deploy application to Kubernetes
+        type: kubernetes
+        config:
+          operation: apply
+          namespace: ${{ values.environment }}
+          replicas: ${{ values.replicas }}
+      {%- endif %}
+      {%- if 'create-repository' in values.workflowSteps %}
+      - name: Create Git repository
+        type: gitea-repo
+        config:
+          repo_name: ${{ values.name }}
+          description: ${{ values.description | default('Repository for ' + values.name) }}
+          private: false
+      {%- endif %}
+      {%- if 'setup-gitops' in values.workflowSteps %}
+      - name: Setup ArgoCD application
+        type: argocd
+        config:
+          app_name: ${{ values.name }}
+          namespace: ${{ values.environment }}
+          repo_url: http://gitea.gitea.svc.cluster.local:3000/giteaadmin/${{ values.name }}.git
+          path: manifests
+          sync_policy: automated
+      {%- endif %}
+{%- endif %}

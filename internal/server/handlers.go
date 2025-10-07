@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,10 +16,12 @@ import (
 	"innominatus/internal/graph"
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
+	"innominatus/internal/queue"
 	"innominatus/internal/resources"
 	"innominatus/internal/security"
 	"innominatus/internal/teams"
 	"innominatus/internal/types"
+	"innominatus/internal/users"
 	"innominatus/internal/workflow"
 	"net/http"
 	"os"
@@ -26,8 +31,18 @@ import (
 	"sync"
 	"time"
 
+	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
+
 	"gopkg.in/yaml.v3"
 )
+
+// AIService interface for AI assistant functionality
+type AIService interface {
+	HandleChat(w http.ResponseWriter, r *http.Request)
+	HandleGenerateSpec(w http.ResponseWriter, r *http.Request)
+	HandleStatus(w http.ResponseWriter, r *http.Request)
+	IsEnabled() bool
+}
 
 // LogBuffer captures command output for workflow step logging
 type LogBuffer struct {
@@ -98,17 +113,21 @@ type StepExecutionContext struct {
 }
 
 type Server struct {
-	storage          *Storage
-	db               *database.Database
-	workflowRepo     *database.WorkflowRepository
-	workflowExecutor *workflow.WorkflowExecutor
-	workflowAnalyzer *workflow.WorkflowAnalyzer
-	resourceManager  *resources.Manager
-	teamManager      *teams.TeamManager
-	sessionManager   *auth.SessionManager
-	healthChecker    *health.HealthChecker
-	loginAttempts    map[string][]time.Time
-	loginMutex       sync.Mutex
+	db                *database.Database
+	workflowRepo      *database.WorkflowRepository
+	workflowExecutor  *workflow.WorkflowExecutor
+	workflowAnalyzer  *workflow.WorkflowAnalyzer
+	workflowQueue     *queue.Queue // Async workflow execution queue
+	resourceManager   *resources.Manager
+	teamManager       *teams.TeamManager
+	sessionManager    auth.ISessionManager
+	oidcAuthenticator *auth.OIDCAuthenticator
+	healthChecker     *health.HealthChecker
+	rateLimiter       *RateLimiter
+	graphAdapter      *graph.Adapter
+	aiService         AIService // AI assistant service (optional)
+	loginAttempts     map[string][]time.Time
+	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)
 	memoryWorkflows map[int64]*MemoryWorkflowExecution
 	workflowCounter int64
@@ -116,6 +135,11 @@ type Server struct {
 	// Workflow scheduler for periodic execution
 	workflowTicker *time.Ticker
 	stopScheduler  chan struct{}
+}
+
+// SetAIService sets the AI service for the server
+func (s *Server) SetAIService(aiSvc AIService) {
+	s.aiService = aiSvc
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
@@ -144,19 +168,29 @@ type MemoryWorkflowStep struct {
 }
 
 func NewServer() *Server {
+	// Initialize OIDC authenticator
+	oidcConfig := auth.LoadOIDCConfig()
+	oidcAuth, err := auth.NewOIDCAuthenticator(oidcConfig)
+	if err != nil && oidcConfig.Enabled {
+		fmt.Printf("Warning: Failed to initialize OIDC: %v\n", err)
+		fmt.Println("Continuing without OIDC authentication...")
+	} else if oidcConfig.Enabled {
+		fmt.Println("OIDC authentication enabled")
+	}
+
 	healthChecker := health.NewHealthChecker()
 	// Register basic health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 
 	server := &Server{
-		storage:          NewStorage(),
-		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
-		teamManager:      teams.NewTeamManager(),
-		sessionManager:   auth.NewSessionManager(),
-		healthChecker:    healthChecker,
-		loginAttempts:    make(map[string][]time.Time),
-		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
-		workflowCounter:  0,
+		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
+		teamManager:       teams.NewTeamManager(),
+		sessionManager:    auth.NewSessionManager(),
+		oidcAuthenticator: oidcAuth,
+		healthChecker:     healthChecker,
+		loginAttempts:     make(map[string][]time.Time),
+		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
+		workflowCounter:   0,
 	}
 
 	// Load existing workflow executions from disk
@@ -166,10 +200,36 @@ func NewServer() *Server {
 }
 
 func NewServerWithDB(db *database.Database) *Server {
+	// Initialize OIDC authenticator
+	oidcConfig := auth.LoadOIDCConfig()
+	oidcAuth, err := auth.NewOIDCAuthenticator(oidcConfig)
+	if err != nil && oidcConfig.Enabled {
+		fmt.Printf("Warning: Failed to initialize OIDC: %v\n", err)
+		fmt.Println("Continuing without OIDC authentication...")
+	} else if oidcConfig.Enabled {
+		fmt.Println("OIDC authentication enabled")
+	}
+
 	workflowRepo := database.NewWorkflowRepository(db)
 	resourceRepo := database.NewResourceRepository(db)
 	resourceManager := resources.NewManager(resourceRepo)
 	workflowExecutor := workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+
+	// Initialize async workflow queue (5 workers)
+	workflowQueue := queue.NewQueue(5, workflowExecutor, db)
+	workflowQueue.Start()
+	fmt.Println("Async workflow queue initialized with 5 workers")
+
+	// Initialize graph adapter
+	graphAdapter, err := graph.NewAdapter(db.DB())
+	if err != nil {
+		fmt.Printf("Warning: Failed to initialize graph adapter: %v\n", err)
+		fmt.Println("Continuing without graph tracking...")
+	} else {
+		fmt.Println("Graph adapter initialized successfully")
+		// Set graph adapter on workflow executor
+		workflowExecutor.SetGraphAdapter(graphAdapter)
+	}
 
 	healthChecker := health.NewHealthChecker()
 	// Register health checks
@@ -177,18 +237,20 @@ func NewServerWithDB(db *database.Database) *Server {
 	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
 
 	server := &Server{
-		storage:          NewStorage(),
-		db:               db,
-		workflowRepo:     workflowRepo,
-		workflowExecutor: workflowExecutor,
-		workflowAnalyzer: workflow.NewWorkflowAnalyzer(),
-		resourceManager:  resourceManager,
-		teamManager:      teams.NewTeamManager(),
-		sessionManager:   auth.NewSessionManager(),
-		healthChecker:    healthChecker,
-		loginAttempts:    make(map[string][]time.Time),
-		memoryWorkflows:  make(map[int64]*MemoryWorkflowExecution),
-		workflowCounter:  0,
+		db:                db,
+		workflowRepo:      workflowRepo,
+		workflowExecutor:  workflowExecutor,
+		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
+		workflowQueue:     workflowQueue,
+		resourceManager:   resourceManager,
+		teamManager:       teams.NewTeamManager(),
+		sessionManager:    auth.NewDBSessionManager(db),
+		oidcAuthenticator: oidcAuth,
+		healthChecker:     healthChecker,
+		graphAdapter:      graphAdapter,
+		loginAttempts:     make(map[string][]time.Time),
+		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
+		workflowCounter:   0,
 	}
 
 	// Start the workflow scheduler only when database is available
@@ -216,23 +278,29 @@ func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var specs map[string]*types.ScoreSpec
+	var apps []*database.Application
+	var err error
 
 	// Admin users can see all specs, regular users only see their team's specs
 	if user.IsAdmin() {
-		specs = s.storage.ListSpecs()
+		apps, err = s.db.ListApplications()
 	} else {
-		specs = s.storage.ListSpecsByTeam(user.Team)
+		apps, err = s.db.ListApplicationsByTeam(user.Team)
+	}
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list applications: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	response := make(map[string]interface{})
-	for name, spec := range specs {
-		response[name] = map[string]interface{}{
-			"metadata":    spec.Metadata,
-			"containers":  spec.Containers,
-			"resources":   spec.Resources,
-			"environment": spec.Environment,
-			"graph":       graph.BuildGraph(spec),
+	for _, app := range apps {
+		response[app.Name] = map[string]interface{}{
+			"metadata":    app.ScoreSpec.Metadata,
+			"containers":  app.ScoreSpec.Containers,
+			"resources":   app.ScoreSpec.Resources,
+			"environment": app.ScoreSpec.Environment,
+			"graph":       graph.BuildGraph(app.ScoreSpec),
 		}
 	}
 
@@ -264,9 +332,9 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := spec.Metadata.Name
-	err = s.storage.AddSpec(name, &spec, user.Team, user.Username)
+	err = s.db.AddApplication(name, &spec, user.Team, user.Username)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error storing spec: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Error storing application: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -485,24 +553,24 @@ func (s *Server) handleGetSpec(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 
-	storedSpec, exists := s.storage.GetStoredSpec(name)
-	if !exists {
-		http.Error(w, "Spec not found", http.StatusNotFound)
+	app, err := s.db.GetApplication(name)
+	if err != nil {
+		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this spec
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
 
 	response := map[string]interface{}{
-		"metadata":    storedSpec.Spec.Metadata,
-		"containers":  storedSpec.Spec.Containers,
-		"resources":   storedSpec.Spec.Resources,
-		"environment": storedSpec.Spec.Environment,
-		"graph":       graph.BuildGraph(storedSpec.Spec),
+		"metadata":    app.ScoreSpec.Metadata,
+		"containers":  app.ScoreSpec.Containers,
+		"resources":   app.ScoreSpec.Resources,
+		"environment": app.ScoreSpec.Environment,
+		"graph":       graph.BuildGraph(app.ScoreSpec),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -519,19 +587,19 @@ func (s *Server) handleDeleteSpec(w http.ResponseWriter, r *http.Request, name s
 		return
 	}
 
-	storedSpec, exists := s.storage.GetStoredSpec(name)
-	if !exists {
-		http.Error(w, "Spec not found", http.StatusNotFound)
+	app, err := s.db.GetApplication(name)
+	if err != nil {
+		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this spec
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
 
-	err := s.storage.DeleteSpec(name)
+	err = s.db.DeleteApplication(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -553,7 +621,11 @@ func (s *Server) HandleEnvironments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	environments := s.storage.ListEnvironments()
+	environments, err := s.db.ListEnvironments()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list environments: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(environments); err != nil {
@@ -578,24 +650,27 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Legacy /api/graph endpoint - return first spec for backward compatibility
-	specs := s.storage.ListSpecs()
+	apps, err := s.db.ListApplications()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to list applications: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-	if len(specs) == 1 {
-		for _, spec := range specs {
-			response := map[string]interface{}{
-				"metadata":    spec.Metadata,
-				"containers":  spec.Containers,
-				"resources":   spec.Resources,
-				"environment": spec.Environment,
-				"graph":       graph.BuildGraph(spec),
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			if err := json.NewEncoder(w).Encode(response); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
-			}
-			return
+	if len(apps) == 1 {
+		app := apps[0]
+		response := map[string]interface{}{
+			"metadata":    app.ScoreSpec.Metadata,
+			"containers":  app.ScoreSpec.Containers,
+			"resources":   app.ScoreSpec.Resources,
+			"environment": app.ScoreSpec.Environment,
+			"graph":       graph.BuildGraph(app.ScoreSpec),
 		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
+		return
 	}
 
 	// Return all specs if multiple exist
@@ -604,90 +679,61 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 // handleAppGraph handles /api/graph/<app> requests with enhanced graph data
 func (s *Server) handleAppGraph(w http.ResponseWriter, r *http.Request, appName string) {
-	// Get the spec for the application
-	spec, exists := s.storage.GetSpec(appName)
-	if !exists {
+	// Get the graph from the database via graph adapter
+	if s.graphAdapter == nil {
+		http.Error(w, "Graph adapter not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	sdkGraph, err := s.graphAdapter.GetGraph(appName)
+	if err != nil {
 		http.Error(w, fmt.Sprintf("Application '%s' not found", appName), http.StatusNotFound)
 		return
 	}
 
-	// Build enhanced resource graph
-	resourceGraph := graph.BuildResourceGraph(appName, spec)
+	// Convert SDK graph format to frontend-compatible format
+	response := convertSDKGraphToFrontend(sdkGraph)
 
-	// Add workflow data to the graph
-	s.addWorkflowDataToGraph(resourceGraph, appName)
-
-	// Add mock resource status (for demonstration)
-	s.addMockResourceStatus(resourceGraph)
-
-	// Return the enhanced graph
+	// Return the graph data
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resourceGraph); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }
 
-// addWorkflowDataToGraph adds workflow execution data to the resource graph
-func (s *Server) addWorkflowDataToGraph(resourceGraph *graph.Graph, appName string) {
-	s.workflowMutex.RLock()
-	defer s.workflowMutex.RUnlock()
-
-	// Find workflows for this app
-	for _, workflow := range s.memoryWorkflows {
-		if workflow.AppName == appName {
-			// Extract step names
-			stepNames := make([]string, len(workflow.Steps))
-			for i, step := range workflow.Steps {
-				stepNames[i] = step.Name
-			}
-
-			// Add workflow node to graph
-			resourceGraph.AddWorkflowNodes(workflow.WorkflowName, workflow.Status, stepNames)
-		}
-	}
-}
-
-// addMockResourceStatus adds mock infrastructure resource status for demonstration
-func (s *Server) addMockResourceStatus(resourceGraph *graph.Graph) {
-	// Detect Postgres resources and add mock status
-	postgresNodes := resourceGraph.DetectPostgresResources()
-	for _, node := range postgresNodes {
-		resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-			"connection_string": "postgresql://localhost:5432/" + node.Name,
-			"status":            "running",
-			"host":              "postgres.demo.local",
-			"port":              5432,
-			"database":          node.Name,
+// convertSDKGraphToFrontend converts the SDK Graph format to frontend JSON format
+func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
+	// Convert nodes map to array
+	nodes := make([]map[string]interface{}, 0, len(sdkGraph.Nodes))
+	for _, node := range sdkGraph.Nodes {
+		nodes = append(nodes, map[string]interface{}{
+			"id":          node.ID,
+			"name":        node.Name,
+			"type":        string(node.Type),
+			"status":      string(node.State), // Convert NodeState to string
+			"description": node.Description,
+			"metadata":    node.Properties,
+			"created_at":  node.CreatedAt,
+			"updated_at":  node.UpdatedAt,
 		})
 	}
 
-	// Add mock status for other resource types
-	for _, node := range resourceGraph.Nodes {
-		if node.Type == graph.NodeTypeResource && node.Status == graph.NodeStatusUnknown {
-			resourceType, _ := node.Metadata["resource_type"].(string)
-			switch resourceType {
-			case "redis":
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"endpoint": "redis.demo.local:6379",
-					"status":   "running",
-				})
-			case "volume":
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"mount_path": "/data/" + node.Name,
-					"size":       "10Gi",
-					"status":     "bound",
-				})
-			case "route":
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"url":    "https://" + node.Name + ".demo.local",
-					"status": "active",
-				})
-			default:
-				resourceGraph.UpdateResourceStatus(node.Name, graph.NodeStatusCompleted, map[string]interface{}{
-					"status": "provisioned",
-				})
-			}
-		}
+	// Convert edges map to array
+	edges := make([]map[string]interface{}, 0, len(sdkGraph.Edges))
+	for _, edge := range sdkGraph.Edges {
+		edges = append(edges, map[string]interface{}{
+			"id":          edge.ID,
+			"source_id":   edge.FromNodeID, // Map from_node_id to source_id
+			"target_id":   edge.ToNodeID,   // Map to_node_id to target_id
+			"type":        string(edge.Type),
+			"description": edge.Description,
+			"metadata":    edge.Properties,
+		})
+	}
+
+	return map[string]interface{}{
+		"nodes": nodes,
+		"edges": edges,
 	}
 }
 
@@ -992,6 +1038,20 @@ func (s *Server) HandleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(metricsData))
+}
+
+// HandleAuthConfig returns authentication configuration for the frontend
+func (s *Server) HandleAuthConfig(w http.ResponseWriter, r *http.Request) {
+	oidcEnabled := s.oidcAuthenticator != nil && s.oidcAuthenticator.IsEnabled()
+
+	config := map[string]interface{}{
+		"oidc_enabled":       oidcEnabled,
+		"oidc_provider_name": "Keycloak",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(config)
 }
 
 // Memory workflow tracking methods
@@ -1425,13 +1485,19 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Count applications
-	var specs map[string]*types.ScoreSpec
+	var apps []*database.Application
+	var err error
 	if user.IsAdmin() {
-		specs = s.storage.ListSpecs()
+		apps, err = s.db.ListApplications()
 	} else {
-		specs = s.storage.ListSpecsByTeam(user.Team)
+		apps, err = s.db.ListApplicationsByTeam(user.Team)
 	}
-	applicationsCount := len(specs)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to count applications: %v", err), http.StatusInternalServerError)
+		return
+	}
+	applicationsCount := len(apps)
 
 	// Count workflows
 	var workflowsCount int
@@ -1450,9 +1516,9 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 
 	// Count resources across all specs
 	resourcesCount := 0
-	for _, spec := range specs {
-		if spec.Resources != nil {
-			resourcesCount += len(spec.Resources)
+	for _, app := range apps {
+		if app.ScoreSpec.Resources != nil {
+			resourcesCount += len(app.ScoreSpec.Resources)
 		}
 	}
 
@@ -1715,14 +1781,14 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request,
 	}
 
 	// Check if application exists
-	storedSpec, exists := s.storage.GetStoredSpec(appName)
-	if !exists {
+	app, err := s.db.GetApplication(appName)
+	if err != nil {
 		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this application
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
@@ -1736,8 +1802,8 @@ func (s *Server) handleDeleteApplication(w http.ResponseWriter, r *http.Request,
 		}
 	}
 
-	// Also remove from storage (spec records)
-	err := s.storage.DeleteSpec(appName)
+	// Also remove from database (spec records)
+	err = s.db.DeleteApplication(appName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to delete application spec: %v", err), http.StatusInternalServerError)
 		return
@@ -1763,14 +1829,14 @@ func (s *Server) handleDeprovisionApplication(w http.ResponseWriter, r *http.Req
 	}
 
 	// Check if application exists
-	storedSpec, exists := s.storage.GetStoredSpec(appName)
-	if !exists {
+	app, err := s.db.GetApplication(appName)
+	if err != nil {
 		http.Error(w, "Application not found", http.StatusNotFound)
 		return
 	}
 
 	// Check if user has access to this application
-	if !user.IsAdmin() && storedSpec.Team != user.Team {
+	if !user.IsAdmin() && app.Team != user.Team {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
@@ -1874,9 +1940,9 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	workflow := workflowSpec.Spec
 
 	// Store the Score spec first
-	err = s.storage.AddSpec(spec.Metadata.Name, &spec, user.Team, user.Username)
+	err = s.db.AddApplication(spec.Metadata.Name, &spec, user.Team, user.Username)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error storing spec: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Error storing application: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -1890,34 +1956,26 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Execute workflow with enhanced resource management integration
-	var workflowExecution *database.WorkflowExecution
-	if s.workflowExecutor != nil {
-		// Create workflow execution record
-		workflowExecution, err = s.workflowRepo.CreateWorkflowExecution(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), len(workflow.Steps))
-		if err != nil {
-			fmt.Printf("Warning: Failed to create workflow execution record: %v\n", err)
+	// Enqueue workflow for async execution
+	var taskID string
+	if s.workflowQueue != nil {
+		// Enqueue workflow for async execution with queue
+		metadata := map[string]interface{}{
+			"user":        user.Username,
+			"golden_path": goldenPathName,
+			"source":      "api",
 		}
-
-		// Execute workflow with resource integration
-		err = s.executeGoldenPathWorkflowWithResources(&workflow, &spec, user.Username, workflowExecution)
+		taskID, err = s.workflowQueue.Enqueue(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, metadata)
 		if err != nil {
-			// Mark workflow as failed
-			if workflowExecution != nil {
-				errorMsg := err.Error()
-				if updateErr := s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusFailed, &errorMsg); updateErr != nil {
-					fmt.Fprintf(os.Stderr, "failed to update workflow status: %v\n", updateErr)
-				}
-			}
-			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Failed to enqueue workflow: %v", err), http.StatusInternalServerError)
 			return
 		}
-
-		// Mark workflow as completed
-		if workflowExecution != nil {
-			if err := s.workflowRepo.UpdateWorkflowExecution(workflowExecution.ID, database.WorkflowStatusCompleted, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to update workflow status: %v\n", err)
-			}
+	} else if s.workflowExecutor != nil {
+		// Fallback: Execute workflow synchronously if queue is not available
+		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
+			return
 		}
 	} else {
 		// Fallback to basic workflow execution without database tracking
@@ -1938,79 +1996,24 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := map[string]interface{}{
-		"message":     fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name),
+		"message":     fmt.Sprintf("Golden path '%s' enqueued successfully for application '%s'", goldenPathName, spec.Metadata.Name),
 		"application": spec.Metadata.Name,
 		"golden_path": goldenPathName,
-		"workflow_id": nil,
+		"task_id":     taskID,
+		"status":      "enqueued",
 	}
 
-	if workflowExecution != nil {
-		response["workflow_id"] = workflowExecution.ID
+	if taskID != "" {
+		response["message"] = fmt.Sprintf("Golden path '%s' enqueued successfully for application '%s'", goldenPathName, spec.Metadata.Name)
+	} else {
+		response["message"] = fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name)
+		response["status"] = "completed"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
-}
-
-// executeGoldenPathWorkflowWithResources executes a workflow with full resource management integration
-func (s *Server) executeGoldenPathWorkflowWithResources(workflow *types.Workflow, spec *types.ScoreSpec, username string, execution *database.WorkflowExecution) error {
-	fmt.Printf("📋 Executing workflow with %d steps for %s\n", len(workflow.Steps), spec.Metadata.Name)
-
-	for i, step := range workflow.Steps {
-		fmt.Printf("🔄 Step %d/%d: %s (%s)\n", i+1, len(workflow.Steps), step.Name, step.Type)
-
-		// Create step execution record if database tracking is available
-		var stepRecord *database.WorkflowStepExecution
-		if execution != nil {
-			stepConfig := map[string]interface{}{
-				"name":      step.Name,
-				"type":      step.Type,
-				"path":      step.Path,
-				"namespace": step.Namespace,
-			}
-
-			var err error
-			stepRecord, err = s.workflowRepo.CreateWorkflowStep(execution.ID, i+1, step.Name, step.Type, stepConfig)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create step record: %v\n", err)
-			} else {
-				// Mark step as running
-				if err := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil); err != nil {
-					fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", err)
-				}
-			}
-		}
-
-		// Execute the step
-		stepContext := &StepExecutionContext{
-			StepID:       &stepRecord.ID,
-			WorkflowRepo: s.workflowRepo,
-		}
-		err := s.runWorkflowStepWithTracking(step, spec.Metadata.Name, "default", stepContext)
-		if err != nil {
-			// Mark step as failed
-			if stepRecord != nil {
-				errorMsg := err.Error()
-				if updateErr := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg); updateErr != nil {
-					fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", updateErr)
-				}
-			}
-			return fmt.Errorf("step %s failed: %w", step.Name, err)
-		}
-
-		// Mark step as completed
-		if stepRecord != nil {
-			if err := s.workflowRepo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusCompleted, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to update step status: %v\n", err)
-			}
-		}
-
-		fmt.Printf("✅ Step %s completed successfully\n", step.Name)
-	}
-
-	return nil
 }
 
 // executeBasicGoldenPathWorkflow executes a workflow without database tracking (fallback)
@@ -2677,6 +2680,235 @@ func (s *Server) provisionResourcesAfterWorkflow(appName, username string) error
 	return nil
 }
 
+// HandleGetProfile returns the current user's profile information
+func (s *Server) HandleGetProfile(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	profile := map[string]interface{}{
+		"username": user.Username,
+		"team":     user.Team,
+		"role":     user.Role,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(profile); err != nil {
+		http.Error(w, "Failed to encode profile", http.StatusInternalServerError)
+	}
+}
+
+// HandleGetAPIKeys returns the user's API keys with masked key values
+func (s *Server) HandleGetAPIKeys(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Check if user exists in users.yaml (local user) or is OIDC user
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = store.GetUser(user.Username)
+	isOIDCUser := err != nil // User not found in yaml = OIDC user
+
+	var keys []users.APIKey
+
+	if isOIDCUser && s.db != nil {
+		// Get API keys from database for OIDC user
+		dbKeys, err := s.db.GetAPIKeys(user.Username)
+		if err != nil {
+			http.Error(w, "Failed to retrieve API keys", http.StatusInternalServerError)
+			return
+		}
+
+		// Convert database records to users.APIKey format
+		for _, dbKey := range dbKeys {
+			lastUsed := time.Time{}
+			if dbKey.LastUsedAt != nil {
+				lastUsed = *dbKey.LastUsedAt
+			}
+			keys = append(keys, users.APIKey{
+				Key:        dbKey.KeyHash, // Will be masked anyway
+				Name:       dbKey.KeyName,
+				CreatedAt:  dbKey.CreatedAt,
+				LastUsedAt: lastUsed,
+				ExpiresAt:  dbKey.ExpiresAt,
+			})
+		}
+	} else {
+		// Get API keys from users.yaml for local user
+		keys, err = store.ListAPIKeys(user.Username)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+	}
+
+	// Mask keys for security (show only last 8 characters)
+	masked := []map[string]interface{}{}
+	for _, key := range keys {
+		maskedKey := "..."
+		if len(key.Key) > 8 {
+			maskedKey = "..." + key.Key[len(key.Key)-8:]
+		}
+
+		masked = append(masked, map[string]interface{}{
+			"name":         key.Name,
+			"masked_key":   maskedKey,
+			"created_at":   key.CreatedAt.Format(time.RFC3339),
+			"last_used_at": formatTimePtr(key.LastUsedAt),
+			"expires_at":   key.ExpiresAt.Format(time.RFC3339),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(masked); err != nil {
+		http.Error(w, "Failed to encode API keys", http.StatusInternalServerError)
+	}
+}
+
+// HandleGenerateAPIKey creates a new API key for the current user
+func (s *Server) HandleGenerateAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Name       string `json:"name"`
+		ExpiryDays int    `json:"expiry_days"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "API key name is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.ExpiryDays <= 0 {
+		req.ExpiryDays = 90 // Default to 90 days
+	}
+
+	// Check if user exists in users.yaml (local user) or is OIDC user
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = store.GetUser(user.Username)
+	isOIDCUser := err != nil // User not found in yaml = OIDC user
+
+	if isOIDCUser && s.db != nil {
+		// Generate API key for OIDC user (store in database)
+		apiKey, err := s.generateDatabaseAPIKey(user.Username, req.Name, req.ExpiryDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Return the full key only on creation
+		response := map[string]interface{}{
+			"key":        apiKey.Key,
+			"name":       apiKey.Name,
+			"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+			"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		}
+	} else {
+		// Generate API key for local user (store in users.yaml)
+		apiKey, err := store.GenerateAPIKey(user.Username, req.Name, req.ExpiryDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Return the full key only on creation
+		response := map[string]interface{}{
+			"key":        apiKey.Key,
+			"name":       apiKey.Name,
+			"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+			"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		}
+	}
+}
+
+// HandleRevokeAPIKey deletes an API key
+func (s *Server) HandleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	user, ok := r.Context().Value(contextKeyUser).(*users.User)
+	if !ok || user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract key name from URL path
+	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(pathParts) < 4 {
+		http.Error(w, "Invalid URL path", http.StatusBadRequest)
+		return
+	}
+	keyName := pathParts[len(pathParts)-1]
+
+	// Check if user exists in users.yaml (local user) or is OIDC user
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = store.GetUser(user.Username)
+	isOIDCUser := err != nil // User not found in yaml = OIDC user
+
+	if isOIDCUser && s.db != nil {
+		// Delete API key from database for OIDC user
+		err = s.db.DeleteAPIKey(user.Username, keyName)
+		if err != nil {
+			http.Error(w, "Failed to revoke API key", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Delete API key from users.yaml for local user
+		err = store.RevokeAPIKey(user.Username, keyName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// formatTimePtr formats a time pointer to RFC3339 string or returns empty string
+func formatTimePtr(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
 // executeDummyStep executes a dummy workflow step with logging for testing purposes
 func (s *Server) executeDummyStep(step types.Step, appName string, envType string, logBuffer *LogBuffer) error {
 	_, _ = logBuffer.Write([]byte("INFO: This is a dummy workflow for testing the logging system"))
@@ -2698,4 +2930,66 @@ func (s *Server) executeDummyStep(step types.Step, appName string, envType strin
 	_, _ = logBuffer.Write([]byte("This log message confirms the enhanced logging system is working"))
 
 	return nil
+}
+
+// generateDatabaseAPIKey generates an API key for OIDC users and stores it in the database
+func (s *Server) generateDatabaseAPIKey(username, keyName string, expiryDays int) (*users.APIKey, error) {
+	// Check if database is available
+	if s.db == nil {
+		return nil, fmt.Errorf("database not available for OIDC user API keys")
+	}
+
+	// Check if API key name already exists for this user
+	existingKeys, err := s.db.GetAPIKeys(username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing API keys: %w", err)
+	}
+
+	for _, key := range existingKeys {
+		if key.KeyName == keyName {
+			return nil, fmt.Errorf("API key with name '%s' already exists for user '%s'", keyName, username)
+		}
+	}
+
+	// Generate a cryptographically secure API key
+	apiKeyString, err := generateAPIKeyString()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// Hash the API key for storage
+	keyHash := hashAPIKey(apiKeyString)
+
+	// Calculate expiration
+	expiresAt := time.Now().Add(time.Duration(expiryDays) * 24 * time.Hour)
+
+	// Store in database
+	err = s.db.CreateAPIKey(username, keyHash, keyName, expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store API key: %w", err)
+	}
+
+	// Return API key (similar structure to file-based keys)
+	return &users.APIKey{
+		Key:       apiKeyString,
+		Name:      keyName,
+		CreatedAt: time.Now(),
+		ExpiresAt: expiresAt,
+	}, nil
+}
+
+// generateAPIKeyString generates a cryptographically secure API key
+func generateAPIKeyString() (string, error) {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// hashAPIKey creates a SHA-256 hash of an API key
+func hashAPIKey(apiKey string) string {
+	hash := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(hash[:])
 }

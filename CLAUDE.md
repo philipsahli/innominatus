@@ -86,17 +86,46 @@ go build -o innominatus-ctl cmd/cli/main.go
 
 **Build the Web UI:**
 ```bash
+# Using the build script (recommended)
+./scripts/build-web-ui.sh
+
+# Or manually from web-ui directory
 cd web-ui && npm run build
 ```
+
+The build script automatically:
+- Checks for and installs dependencies if needed
+- Builds the Next.js application for production
+- Outputs static files to `web-ui/out/`
+- These files are served by the Go server at http://localhost:8081
 
 ### Running the Components
 
 **Start the Server:**
 ```bash
+# Standard mode (file-based authentication)
 ./innominatus
+
+# With OIDC authentication enabled (requires demo Keycloak running)
+OIDC_ENABLED=true ./innominatus
+
 # Server runs on http://localhost:8081 by default
 # Web UI: http://localhost:8081/
-# API Docs: http://localhost:8081/swagger
+# API Docs (User): http://localhost:8081/swagger-user
+# API Docs (Admin): http://localhost:8081/swagger-admin
+# API Docs (Legacy): http://localhost:8081/swagger
+```
+
+**OIDC Environment Variables (optional):**
+```bash
+export OIDC_ENABLED=true
+export OIDC_ISSUER="http://keycloak.localtest.me/realms/demo-realm"  # Default for demo
+export OIDC_CLIENT_ID="innominatus-web"                               # Default for demo
+export OIDC_CLIENT_SECRET="innominatus-client-secret"                 # Default for demo
+export OIDC_REDIRECT_URL="http://localhost:8081/auth/oidc/callback"  # Default for demo
+
+# Start server with OIDC
+./innominatus
 ```
 
 **Health & Monitoring Endpoints:**
@@ -108,11 +137,20 @@ http://localhost:8081/metrics  - Prometheus metrics (performance monitoring)
 
 See [docs/HEALTH_MONITORING.md](docs/HEALTH_MONITORING.md) for detailed monitoring documentation.
 
-**Note:** When server source code is modified, you must rebuild and restart the server for changes to take effect:
+**Note:** When source code is modified, you must rebuild and restart:
+
+*Server changes:*
 ```bash
 # Stop the running server (Ctrl+C)
 go build -o innominatus cmd/server/main.go
 ./innominatus
+```
+
+*Web UI changes:*
+```bash
+# Rebuild Web UI (server will pick up changes automatically)
+./scripts/build-web-ui.sh
+# No server restart needed - just refresh browser at http://localhost:8081
 ```
 
 **Use the CLI:**
@@ -204,6 +242,84 @@ curl -X POST http://localhost:8081/api/specs \
   - Requiring complex multi-step orchestration
   - Leveraging pre-defined golden path workflows
   - Running deployments from local development machines
+
+### Kubernetes Deployment
+
+**For platform teams deploying innominatus to production Kubernetes clusters**
+
+innominatus can be deployed to Kubernetes using Helm for production, staging, or development environments.
+
+#### Quick Install
+
+```bash
+# Install with bundled PostgreSQL (default)
+helm install innominatus ./charts/innominatus \
+  --namespace innominatus-system \
+  --create-namespace \
+  --set postgresql.auth.password=strongPassword123
+```
+
+#### Production Install (External Database)
+
+```bash
+# Production deployment with external database
+helm install innominatus ./charts/innominatus \
+  --namespace innominatus-system \
+  --create-namespace \
+  --set postgresql.enabled=false \
+  --set externalDatabase.enabled=true \
+  --set externalDatabase.host=postgres.example.com \
+  --set externalDatabase.password=secretPassword \
+  --set replicaCount=3 \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=innominatus.example.com
+```
+
+#### Access innominatus in Kubernetes
+
+```bash
+# Port-forward for local access
+kubectl port-forward -n innominatus-system svc/innominatus 8081:8081
+
+# Or access via ingress (if enabled)
+kubectl get ingress -n innominatus-system
+```
+
+#### Kubernetes Mode Features
+
+When running in Kubernetes, innominatus automatically detects K8s mode and:
+- Uses K8s service DNS names for component communication
+- Leverages in-cluster database connection
+- demo-time deploys components with K8s-native configurations
+- RBAC permissions allow cluster-wide resource management
+
+#### demo-time in Kubernetes
+
+```bash
+# Get pod name
+POD=$(kubectl get pod -n innominatus-system -l app.kubernetes.io/name=innominatus -o jsonpath='{.items[0].metadata.name}')
+
+# Run demo environment installation
+kubectl exec -it -n innominatus-system $POD -- /app/innominatus-ctl demo-time
+
+# Check demo status
+kubectl exec -it -n innominatus-system $POD -- /app/innominatus-ctl demo-status
+
+# Cleanup demo
+kubectl exec -it -n innominatus-system $POD -- /app/innominatus-ctl demo-nuke
+```
+
+#### Complete Documentation
+
+📖 **[Kubernetes Deployment Guide](docs/platform-team-guide/kubernetes-deployment.md)** - Comprehensive guide for platform engineers covering:
+- Prerequisites and installation options
+- Production configuration examples
+- Database setup (bundled vs. external)
+- OIDC/SSO authentication setup
+- Monitoring, security, and troubleshooting
+- Upgrade procedures and best practices
+
+📖 **[Helm Chart README](charts/innominatus/README.md)** - Quick reference for chart configuration
 
 ### Workflow Capabilities
 
@@ -364,6 +480,52 @@ policies:
 - CLI command `./innominatus-ctl admin show` displays current settings
 - Supports admin defaults, resource definitions, and policies
 - Uses `gopkg.in/yaml.v3` for configuration parsing
+
+### OIDC Authentication
+
+innominatus supports enterprise SSO authentication via OpenID Connect (OIDC) with providers like Keycloak.
+
+**Starting Server with OIDC:**
+```bash
+# Demo environment (with Keycloak from demo-time)
+OIDC_ENABLED=true ./innominatus
+
+# Production with custom Keycloak
+export OIDC_ENABLED=true
+export OIDC_ISSUER="https://keycloak.company.com/realms/production"
+export OIDC_CLIENT_ID="innominatus"
+export OIDC_CLIENT_SECRET="your-client-secret"
+export OIDC_REDIRECT_URL="https://innominatus.company.com/auth/oidc/callback"
+./innominatus
+```
+
+**Authentication Features:**
+- **Web UI Login**: "Login with Keycloak" button appears on login page
+- **Session Management**: HttpOnly cookies + localStorage tokens
+- **API Key Generation**: OIDC users can generate API keys for CLI/API access
+- **Dual User Sources**:
+  - Local users (users.yaml): File-based API keys
+  - OIDC users (database): Database-backed API keys with SHA-256 hashing
+- **Automatic Detection**: System automatically determines user type
+
+**User Workflow:**
+1. Login via OIDC SSO (Web UI)
+2. Navigate to Profile page
+3. Generate API key (provide name and expiry days)
+4. Use API key for CLI/API access:
+   ```bash
+   export IDP_API_KEY="your-generated-key"
+   curl -H "Authorization: Bearer $IDP_API_KEY" \
+     http://localhost:8081/api/specs
+   ```
+
+**Database Requirements:**
+OIDC users require PostgreSQL for API key storage:
+- Table: `user_api_keys` (created automatically via migration)
+- API keys stored as SHA-256 hashes (never plaintext)
+- Supports key lifecycle management (creation, listing, revocation)
+
+**See:** [OIDC Authentication Guide](docs/OIDC_AUTHENTICATION.md) for complete setup instructions.
 
 ### Enterprise Integration
 

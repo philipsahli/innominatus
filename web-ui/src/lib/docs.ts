@@ -5,6 +5,7 @@ import matter from 'gray-matter';
 export interface DocMetadata {
   title: string;
   description?: string;
+  summary?: string;
   category?: string;
   order?: number;
 }
@@ -50,6 +51,7 @@ export function getAllDocs(): Doc[] {
           metadata: {
             title: data.title || extractTitleFromContent(content) || slug,
             description: data.description,
+            summary: data.description || extractSummary(content),
             category: data.category,
             order: data.order,
           },
@@ -132,6 +134,30 @@ export function getDocsNavigation(): DocNavItem[] {
 function extractTitleFromContent(content: string): string | null {
   const match = content.match(/^#\s+(.+)$/m);
   return match ? match[1] : null;
+}
+
+/**
+ * Extract summary from markdown content
+ * Gets first paragraph or first 300 characters, whichever is shorter
+ */
+function extractSummary(content: string): string {
+  // Remove title (first H1)
+  const withoutTitle = content.replace(/^#\s+.+$/m, '').trim();
+
+  // Find first paragraph (text before first empty line or heading)
+  const firstParagraphMatch = withoutTitle.match(/^[^\n#]+(?:\n(?![#\n])[^\n]+)*/m);
+  const firstParagraph = firstParagraphMatch ? firstParagraphMatch[0].trim() : withoutTitle;
+
+  // Limit to 300 characters
+  if (firstParagraph.length <= 300) {
+    return firstParagraph;
+  }
+
+  // Find last complete sentence within 300 chars
+  const truncated = firstParagraph.substring(0, 300);
+  const lastSentence = truncated.match(/^.*[.!?]\s*/);
+
+  return lastSentence ? lastSentence[0].trim() : truncated.trim() + '...';
 }
 
 /**

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"innominatus/internal/database"
+	"innominatus/internal/graph"
+	"innominatus/internal/logging"
 	"innominatus/internal/types"
 	"io"
 	"os"
@@ -12,6 +14,11 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // StepExecutorFunc defines the signature for step execution functions
@@ -39,11 +46,13 @@ type WorkflowExecutor struct {
 	repo             WorkflowRepositoryInterface
 	resolver         *WorkflowResolver
 	resourceManager  ResourceManager
+	graphAdapter     *graph.Adapter
 	maxConcurrent    int
 	executionTimeout time.Duration
 	stepExecutors    map[string]StepExecutorFunc
 	execContext      *ExecutionContext
 	outputParser     *OutputParser
+	logger           *logging.ZerologAdapter
 	mu               sync.RWMutex
 }
 
@@ -56,6 +65,7 @@ func NewWorkflowExecutor(repo WorkflowRepositoryInterface) *WorkflowExecutor {
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
 		outputParser:     NewOutputParser(),
+		logger:           logging.NewStructuredLogger("workflow"),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -71,6 +81,7 @@ func NewWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInterface, re
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
 		outputParser:     NewOutputParser(),
+		logger:           logging.NewStructuredLogger("workflow"),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -86,6 +97,7 @@ func NewMultiTierWorkflowExecutor(repo WorkflowRepositoryInterface, resolver *Wo
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
 		outputParser:     NewOutputParser(),
+		logger:           logging.NewStructuredLogger("workflow"),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
@@ -102,13 +114,24 @@ func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInte
 		stepExecutors:    make(map[string]StepExecutorFunc),
 		execContext:      NewExecutionContext(),
 		outputParser:     NewOutputParser(),
+		logger:           logging.NewStructuredLogger("workflow"),
 	}
 	executor.registerDefaultStepExecutors()
 	return executor
 }
 
+// SetGraphAdapter sets the graph adapter for workflow tracking
+func (e *WorkflowExecutor) SetGraphAdapter(adapter *graph.Adapter) {
+	e.graphAdapter = adapter
+}
+
 // ExecuteMultiTierWorkflows executes resolved multi-tier workflows
 func (e *WorkflowExecutor) ExecuteMultiTierWorkflows(ctx context.Context, app *ApplicationInstance) error {
+	// Ensure logger is initialized (defensive programming)
+	if e.logger == nil {
+		e.logger = logging.NewStructuredLogger("workflow")
+	}
+
 	if e.resolver == nil {
 		return fmt.Errorf("resolver not configured - use NewMultiTierWorkflowExecutor")
 	}
@@ -130,10 +153,13 @@ func (e *WorkflowExecutor) ExecuteMultiTierWorkflows(ctx context.Context, app *A
 		return fmt.Errorf("failed to create workflow execution: %w", err)
 	}
 
-	fmt.Printf("🚀 Starting multi-tier workflow execution for %s\n", app.Name)
 	summary := e.resolver.GetWorkflowSummary(resolvedWorkflows)
-	fmt.Printf("📊 Execution plan: %v total workflows across %v phases\n",
-		summary["total_workflows"], len(summary["phases"].([]string)))
+	e.logger.InfoWithFields("Starting multi-tier workflow execution", map[string]interface{}{
+		"app_name":        app.Name,
+		"execution_id":    execution.ID,
+		"total_workflows": summary["total_workflows"],
+		"phases":          len(summary["phases"].([]string)),
+	})
 
 	// Execute workflows by phase
 	phases := []WorkflowPhase{PhasePreDeployment, PhaseDeployment, PhasePostDeployment}
@@ -144,27 +170,51 @@ func (e *WorkflowExecutor) ExecuteMultiTierWorkflows(ctx context.Context, app *A
 			continue
 		}
 
-		fmt.Printf("\n📋 Executing %s workflows (%d workflows)...\n", phase, len(workflows))
+		e.logger.InfoWithFields("Executing workflow phase", map[string]interface{}{
+			"app_name":       app.Name,
+			"execution_id":   execution.ID,
+			"phase":          string(phase),
+			"workflow_count": len(workflows),
+		})
 
 		if err := e.executePhaseWorkflows(ctx, app.Name, phase, workflows, execution.ID); err != nil {
 			// Mark execution as failed
 			errorMsg := err.Error()
 			if updateErr := e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &errorMsg); updateErr != nil {
-				fmt.Printf("Warning: failed to update workflow status to failed: %v\n", updateErr)
+				e.logger.WarnWithFields("Failed to update workflow status", map[string]interface{}{
+					"execution_id": execution.ID,
+					"error":        updateErr.Error(),
+				})
 			}
+			e.logger.ErrorWithFields("Phase execution failed", map[string]interface{}{
+				"app_name":     app.Name,
+				"execution_id": execution.ID,
+				"phase":        string(phase),
+				"error":        err.Error(),
+			})
 			return fmt.Errorf("failed executing %s workflows: %w", phase, err)
 		}
 
-		fmt.Printf("✅ %s phase completed successfully\n", phase)
+		e.logger.InfoWithFields("Phase completed successfully", map[string]interface{}{
+			"app_name":     app.Name,
+			"execution_id": execution.ID,
+			"phase":        string(phase),
+		})
 	}
 
 	// Mark execution as completed
 	err = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusCompleted, nil)
 	if err != nil {
-		fmt.Printf("Warning: failed to update workflow completion: %v\n", err)
+		e.logger.WarnWithFields("Failed to update workflow completion", map[string]interface{}{
+			"execution_id": execution.ID,
+			"error":        err.Error(),
+		})
 	}
 
-	fmt.Printf("\n🎉 Multi-tier workflow execution completed successfully!\n")
+	e.logger.InfoWithFields("Multi-tier workflow execution completed successfully", map[string]interface{}{
+		"app_name":     app.Name,
+		"execution_id": execution.ID,
+	})
 	return nil
 }
 
@@ -175,22 +225,76 @@ func (e *WorkflowExecutor) ExecuteWorkflow(appName string, workflow types.Workfl
 
 // ExecuteWorkflowWithName executes a named workflow with database persistence
 func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow) error {
+	// Ensure logger is initialized (defensive programming)
+	if e.logger == nil {
+		e.logger = logging.NewStructuredLogger("workflow")
+	}
+
+	// Create OpenTelemetry span for workflow execution
+	tracer := otel.Tracer("innominatus/workflow")
+	_, span := tracer.Start(context.Background(), "workflow.execute",
+		trace.WithAttributes(
+			attribute.String("app.name", appName),
+			attribute.String("workflow.name", workflowName),
+			attribute.Int("workflow.steps", len(workflow.Steps)),
+		),
+	)
+	defer span.End()
+
 	// Initialize workflow variables in execution context
 	if len(workflow.Variables) > 0 {
 		e.execContext.SetWorkflowVariables(workflow.Variables)
-		fmt.Printf("📦 Initialized %d workflow variables\n", len(workflow.Variables))
+		e.logger.InfoWithFields("Initialized workflow variables", map[string]interface{}{
+			"app_name":       appName,
+			"workflow_name":  workflowName,
+			"variable_count": len(workflow.Variables),
+		})
 	}
 
 	// Create workflow execution record
 	execution, err := e.repo.CreateWorkflowExecution(appName, workflowName, len(workflow.Steps))
 	if err != nil {
+		span.RecordError(err)
+		e.logger.ErrorWithFields("Failed to create workflow execution", map[string]interface{}{
+			"app_name":      appName,
+			"workflow_name": workflowName,
+			"error":         err.Error(),
+		})
 		return fmt.Errorf("failed to create workflow execution: %w", err)
 	}
 
-	fmt.Printf("Starting workflow with %d steps\n\n", len(workflow.Steps))
+	// Add execution ID to span
+	span.SetAttributes(attribute.Int64("workflow.execution_id", execution.ID))
+
+	e.logger.InfoWithFields("Starting workflow execution", map[string]interface{}{
+		"app_name":      appName,
+		"workflow_name": workflowName,
+		"execution_id":  execution.ID,
+		"total_steps":   len(workflow.Steps),
+	})
+
+	// Create workflow node in graph (if graph adapter is available)
+	workflowNodeID := fmt.Sprintf("workflow-%d", execution.ID)
+	if e.graphAdapter != nil {
+		workflowNode := &sdk.Node{
+			ID:    workflowNodeID,
+			Type:  sdk.NodeTypeWorkflow,
+			Name:  workflowName,
+			State: sdk.NodeStatePending,
+			Properties: map[string]interface{}{
+				"execution_id": execution.ID,
+				"app_name":     appName,
+				"total_steps":  len(workflow.Steps),
+			},
+		}
+		if err := e.graphAdapter.AddNode(appName, workflowNode); err != nil {
+			fmt.Printf("Warning: failed to add workflow node to graph: %v\n", err)
+		}
+	}
 
 	// Create step records
 	stepRecords := make(map[int]*database.WorkflowStepExecution)
+	stepNodeIDs := make(map[int]string)
 	for i, step := range workflow.Steps {
 		stepConfig := map[string]interface{}{
 			"name":      step.Name,
@@ -206,17 +310,68 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			return fmt.Errorf("failed to create workflow step: %w", err)
 		}
 		stepRecords[i] = stepRecord
+
+		// Create step node in graph (if graph adapter is available)
+		stepNodeID := fmt.Sprintf("step-%d", stepRecord.ID)
+		stepNodeIDs[i] = stepNodeID
+		if e.graphAdapter != nil {
+			stepNode := &sdk.Node{
+				ID:    stepNodeID,
+				Type:  sdk.NodeTypeStep,
+				Name:  step.Name,
+				State: sdk.NodeStateWaiting,
+				Properties: map[string]interface{}{
+					"step_id":     stepRecord.ID,
+					"step_number": i + 1,
+					"step_type":   step.Type,
+				},
+			}
+			if err := e.graphAdapter.AddNode(appName, stepNode); err != nil {
+				fmt.Printf("Warning: failed to add step node to graph: %v\n", err)
+			}
+
+			// Create edge: workflow contains step
+			edge := &sdk.Edge{
+				ID:         fmt.Sprintf("wf-%d-step-%d", execution.ID, stepRecord.ID),
+				FromNodeID: workflowNodeID,
+				ToNodeID:   stepNodeID,
+				Type:       sdk.EdgeTypeContains,
+			}
+			if err := e.graphAdapter.AddEdge(appName, edge); err != nil {
+				fmt.Printf("Warning: failed to add workflow→step edge to graph: %v\n", err)
+			}
+		}
 	}
 
 	// Execute steps
 	for i, step := range workflow.Steps {
 		stepRecord := stepRecords[i]
-		fmt.Printf("Step %d/%d: %s (%s)\n", i+1, len(workflow.Steps), step.Name, step.Type)
+		stepNodeID := stepNodeIDs[i]
+
+		e.logger.InfoWithFields("Executing workflow step", map[string]interface{}{
+			"app_name":      appName,
+			"workflow_name": workflowName,
+			"execution_id":  execution.ID,
+			"step_number":   i + 1,
+			"total_steps":   len(workflow.Steps),
+			"step_name":     step.Name,
+			"step_type":     step.Type,
+		})
 
 		// Update step to running
 		err := e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil)
 		if err != nil {
-			fmt.Printf("Warning: failed to update step status: %v\n", err)
+			e.logger.WarnWithFields("Failed to update step status", map[string]interface{}{
+				"step_id": stepRecord.ID,
+				"error":   err.Error(),
+			})
+		}
+
+		// Update step node state to running in graph
+		if e.graphAdapter != nil {
+			if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateRunning); err != nil {
+				fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+			}
 		}
 
 		spinner := NewSpinner(fmt.Sprintf("Initializing %s step...", step.Type))
@@ -232,6 +387,13 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			workflowErrorMsg := fmt.Sprintf("workflow failed at step '%s': %v", step.Name, err)
 			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &workflowErrorMsg)
 
+			// Update step node state to failed in graph (triggers automatic propagation to workflow)
+			if e.graphAdapter != nil {
+				if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateFailed); err != nil {
+					fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+				}
+			}
+
 			spinner.Stop(false, fmt.Sprintf("Step '%s' failed: %v", step.Name, err))
 			return fmt.Errorf("workflow failed at step '%s': %w", step.Name, err)
 		}
@@ -242,6 +404,13 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			fmt.Printf("Warning: failed to update step completion: %v\n", err)
 		}
 
+		// Update step node state to succeeded in graph
+		if e.graphAdapter != nil {
+			if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateSucceeded); err != nil {
+				fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+			}
+		}
+
 		spinner.Stop(true, fmt.Sprintf("Step '%s' completed successfully", step.Name))
 		fmt.Println()
 	}
@@ -250,6 +419,13 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 	err = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusCompleted, nil)
 	if err != nil {
 		fmt.Printf("Warning: failed to update workflow completion: %v\n", err)
+	}
+
+	// Update workflow node state to succeeded in graph
+	if e.graphAdapter != nil {
+		if err := e.graphAdapter.UpdateNodeState(appName, workflowNodeID, sdk.NodeStateSucceeded); err != nil {
+			fmt.Printf("Warning: failed to update workflow state in graph: %v\n", err)
+		}
 	}
 
 	fmt.Println("🎉 Workflow completed successfully!")
@@ -500,6 +676,20 @@ func (e *WorkflowExecutor) executeStepGroupParallel(ctx context.Context, appName
 
 // executeSingleStep executes a single step with full database tracking
 func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string, step types.Step, execID int64, stepNumber int) error {
+	// Check dependencies before executing
+	if len(step.DependsOn) > 0 {
+		for _, depStepName := range step.DependsOn {
+			depStatus, found := e.execContext.GetStepStatus(depStepName)
+			if !found {
+				return fmt.Errorf("dependency %s not found for step %s", depStepName, step.Name)
+			}
+			if depStatus != "success" {
+				return fmt.Errorf("dependency %s did not complete successfully (status: %s) for step %s", depStepName, depStatus, step.Name)
+			}
+		}
+		fmt.Printf("      ✓ All dependencies satisfied for %s\n", step.Name)
+	}
+
 	// Check if step should be executed based on conditions
 	shouldExecute, skipReason := e.execContext.ShouldExecuteStep(step)
 	if !shouldExecute {
@@ -834,7 +1024,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			}
 			// Capture outputs if specified
 			if len(outputNames) > 0 {
-				return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, appName)
+				return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, step)
 			}
 			return nil
 		case "destroy":
@@ -843,7 +1033,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			}
 			return e.terraformDestroy(ctx, workspaceDir, variables)
 		case "output":
-			return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, appName)
+			return e.terraformCaptureOutputs(ctx, workspaceDir, outputNames, step)
 		default:
 			return fmt.Errorf("unsupported terraform operation: %s", operation)
 		}
@@ -1004,8 +1194,15 @@ func (e *WorkflowExecutor) terraformDestroy(ctx context.Context, workspaceDir st
 }
 
 // terraformCaptureOutputs captures terraform outputs and stores them
-func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspaceDir string, outputNames []string, appName string) error {
+func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspaceDir string, outputNames []string, step types.Step) error {
 	fmt.Printf("      📤 Capturing Terraform outputs\n")
+
+	// Determine resource name for storing outputs
+	// Priority: step.Resource > step.Name
+	resourceName := step.Resource
+	if resourceName == "" {
+		resourceName = step.Name
+	}
 
 	// Run terraform output -json
 	cmd := exec.CommandContext(ctx, "terraform", "output", "-json")
@@ -1021,13 +1218,17 @@ func (e *WorkflowExecutor) terraformCaptureOutputs(ctx context.Context, workspac
 		return fmt.Errorf("failed to parse terraform outputs: %w", err)
 	}
 
-	// Extract specified outputs
+	// Extract specified outputs and store in execution context
 	for _, outputName := range outputNames {
 		if outputValue, ok := outputs[outputName]; ok {
 			if outputMap, ok := outputValue.(map[string]interface{}); ok {
 				if value, ok := outputMap["value"]; ok {
-					fmt.Printf("      📊 Output '%s': %v\n", outputName, value)
-					// TODO: Store outputs in workflow context or database for use in subsequent steps
+					valueStr := fmt.Sprintf("%v", value)
+					fmt.Printf("      📊 Output '%s': %s\n", outputName, valueStr)
+
+					// Store output in execution context for interpolation in subsequent steps
+					e.execContext.SetResourceOutput(resourceName, outputName, valueStr)
+					fmt.Printf("      ✓ Stored as ${resources.%s.%s}\n", resourceName, outputName)
 				}
 			}
 		} else {

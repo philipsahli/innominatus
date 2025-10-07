@@ -2,6 +2,7 @@ package demo
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -122,6 +123,39 @@ func (c *CheatSheet) PrintCredentials() {
 		fmt.Println("No services with credentials configured.")
 		fmt.Println()
 	}
+
+	// Print Keycloak SSO information
+	fmt.Println("🔑 Single Sign-On (Keycloak)")
+	fmt.Println("=============================")
+	fmt.Println()
+	fmt.Printf("🌐 %-15s http://%-25s\n", "Keycloak:", "keycloak.localtest.me")
+	fmt.Printf("   %-12s %s\n", "admin:", "admin")
+	fmt.Printf("   %-12s %s\n", "password:", "adminpassword")
+	fmt.Println()
+	fmt.Println("📝 Demo Users (for SSO login):")
+	fmt.Printf("   %-12s %s / %s\n", "demo-user:", "demo-user", "password123")
+	fmt.Printf("   %-12s %s / %s\n", "test-user:", "test-user", "test123")
+	fmt.Println()
+	// Get appropriate innominatus URL based on deployment mode
+	innominatusURL := "http://localhost:8081"
+	if IsRunningInKubernetes() {
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			namespace = "innominatus-system"
+		}
+		innominatusURL = GetInnominatusURL(namespace)
+	}
+
+	fmt.Println("🔗 OIDC-Enabled Services:")
+	fmt.Println("   • ArgoCD      - Login with Keycloak button")
+	fmt.Println("   • Grafana     - Login with Keycloak button")
+	fmt.Println("   • Backstage   - OIDC option on login page")
+	fmt.Println("   • Gitea       - Sign in with Keycloak option")
+	fmt.Println("   • Vault       - OIDC auth method enabled")
+	fmt.Printf("   • Innominatus - Visit %s/auth/oidc/login\n", innominatusURL)
+	fmt.Println()
+	fmt.Println("💡 Tip: Local admin login still works for all services")
+	fmt.Println()
 }
 
 // PrintQuickStart prints quick start instructions
@@ -131,33 +165,65 @@ func (c *CheatSheet) PrintQuickStart() {
 	fmt.Println()
 	fmt.Println("1. Access Gitea (Git Repository):")
 	fmt.Println("   • URL: http://gitea.localtest.me")
-	fmt.Println("   • Login: giteaadmin / admin")
+	fmt.Println("   • Login: giteaadmin / admin123")
 	fmt.Println("   • Check the 'platform-config' repository")
 	fmt.Println()
 	fmt.Println("2. Access ArgoCD (GitOps):")
 	fmt.Println("   • URL: http://argocd.localtest.me")
-	fmt.Println("   • Login: admin / admin123")
+	fmt.Println("   • Login Methods:")
+	fmt.Println("     - Admin: admin / admin123")
+	fmt.Println("     - OIDC: Click 'LOG IN VIA KEYCLOAK' (demo-user / password123)")
 	fmt.Println("   • View deployed applications")
 	fmt.Println()
-	fmt.Println("3. Access Grafana (Monitoring):")
+	fmt.Println("3. Access Keycloak (Identity Provider):")
+	fmt.Println("   • URL: http://keycloak.localtest.me")
+	fmt.Println("   • Admin: admin / adminpassword")
+	fmt.Println("   • Realm: demo-realm")
+	fmt.Println("   • Demo Users:")
+	fmt.Println("     - demo-user / password123")
+	fmt.Println("     - test-user / test123")
+	fmt.Println()
+	fmt.Println("4. Access Grafana (Monitoring):")
 	fmt.Println("   • URL: http://grafana.localtest.me")
 	fmt.Println("   • Login: admin / admin")
 	fmt.Println("   • Explore pre-configured dashboards")
 	fmt.Println()
-	fmt.Println("4. Access Minio (Object Storage):")
+	fmt.Println("5. Access Minio (Object Storage):")
 	fmt.Println("   • API: http://minio.localtest.me")
 	fmt.Println("   • Console: http://minio-console.localtest.me")
 	fmt.Println("   • Login: minioadmin / minioadmin")
 	fmt.Println("   • S3-compatible object storage for applications")
 	fmt.Println()
-	fmt.Println("5. Access Kubernetes Dashboard:")
+	fmt.Println("6. Access Backstage (Developer Portal):")
+	fmt.Println("   • URL: http://backstage.localtest.me")
+	fmt.Println("   • Demo mode - no authentication required")
+	fmt.Println("   • Software catalog and developer portal")
+	fmt.Println()
+	fmt.Println("7. Access Kubernetes Dashboard:")
 	fmt.Println("   • URL: http://k8s.localtest.me")
 	fmt.Println("   • Login token: kubectl -n kubernetes-dashboard create token admin-user")
 	fmt.Println("   • View cluster resources and workloads")
 	fmt.Println()
-	fmt.Println("6. Access Demo Application:")
+	fmt.Println("8. Access Demo Application:")
 	fmt.Println("   • URL: http://demo.localtest.me")
 	fmt.Println("   • Sample app deployed via Score spec")
+	fmt.Println()
+	// Get innominatus URL dynamically
+	innominatusURL2 := "http://localhost:8081"
+	if IsRunningInKubernetes() {
+		namespace := os.Getenv("POD_NAMESPACE")
+		if namespace == "" {
+			namespace = "innominatus-system"
+		}
+		innominatusURL2 = GetInnominatusURL(namespace)
+	}
+
+	fmt.Println("9. Access Innominatus Server (with SSO):")
+	fmt.Printf("   • URL: %s\n", innominatusURL2)
+	fmt.Println("   • Login Methods:")
+	fmt.Printf("     - SSO: %s/auth/oidc/login (demo-user / password123)\n", innominatusURL2)
+	fmt.Println("     - Local: users.yaml configuration")
+	fmt.Println("   • Enable OIDC: Set OIDC_ENABLED=true environment variable")
 	fmt.Println()
 }
 
@@ -288,12 +354,18 @@ func (c *CheatSheet) formatServiceName(name string) string {
 		return "Grafana"
 	case "prometheus":
 		return "Prometheus"
+	case "pushgateway":
+		return "Pushgateway"
 	case "demo-app":
 		return "Demo App"
 	case "nginx-ingress":
 		return "Ingress"
 	case "kubernetes-dashboard":
 		return "K8s Dashboard"
+	case "backstage":
+		return "Backstage"
+	case "minio":
+		return "Minio"
 	default:
 		return toTitle(name)
 	}
