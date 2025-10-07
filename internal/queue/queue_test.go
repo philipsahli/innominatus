@@ -2,22 +2,34 @@ package queue
 
 import (
 	"innominatus/internal/types"
+	"sync"
 	"testing"
 	"time"
 )
 
 // MockExecutor implements WorkflowExecutor for testing
 type MockExecutor struct {
+	mu         sync.Mutex
 	executions []string
 	shouldFail bool
 }
 
 func (m *MockExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.executions = append(m.executions, appName+":"+workflowName)
 	if m.shouldFail {
 		return &ErrWorkflowExecutionFailed{AppName: appName, WorkflowName: workflowName}
 	}
 	return nil
+}
+
+func (m *MockExecutor) getExecutions() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.executions))
+	copy(result, m.executions)
+	return result
 }
 
 type ErrWorkflowExecutionFailed struct {
@@ -55,13 +67,14 @@ func TestQueue_EnqueueAndProcess(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Verify task was executed
-	if len(executor.executions) != 1 {
-		t.Errorf("Expected 1 execution, got %d", len(executor.executions))
+	executions := executor.getExecutions()
+	if len(executions) != 1 {
+		t.Errorf("Expected 1 execution, got %d", len(executions))
 	}
 
 	expected := "test-app:test-workflow"
-	if len(executor.executions) > 0 && executor.executions[0] != expected {
-		t.Errorf("Expected execution '%s', got '%s'", expected, executor.executions[0])
+	if len(executions) > 0 && executions[0] != expected {
+		t.Errorf("Expected execution '%s', got '%s'", expected, executions[0])
 	}
 }
 
@@ -90,8 +103,9 @@ func TestQueue_MultipleWorkers(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// Verify all tasks were executed
-	if len(executor.executions) != taskCount {
-		t.Errorf("Expected %d executions, got %d", taskCount, len(executor.executions))
+	executions := executor.getExecutions()
+	if len(executions) != taskCount {
+		t.Errorf("Expected %d executions, got %d", taskCount, len(executions))
 	}
 }
 
@@ -219,7 +233,8 @@ func TestQueue_StopGracefully(t *testing.T) {
 	q.Stop()
 
 	// Verify task was executed before shutdown
-	if len(executor.executions) != 1 {
-		t.Errorf("Expected 1 execution before shutdown, got %d", len(executor.executions))
+	executions := executor.getExecutions()
+	if len(executions) != 1 {
+		t.Errorf("Expected 1 execution before shutdown, got %d", len(executions))
 	}
 }
