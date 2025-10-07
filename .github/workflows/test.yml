@@ -83,7 +83,7 @@ jobs:
       run: go build -o innominatus cmd/server/main.go
 
     - name: Build CLI
-      run: go build -o innominatus-ctl cmd/cli/main.go
+      run: go build -o innominatus-ctl ./cmd/cli
 
     - name: Verify binaries
       run: |
