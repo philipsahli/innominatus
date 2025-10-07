@@ -4,6 +4,7 @@ import (
 	"context"
 	"innominatus/internal/types"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -13,6 +14,11 @@ import (
 
 // TestResourceOutputCapture tests that Terraform outputs are captured and stored
 func TestResourceOutputCapture(t *testing.T) {
+	// Skip if terraform is not installed (CI environment)
+	if _, err := exec.LookPath("terraform"); err != nil {
+		t.Skip("Skipping test: terraform executable not found in PATH")
+	}
+
 	// Create a temporary directory for terraform outputs
 	tmpDir, err := os.MkdirTemp("", "terraform-test-*")
 	require.NoError(t, err)
