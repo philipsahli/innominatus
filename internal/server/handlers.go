@@ -16,6 +16,7 @@ import (
 	"innominatus/internal/graph"
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
+	"innominatus/internal/queue"
 	"innominatus/internal/resources"
 	"innominatus/internal/security"
 	"innominatus/internal/teams"
@@ -116,6 +117,7 @@ type Server struct {
 	workflowRepo      *database.WorkflowRepository
 	workflowExecutor  *workflow.WorkflowExecutor
 	workflowAnalyzer  *workflow.WorkflowAnalyzer
+	workflowQueue     *queue.Queue // Async workflow execution queue
 	resourceManager   *resources.Manager
 	teamManager       *teams.TeamManager
 	sessionManager    auth.ISessionManager
@@ -213,6 +215,11 @@ func NewServerWithDB(db *database.Database) *Server {
 	resourceManager := resources.NewManager(resourceRepo)
 	workflowExecutor := workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
 
+	// Initialize async workflow queue (5 workers)
+	workflowQueue := queue.NewQueue(5, workflowExecutor, db)
+	workflowQueue.Start()
+	fmt.Println("Async workflow queue initialized with 5 workers")
+
 	// Initialize graph adapter
 	graphAdapter, err := graph.NewAdapter(db.DB())
 	if err != nil {
@@ -234,6 +241,7 @@ func NewServerWithDB(db *database.Database) *Server {
 		workflowRepo:      workflowRepo,
 		workflowExecutor:  workflowExecutor,
 		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
+		workflowQueue:     workflowQueue,
 		resourceManager:   resourceManager,
 		teamManager:       teams.NewTeamManager(),
 		sessionManager:    auth.NewDBSessionManager(db),
@@ -1948,26 +1956,26 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Execute workflow with enhanced resource management integration and graph tracking
-	var workflowExecution *database.WorkflowExecution
-	if s.workflowExecutor != nil {
-		// Execute workflow using workflow executor (which has graph adapter attached)
-		// This will automatically create workflow execution record and track graph
+	// Enqueue workflow for async execution
+	var taskID string
+	if s.workflowQueue != nil {
+		// Enqueue workflow for async execution with queue
+		metadata := map[string]interface{}{
+			"user":        user.Username,
+			"golden_path": goldenPathName,
+			"source":      "api",
+		}
+		taskID, err = s.workflowQueue.Enqueue(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, metadata)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to enqueue workflow: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else if s.workflowExecutor != nil {
+		// Fallback: Execute workflow synchronously if queue is not available
 		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
 			return
-		}
-
-		// Get the workflow execution ID from the most recent execution
-		// (ExecuteWorkflow creates it internally)
-		executions, listErr := s.workflowRepo.ListWorkflowExecutions(spec.Metadata.Name, 1, 0)
-		if listErr == nil && len(executions) > 0 {
-			// Get full execution details for response
-			fullExec, getErr := s.workflowRepo.GetWorkflowExecution(executions[0].ID)
-			if getErr == nil {
-				workflowExecution = fullExec
-			}
 		}
 	} else {
 		// Fallback to basic workflow execution without database tracking
@@ -1988,14 +1996,18 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	response := map[string]interface{}{
-		"message":     fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name),
+		"message":     fmt.Sprintf("Golden path '%s' enqueued successfully for application '%s'", goldenPathName, spec.Metadata.Name),
 		"application": spec.Metadata.Name,
 		"golden_path": goldenPathName,
-		"workflow_id": nil,
+		"task_id":     taskID,
+		"status":      "enqueued",
 	}
 
-	if workflowExecution != nil {
-		response["workflow_id"] = workflowExecution.ID
+	if taskID != "" {
+		response["message"] = fmt.Sprintf("Golden path '%s' enqueued successfully for application '%s'", goldenPathName, spec.Metadata.Name)
+	} else {
+		response["message"] = fmt.Sprintf("Golden path '%s' executed successfully for application '%s'", goldenPathName, spec.Metadata.Name)
+		response["status"] = "completed"
 	}
 
 	w.Header().Set("Content-Type", "application/json")

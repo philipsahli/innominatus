@@ -1,0 +1,48 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: alice-nginx-excessive
+
+containers:
+  web:
+    image: nginx:1.25
+    ports:
+      - port: 80
+        protocol: TCP
+    variables:
+      S3_BUCKET_ENDPOINT: http://minio.minio-system.svc.cluster.local:9000
+      S3_BUCKET_NAME: alice-nginx-excessive-storage
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_REGION: us-east-1
+
+resources:
+  route:
+    type: route
+    params:
+      host: alice-nginx-excessive.localtest.me
+      port: 80
+
+  git-repo:
+    type: gitea
+    params:
+      description: "Alice's nginx deployment with S3 storage"
+      private: false
+
+  argocd-app:
+    type: argocd
+    params:
+      repoURL: "${resources.git-repo.outputs.repository_url}"
+      path: "manifests"
+      targetNamespace: "alice-nginx-excessive"
+
+  s3-bucket:
+    type: s3
+    params:
+      bucket_name: alice-nginx-excessive-storage
+      minio_endpoint: http://minio.minio-system.svc.cluster.local:9000
+      minio_user: minioadmin
+      minio_password: minioadmin
+
+environment:
+  type: kubernetes
+  ttl: 24h
