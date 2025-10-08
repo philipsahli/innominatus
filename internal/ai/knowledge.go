@@ -122,25 +122,77 @@ func (kl *KnowledgeLoader) LoadAll(ctx context.Context) ([]struct {
 }
 
 // loadDocs loads all markdown files from the docs directory
+// with size and pattern-based filtering to stay within OpenAI token limits
 func (kl *KnowledgeLoader) loadDocs() ([]Document, error) {
 	var docs []Document
+	var skippedPattern, skippedSize, loaded int
+
+	log.Debug().
+		Str("docs_path", kl.docsPath).
+		Msg("Loading documentation files")
+
+	// Exclude patterns to reduce token usage
+	excludePatterns := []string{
+		"saas-agent-architecture.md",   // Very large file (1928 lines)
+		"kubernetes-deployment.md",     // Large deployment guide
+		"tool-calling-architecture.md", // Large technical doc
+	}
+
+	// Maximum file size in bytes (roughly 2000 lines)
+	maxFileSize := int64(100000) // ~100KB
 
 	err := filepath.Walk(kl.docsPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("path", path).
+				Msg("Failed to walk documentation directory")
 			return err
 		}
 
 		// Only process markdown files
 		if !info.IsDir() && (strings.HasSuffix(path, ".md") || strings.HasSuffix(path, ".MD")) {
-			// #nosec G304 - File path comes from filepath.Walk within trusted docs directory
-			content, err := os.ReadFile(path)
-			if err != nil {
-				log.Warn().Err(err).Str("file", path).Msg("Failed to read documentation file")
+			// Get relative path from docs root
+			relPath, _ := filepath.Rel(kl.docsPath, path)
+
+			// Skip excluded patterns
+			for _, pattern := range excludePatterns {
+				if strings.Contains(relPath, pattern) {
+					log.Debug().
+						Str("file", relPath).
+						Str("pattern", pattern).
+						Msg("Skipping file by pattern")
+					skippedPattern++
+					return nil
+				}
+			}
+
+			// Skip files that are too large
+			if info.Size() > maxFileSize {
+				log.Debug().
+					Str("file", relPath).
+					Int64("size_bytes", info.Size()).
+					Int64("max_size_bytes", maxFileSize).
+					Msg("Skipping file by size limit")
+				skippedSize++
 				return nil
 			}
 
-			// Get relative path from docs root
-			relPath, _ := filepath.Rel(kl.docsPath, path)
+			// #nosec G304 - File path comes from filepath.Walk within trusted docs directory
+			content, err := os.ReadFile(path)
+			if err != nil {
+				log.Warn().
+					Err(err).
+					Str("file", relPath).
+					Msg("Failed to read documentation file")
+				return nil
+			}
+
+			log.Debug().
+				Str("file", relPath).
+				Int("content_length", len(content)).
+				Int64("size_bytes", info.Size()).
+				Msg("Loaded documentation file")
 
 			docs = append(docs, Document{
 				ID:      fmt.Sprintf("doc-%s", strings.ReplaceAll(relPath, "/", "-")),
@@ -151,10 +203,18 @@ func (kl *KnowledgeLoader) loadDocs() ([]Document, error) {
 					"format": "markdown",
 				},
 			})
+			loaded++
 		}
 
 		return nil
 	})
+
+	log.Debug().
+		Int("loaded", loaded).
+		Int("skipped_pattern", skippedPattern).
+		Int("skipped_size", skippedSize).
+		Int("total_docs", len(docs)).
+		Msg("Loaded documentation files")
 
 	return docs, err
 }
@@ -162,18 +222,33 @@ func (kl *KnowledgeLoader) loadDocs() ([]Document, error) {
 // loadWorkflows loads workflow YAML files
 func (kl *KnowledgeLoader) loadWorkflows() ([]Document, error) {
 	var docs []Document
+	var loaded int
+
+	log.Debug().
+		Str("workflows_path", kl.workflowsPath).
+		Msg("Loading workflow files")
 
 	err := filepath.Walk(kl.workflowsPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("path", path).
+				Msg("Failed to walk workflows directory")
 			return err
 		}
 
 		// Only process YAML files
 		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
+			// Get relative path from workflows root
+			relPath, _ := filepath.Rel(kl.workflowsPath, path)
+
 			// #nosec G304 - File path comes from filepath.Walk within trusted workflows directory
 			content, err := os.ReadFile(path)
 			if err != nil {
-				log.Warn().Err(err).Str("file", path).Msg("Failed to read workflow file")
+				log.Warn().
+					Err(err).
+					Str("file", relPath).
+					Msg("Failed to read workflow file")
 				return nil
 			}
 
@@ -184,8 +259,11 @@ func (kl *KnowledgeLoader) loadWorkflows() ([]Document, error) {
 			}
 			_ = yaml.Unmarshal(content, &workflow)
 
-			// Get relative path from workflows root
-			relPath, _ := filepath.Rel(kl.workflowsPath, path)
+			log.Debug().
+				Str("file", relPath).
+				Str("workflow_name", workflow.Name).
+				Int("content_length", len(content)).
+				Msg("Loaded workflow file")
 
 			// Create a more readable content format
 			readableContent := fmt.Sprintf("# Workflow: %s\n\nFile: %s\n\nDescription: %s\n\n```yaml\n%s\n```",
@@ -205,26 +283,43 @@ func (kl *KnowledgeLoader) loadWorkflows() ([]Document, error) {
 					"category": filepath.Dir(relPath),
 				},
 			})
+			loaded++
 		}
 
 		return nil
 	})
 
+	log.Debug().
+		Int("loaded", loaded).
+		Int("total_workflows", len(docs)).
+		Msg("Loaded workflow files")
+
 	return docs, err
 }
 
-// loadRootDocs loads README.md and CLAUDE.md
+// loadRootDocs loads README.md (skip CLAUDE.md to reduce token usage)
 func (kl *KnowledgeLoader) loadRootDocs() ([]Document, error) {
 	var docs []Document
 
-	files := []string{"README.md", "CLAUDE.md"}
+	log.Debug().Msg("Loading root documentation files")
+
+	// Only load README.md - CLAUDE.md is too large and causes OpenAI token limit issues
+	files := []string{"README.md"}
 	for _, filename := range files {
 		// #nosec G304 - Fixed list of trusted root documentation files
 		content, err := os.ReadFile(filename)
 		if err != nil {
-			log.Warn().Err(err).Str("file", filename).Msg("Failed to read root documentation")
+			log.Warn().
+				Err(err).
+				Str("file", filename).
+				Msg("Failed to read root documentation file")
 			continue
 		}
+
+		log.Debug().
+			Str("file", filename).
+			Int("content_length", len(content)).
+			Msg("Loaded root documentation file")
 
 		docs = append(docs, Document{
 			ID:      fmt.Sprintf("root-%s", strings.ToLower(strings.TrimSuffix(filename, ".md"))),
@@ -237,48 +332,22 @@ func (kl *KnowledgeLoader) loadRootDocs() ([]Document, error) {
 		})
 	}
 
+	log.Debug().
+		Int("loaded", len(docs)).
+		Msg("Loaded root documentation files")
+
 	return docs, nil
 }
 
 // loadGoldenPaths loads golden paths configuration
+// NOTE: Skipped to reduce token usage - workflow files are already loaded separately
 func (kl *KnowledgeLoader) loadGoldenPaths() ([]Document, error) {
 	var docs []Document
 
-	content, err := os.ReadFile("goldenpaths.yaml")
-	if err != nil {
-		return docs, err
-	}
-
-	// Parse golden paths YAML
-	var config struct {
-		GoldenPaths map[string]string `yaml:"goldenpaths"`
-	}
-	if err := yaml.Unmarshal(content, &config); err != nil {
-		return docs, err
-	}
-
-	// Create a readable document about golden paths
-	var builder strings.Builder
-	builder.WriteString("# Golden Paths Configuration\n\n")
-	builder.WriteString("Available golden path workflows:\n\n")
-
-	for name, path := range config.GoldenPaths {
-		builder.WriteString(fmt.Sprintf("- **%s**: %s\n", name, path))
-	}
-
-	builder.WriteString("\n\n```yaml\n")
-	builder.Write(content)
-	builder.WriteString("\n```")
-
-	docs = append(docs, Document{
-		ID:      "golden-paths-config",
-		Content: builder.String(),
-		Metadata: map[string]string{
-			"type":   "configuration",
-			"source": "goldenpaths.yaml",
-			"format": "yaml",
-		},
-	})
+	// Skip loading goldenpaths.yaml to reduce token count
+	// The individual workflow YAML files in workflows/ directory are already loaded
+	// which provides the same information without the configuration overhead
+	log.Info().Msg("Skipping goldenpaths.yaml to reduce token usage (workflow files loaded separately)")
 
 	return docs, nil
 }
