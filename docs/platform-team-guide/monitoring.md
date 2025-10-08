@@ -461,6 +461,205 @@ kubectl get service innominatus -n platform --show-labels
 
 ---
 
+## AI/RAG Service Monitoring
+
+### Overview
+
+The AI assistant service generates detailed structured logs for comprehensive observability of LLM operations, RAG retrievals, and tool executions.
+
+### Monitoring Strategy
+
+**Key Areas to Monitor**:
+1. **Token Usage** - Track LLM API costs
+2. **RAG Performance** - Retrieval latency and success rates
+3. **Tool Execution** - Success rates and errors
+4. **Agent Loop Behavior** - Iterations and completion rates
+
+### Log-Based Metrics
+
+The AI service doesn't expose Prometheus metrics directly but provides rich structured logs for monitoring:
+
+**Loki Query Examples**:
+
+**Track AI request volume**:
+```
+count_over_time({job="innominatus"} | json | message="Agent loop completed"[5m])
+```
+
+**Monitor token consumption**:
+```
+sum_over_time({job="innominatus"} | json | total_tokens[1h])
+```
+
+**RAG retrieval success rate**:
+```
+# Successful retrievals
+count_over_time({job="innominatus"} | json | message="Retrieved RAG context"[5m])
+
+# Failed retrievals
+count_over_time({job="innominatus"} | json | message="Failed to retrieve RAG context"[5m])
+```
+
+**Tool execution errors**:
+```
+count_over_time({job="innominatus"} | json | message="Failed to execute tool"[5m])
+```
+
+**Average agent loop iterations**:
+```
+avg_over_time({job="innominatus"} | json | message="Agent loop completed" | iterations[5m])
+```
+
+### Performance Indicators
+
+**Target Metrics**:
+- Average agent loop iterations: < 5
+- Token consumption per request: < 2000 (for cost control)
+- RAG retrieval success rate: > 90%
+- Tool execution success rate: > 95%
+- RAG retrieval latency: < 300ms
+- Agent loop completion time: < 5s
+
+### Cost Monitoring
+
+**Token Usage Tracking**:
+
+LLM API costs are based on token consumption. Monitor:
+- `prompt_tokens`: Input tokens (context + user message)
+- `completion_tokens`: Output tokens (AI response)
+- `total_tokens`: Sum per request
+- `cumulative_tokens`: Total across agent loop iterations
+
+**Cost Queries**:
+```
+# Hourly token consumption
+sum_over_time({job="innominatus"} | json | total_tokens[1h])
+
+# Identify expensive requests
+{job="innominatus"} | json | message="Agent loop completed" | total_tokens > 3000
+  | line_format "{{.iterations}} iterations, {{.total_tokens}} tokens"
+
+# Average cost per request
+avg_over_time({job="innominatus"} | json | total_tokens[24h])
+```
+
+**Cost Calculation** (approximate):
+- Claude Sonnet: ~$3 per million input tokens, ~$15 per million output tokens
+- OpenAI embeddings: ~$0.02 per million tokens
+
+### Grafana Dashboards
+
+**Recommended Panels**:
+
+1. **AI Request Rate** - `count_over_time()` of agent loop completions
+2. **Token Consumption** - `sum_over_time()` of total_tokens
+3. **Average Iterations** - `avg_over_time()` of iterations per completion
+4. **RAG Success Rate** - Ratio of successful vs failed retrievals
+5. **Tool Execution Errors** - `count_over_time()` of tool failures
+6. **High Token Requests** - Table of requests > 3000 tokens
+
+**Sample Panel Configuration**:
+```yaml
+# Token consumption over time
+expr: sum_over_time({job="innominatus"} | json | total_tokens[5m])
+legend: Total tokens consumed
+```
+
+### Alerting
+
+**Recommended Alerts**:
+
+**High token consumption**:
+```yaml
+- alert: HighAITokenUsage
+  expr: sum_over_time({job="innominatus"} | json | total_tokens[1h]) > 100000
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High AI token consumption (cost alert)"
+```
+
+**RAG retrieval failures**:
+```yaml
+- alert: RAGRetrievalFailures
+  expr: rate({job="innominatus"} | json | message="Failed to retrieve RAG context"[5m]) > 0.1
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High RAG retrieval failure rate"
+```
+
+**Tool execution failures**:
+```yaml
+- alert: ToolExecutionFailures
+  expr: rate({job="innominatus"} | json | message="Failed to execute tool"[5m]) > 0.1
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High tool execution failure rate"
+```
+
+### Troubleshooting with Logs
+
+**Common Issues**:
+
+**"Failed to retrieve RAG context"**:
+```bash
+# Check for OpenAI API errors
+{job="innominatus"} | json | message="Failed to retrieve RAG context"
+  | line_format "{{.error}}"
+```
+
+**"Failed to execute tool"**:
+```bash
+# Debug tool execution failures
+{job="innominatus"} | json | message="Failed to execute tool"
+  | line_format "{{.tool_name}}: {{.error}}"
+```
+
+**"Reached maximum agent loop iterations"**:
+```bash
+# Find requests hitting iteration limits
+{job="innominatus"} | json | message="Reached maximum agent loop iterations"
+```
+
+**High token usage**:
+```bash
+# Investigate expensive requests
+{job="innominatus"} | json | total_tokens > 3000
+  | line_format "{{.iterations}} iterations, {{.total_tokens}} tokens"
+```
+
+### Debug Mode
+
+Enable debug logging for detailed AI operation traces:
+
+```bash
+# Enable debug logging
+kubectl set env deployment/innominatus -n platform LOG_LEVEL=debug
+
+# View debug logs
+kubectl logs -n platform deployment/innominatus --tail=100 | grep '"level":"debug"'
+
+# Restore info logging
+kubectl set env deployment/innominatus -n platform LOG_LEVEL=info
+```
+
+**Warning**: Debug mode generates significantly more logs. Use temporarily for troubleshooting only.
+
+### Production Recommendations
+
+1. **Set up cost alerts** - Monitor token consumption to prevent unexpected costs
+2. **Track RAG performance** - Alert on retrieval failures
+3. **Monitor tool execution** - Track success rates
+4. **Review high-token requests** - Investigate queries using > 3000 tokens
+5. **Use info-level logging** - Debug level generates excessive logs in production
+
+---
+
 ## Security Considerations
 
 1. **No Authentication Required**: Health endpoints are intentionally unauthenticated for monitoring systems
@@ -475,6 +674,7 @@ kubectl get service innominatus -n platform --show-labels
 - **[Operations Guide](operations.md)** - Troubleshooting and scaling
 - **[Quick Install](quick-install.md)** - Production deployment guide
 - **[Authentication](authentication.md)** - OIDC and security setup
+- **[OBSERVABILITY.md](../OBSERVABILITY.md)** - Complete logging and tracing guide
 
 ---
 
@@ -482,3 +682,4 @@ kubectl get service innominatus -n platform --show-labels
 - [Prometheus Metrics Documentation](https://prometheus.io/docs/)
 - [Grafana Dashboard Guide](https://grafana.com/docs/grafana/latest/dashboards/)
 - [Kubernetes Health Checks](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
+- [AI Assistant Configuration](../ai-assistant/reference/configuration.md) - AI logging details

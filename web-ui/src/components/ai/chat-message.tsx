@@ -16,6 +16,16 @@ export interface ChatMessageProps {
 export function ChatMessage({ role, content, timestamp, citations }: ChatMessageProps) {
   const isUser = role === 'user';
 
+  // Format ISO timestamp for display
+  const formatTimestamp = (ts?: string) => {
+    if (!ts) return '';
+    try {
+      return new Date(ts).toLocaleTimeString();
+    } catch {
+      return ts; // Fallback to original string if parsing fails
+    }
+  };
+
   return (
     <div className={cn('flex gap-3 mb-4', isUser ? 'justify-end' : 'justify-start')}>
       {!isUser && (
@@ -111,7 +121,9 @@ export function ChatMessage({ role, content, timestamp, citations }: ChatMessage
             </ReactMarkdown>
           )}
         </div>
-        {timestamp && <span className="text-xs text-muted-foreground px-2">{timestamp}</span>}
+        {timestamp && (
+          <span className="text-xs text-muted-foreground px-2">{formatTimestamp(timestamp)}</span>
+        )}
         {citations && citations.length > 0 && (
           <div className="px-2 mt-1">
             <p className="text-xs text-muted-foreground mb-1">Sources:</p>
