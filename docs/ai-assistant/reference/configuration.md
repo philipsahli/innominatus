@@ -309,19 +309,231 @@ if authHeader != "" {
 
 ## Logging
 
-**AI Service Logs**: `internal/ai/service.go`, `internal/ai/chat.go`
+### AI Service Log Levels
 
-**Log Levels**:
-- `INFO`: Service initialization, document loading
-- `WARN`: Failed RAG retrieval, missing auth token
-- `ERROR`: API errors, tool execution failures
+The AI service uses structured logging with standardized message formats for comprehensive observability.
 
-**Example Logs**:
+**Components**:
+- `internal/ai/service.go` - Service initialization, status
+- `internal/ai/chat.go` - Chat interactions, agent loop, tool calling
+- `internal/ai/knowledge.go` - Document loading, knowledge base
+- `internal/ai/executor.go` - Internal API tool execution
+
+**Debug Level** (`LOG_LEVEL=debug`):
+- RAG retrieval parameters (query, top_k, min_score) and results
+- Agent loop iterations with token usage tracking
+- Individual tool executions with parameters and results
+- Document loading details (per-file processing, filtering)
+- HTTP request/response details for internal API calls
+
+**Info Level** (`LOG_LEVEL=info`) - Default:
+- Service initialization status
+- Knowledge base loaded with document count
+- Major operational milestones
+
+**Warn Level**:
+- Failed RAG retrievals (non-fatal, continues without context)
+- Missing authentication tokens for tool execution
+- Document loading warnings
+
+**Error Level**:
+- AI service initialization failures
+- Tool execution failures
+- Critical API errors
+- Spec generation failures
+
+### Log Message Format
+
+All AI logs follow a consistent pattern:
+
+- **Errors**: `"Failed to <action>"` (e.g., "Failed to retrieve RAG context")
+- **Success**: Past tense (e.g., "Loaded knowledge base", "Executed tool")
+- **In-progress**: Present participle (e.g., "Loading documentation files")
+- **Structure**: Fields always before `.Msg()`, errors use `.Err(err)` first
+
+### Example AI Logs
+
+**Service Initialization**:
+```json
+{
+  "level": "info",
+  "llm_provider": "anthropic",
+  "llm_model": "claude-sonnet-4-5",
+  "embedding_provider": "openai",
+  "embedding_model": "text-embedding-3-small",
+  "message": "Initialized AI service",
+  "timestamp": "2025-10-08T10:30:00Z"
+}
 ```
-Successfully loaded 25 documents into knowledge base
-Warning: Failed to retrieve RAG context: connection timeout
-Warning: No auth token available for tool execution
+
+**Knowledge Base Loading**:
+```json
+{
+  "level": "info",
+  "document_count": 25,
+  "message": "Loaded knowledge base",
+  "timestamp": "2025-10-08T10:30:01Z"
+}
 ```
+
+**RAG Retrieval**:
+```json
+{
+  "level": "debug",
+  "query": "how to deploy an app",
+  "top_k": 3,
+  "min_score": 0.3,
+  "results_count": 3,
+  "context_length": 1500,
+  "message": "Retrieved RAG context",
+  "timestamp": "2025-10-08T10:30:15Z"
+}
+```
+
+**Agent Loop**:
+```json
+{
+  "level": "debug",
+  "iteration": 2,
+  "prompt_tokens": 450,
+  "completion_tokens": 125,
+  "total_tokens": 575,
+  "cumulative_tokens": 1250,
+  "tool_uses": 1,
+  "message": "Received LLM response",
+  "timestamp": "2025-10-08T10:30:16Z"
+}
+```
+
+**Tool Execution**:
+```json
+{
+  "level": "debug",
+  "iteration": 2,
+  "tool_index": 1,
+  "total_tools": 1,
+  "tool_name": "list_applications",
+  "tool_id": "toolu_abc123",
+  "message": "Executing tool",
+  "timestamp": "2025-10-08T10:30:17Z"
+}
+```
+
+**Agent Loop Completion**:
+```json
+{
+  "level": "debug",
+  "iterations": 3,
+  "total_tokens": 1250,
+  "has_spec": false,
+  "citations_count": 2,
+  "message": "Agent loop completed",
+  "timestamp": "2025-10-08T10:30:18Z"
+}
+```
+
+**Failed RAG Retrieval** (Warn):
+```json
+{
+  "level": "warn",
+  "error": "connection timeout",
+  "query": "example query",
+  "message": "Failed to retrieve RAG context",
+  "timestamp": "2025-10-08T10:30:15Z"
+}
+```
+
+**Tool Execution Error**:
+```json
+{
+  "level": "error",
+  "error": "API request failed with status 401",
+  "tool_name": "deploy_application",
+  "tool_id": "toolu_xyz789",
+  "message": "Failed to execute tool",
+  "timestamp": "2025-10-08T10:30:20Z"
+}
+```
+
+### Log Queries for Troubleshooting
+
+**Loki Query Examples**:
+
+Find all failed operations:
+```
+{job="innominatus"} | json | level="error" | message=~"Failed to.*"
+```
+
+Track token usage over time:
+```
+{job="innominatus"} | json | total_tokens > 0
+  | line_format "{{.total_tokens}} tokens"
+```
+
+Debug tool execution flow:
+```
+{job="innominatus"} | json | tool_name!=""
+  | line_format "{{.tool_name}}: {{.message}}"
+```
+
+Monitor RAG retrieval performance:
+```
+{job="innominatus"} | json | message=~".*RAG context"
+  | line_format "{{.results_count}} results, {{.context_length}} chars"
+```
+
+Find agent loops with high token usage:
+```
+{job="innominatus"} | json | message="Agent loop completed" | total_tokens > 2000
+```
+
+Track knowledge base loading:
+```
+{job="innominatus"} | json | message="Loaded knowledge base"
+  | line_format "{{.document_count}} documents loaded"
+```
+
+### Token Usage Monitoring
+
+**Why Monitor Tokens**: LLM API costs are based on token consumption
+
+**Key Metrics**:
+- `prompt_tokens`: Input tokens (context + user message)
+- `completion_tokens`: Output tokens (AI response)
+- `total_tokens`: Sum of prompt and completion tokens
+- `cumulative_tokens`: Total across all iterations in agent loop
+
+**Cost Tracking Queries**:
+```
+# Sum tokens per hour
+sum_over_time({job="innominatus"} | json | total_tokens[1h])
+
+# Average tokens per request
+avg_over_time({job="innominatus"} | json | message="Agent loop completed" | total_tokens[5m])
+
+# Identify expensive requests
+{job="innominatus"} | json | total_tokens > 3000
+```
+
+### Debugging Common Issues
+
+**Issue: "No auth token available for tool execution"**
+- **Log Level**: Warn
+- **Cause**: User not authenticated or API key missing
+- **Impact**: Tools will fail with 401/403
+- **Fix**: Ensure user logged in (web UI) or API key set (CLI)
+
+**Issue: "Failed to retrieve RAG context"**
+- **Log Level**: Warn
+- **Cause**: OpenAI API error or network issue
+- **Impact**: AI continues without documentation context
+- **Fix**: Check OpenAI API key and connectivity
+
+**Issue: "Reached maximum agent loop iterations"**
+- **Log Level**: Warn
+- **Cause**: Too many tool calls without completion
+- **Impact**: Response may be incomplete
+- **Fix**: Reduce `AI_MAX_ITERATIONS` or simplify request
 
 ## Health Checks
 

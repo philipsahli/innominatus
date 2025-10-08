@@ -26,11 +26,23 @@ type Config struct {
 
 // NewService creates a new AI service
 func NewService(ctx context.Context, cfg Config) (*Service, error) {
+	log.Debug().Msg("Initializing AI service")
+
 	// Check if AI is enabled (require both API keys)
 	if cfg.OpenAIKey == "" || cfg.AnthropicKey == "" {
-		log.Warn().Msg("AI service disabled: missing API keys (OPENAI_API_KEY and/or ANTHROPIC_API_KEY)")
+		log.Warn().
+			Bool("has_openai_key", cfg.OpenAIKey != "").
+			Bool("has_anthropic_key", cfg.AnthropicKey != "").
+			Msg("AI service disabled: missing API keys (OPENAI_API_KEY and/or ANTHROPIC_API_KEY)")
 		return &Service{enabled: false}, nil
 	}
+
+	log.Debug().
+		Str("llm_provider", "anthropic").
+		Str("llm_model", "claude-sonnet-4-5-20250929").
+		Str("embedding_provider", "openai").
+		Str("embedding_model", "text-embedding-3-small").
+		Msg("Initializing AI SDK")
 
 	// Initialize Platform AI SDK
 	sdk, err := platformai.New(ctx, &platformai.Config{
@@ -48,8 +60,13 @@ func NewService(ctx context.Context, cfg Config) (*Service, error) {
 		},
 	})
 	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Failed to initialize AI SDK")
 		return nil, fmt.Errorf("failed to initialize AI SDK: %w", err)
 	}
+
+	log.Debug().Msg("Initialized AI SDK")
 
 	service := &Service{
 		sdk:     sdk,
@@ -58,7 +75,9 @@ func NewService(ctx context.Context, cfg Config) (*Service, error) {
 
 	// Load knowledge base
 	if err := service.loadKnowledgeBase(ctx, cfg); err != nil {
-		log.Warn().Err(err).Msg("Failed to load knowledge base, AI will work with limited context")
+		log.Warn().
+			Err(err).
+			Msg("Failed to load knowledge base, AI will work with limited context")
 	}
 
 	log.Info().
@@ -66,7 +85,7 @@ func NewService(ctx context.Context, cfg Config) (*Service, error) {
 		Str("llm_model", "claude-sonnet-4-5").
 		Str("embedding_provider", "openai").
 		Str("embedding_model", "text-embedding-3-small").
-		Msg("AI service initialized successfully")
+		Msg("Initialized AI service")
 
 	return service, nil
 }
@@ -78,7 +97,10 @@ func (s *Service) IsEnabled() bool {
 
 // GetStatus returns the current AI service status
 func (s *Service) GetStatus(ctx context.Context) StatusResponse {
+	log.Debug().Msg("Getting AI service status")
+
 	if !s.enabled {
+		log.Debug().Msg("AI service is not enabled")
 		return StatusResponse{
 			Enabled: false,
 			Status:  "not_configured",
@@ -88,9 +110,15 @@ func (s *Service) GetStatus(ctx context.Context) StatusResponse {
 
 	docCount, err := s.sdk.RAG().Count(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("Failed to get document count from RAG")
+		log.Warn().
+			Err(err).
+			Msg("Failed to get document count from RAG for status")
 		docCount = 0
 	}
+
+	log.Debug().
+		Int("document_count", docCount).
+		Msg("AI service status retrieved")
 
 	return StatusResponse{
 		Enabled:         true,
@@ -110,27 +138,48 @@ func (s *Service) GetSDK() *platformai.SDK {
 // loadKnowledgeBase loads documentation and examples into the RAG system
 func (s *Service) loadKnowledgeBase(ctx context.Context, cfg Config) error {
 	if s.sdk.RAG() == nil {
+		log.Error().Msg("RAG module not initialized")
 		return fmt.Errorf("RAG module not initialized")
 	}
 
-	log.Info().Msg("Loading knowledge base into RAG...")
+	log.Debug().
+		Str("docs_path", cfg.DocsPath).
+		Str("workflows_path", cfg.WorkflowsPath).
+		Msg("Loading knowledge base")
 
 	// Load documents from various sources
 	loader := NewKnowledgeLoader(cfg.DocsPath, cfg.WorkflowsPath)
 	documents, err := loader.LoadAll(ctx)
 	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Failed to load documents from sources")
 		return fmt.Errorf("failed to load documents: %w", err)
 	}
 
+	log.Debug().
+		Int("documents_loaded", len(documents)).
+		Msg("Adding documents to RAG index")
+
 	// Add documents to RAG
 	if err := s.sdk.RAG().AddDocuments(ctx, documents); err != nil {
+		log.Error().
+			Err(err).
+			Int("document_count", len(documents)).
+			Msg("Failed to add documents to RAG index")
 		return fmt.Errorf("failed to add documents to RAG: %w", err)
 	}
 
-	count, _ := s.sdk.RAG().Count(ctx)
+	count, err := s.sdk.RAG().Count(ctx)
+	if err != nil {
+		log.Warn().
+			Err(err).
+			Msg("Failed to get document count from RAG")
+	}
+
 	log.Info().
 		Int("document_count", count).
-		Msg("Knowledge base loaded successfully")
+		Msg("Loaded knowledge base")
 
 	return nil
 }

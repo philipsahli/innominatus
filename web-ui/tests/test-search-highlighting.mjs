@@ -62,7 +62,7 @@ async function testHighlightingWithURL(page) {
 
   // Verify highlight contains the search term
   const firstHighlight = await page.$('mark');
-  const text = await page.evaluate(el => el.textContent, firstHighlight);
+  const text = await page.evaluate((el) => el.textContent, firstHighlight);
   if (!text.toLowerCase().includes('kubernetes')) {
     throw new Error(`Highlight text "${text}" doesn't contain search term`);
   }
@@ -80,12 +80,10 @@ async function testCaseInsensitiveMatching(page) {
   }
 
   // Verify both uppercase and lowercase are highlighted
-  const highlightTexts = await page.$$eval('mark', marks =>
-    marks.map(m => m.textContent)
-  );
+  const highlightTexts = await page.$$eval('mark', (marks) => marks.map((m) => m.textContent));
 
-  const hasLowercase = highlightTexts.some(t => t.includes('kubernetes'));
-  const hasCapitalized = highlightTexts.some(t => t.includes('Kubernetes'));
+  const hasLowercase = highlightTexts.some((t) => t.includes('kubernetes'));
+  const hasCapitalized = highlightTexts.some((t) => t.includes('Kubernetes'));
 
   console.log(`   Found lowercase: ${hasLowercase}, capitalized: ${hasCapitalized}`);
 }
@@ -182,7 +180,7 @@ async function main() {
 
   const browser = await puppeteer.launch({
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
   const page = await browser.newPage();
@@ -208,7 +206,7 @@ async function main() {
 
   if (TESTS_PASSED.length > 0) {
     console.log('\n✅ Passed tests:');
-    TESTS_PASSED.forEach(name => console.log(`   - ${name}`));
+    TESTS_PASSED.forEach((name) => console.log(`   - ${name}`));
   }
 
   if (TESTS_FAILED.length > 0) {
@@ -224,7 +222,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(error => {
+main().catch((error) => {
   console.error('Fatal error:', error);
   process.exit(1);
 });
