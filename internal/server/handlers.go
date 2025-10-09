@@ -32,6 +32,7 @@ import (
 	"time"
 
 	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
+	"github.com/rs/zerolog/log"
 
 	"gopkg.in/yaml.v3"
 )
@@ -642,10 +643,22 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Path
 
-	// Handle /api/graph/<app> pattern
+	// Handle /api/graph/<app>/export pattern
 	if len(path) > len("/api/graph/") && path[:len("/api/graph/")] == "/api/graph/" {
-		appName := path[len("/api/graph/"):]
-		s.handleAppGraph(w, r, appName)
+		remainder := path[len("/api/graph/"):]
+
+		// Check if it's an export request
+		if strings.Contains(remainder, "/export") {
+			parts := strings.Split(remainder, "/export")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphExport(w, r, appName)
+				return
+			}
+		}
+
+		// Regular graph request
+		s.handleAppGraph(w, r, remainder)
 		return
 	}
 
@@ -675,6 +688,90 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 	// Return all specs if multiple exist
 	s.handleListSpecs(w, r)
+}
+
+// handleGraphExport handles /api/graph/<app>/export requests
+func (s *Server) handleGraphExport(w http.ResponseWriter, r *http.Request, appName string) {
+	// Get the graph from the database via graph adapter
+	if s.graphAdapter == nil {
+		http.Error(w, "Graph adapter not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	sdkGraph, err := s.graphAdapter.GetGraph(appName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Application '%s' not found", appName), http.StatusNotFound)
+		return
+	}
+
+	// Get format from query parameter (default: mermaid)
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "mermaid"
+	}
+
+	switch format {
+	case "mermaid":
+		exporter := graph.NewMermaidExporter()
+		mermaidDiagram, err := exporter.ExportGraph(sdkGraph)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.mmd", appName))
+		if _, err := fmt.Fprint(w, mermaidDiagram); err != nil {
+			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
+		}
+
+	case "mermaid-simple":
+		exporter := graph.NewMermaidExporter()
+		mermaidDiagram, err := exporter.ExportGraphSimple(sdkGraph)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph-simple.mmd", appName))
+		if _, err := fmt.Fprint(w, mermaidDiagram); err != nil {
+			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
+		}
+
+	case "svg", "png", "dot":
+		// Use existing graph adapter export functionality
+		data, err := s.graphAdapter.ExportGraph(appName, format)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph as %s: %v", format, err), http.StatusInternalServerError)
+			return
+		}
+
+		// Set appropriate content type
+		contentType := map[string]string{
+			"svg": "image/svg+xml",
+			"png": "image/png",
+			"dot": "text/plain",
+		}[format]
+
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.%s", appName, format))
+		if _, err := w.Write(data); err != nil {
+			log.Error().Err(err).Msg("Failed to write graph data response")
+		}
+
+	case "json":
+		// Export as JSON (same as regular graph endpoint)
+		response := convertSDKGraphToFrontend(sdkGraph)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.json", appName))
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
+
+	default:
+		http.Error(w, fmt.Sprintf("Unsupported format: %s. Supported formats: mermaid, mermaid-simple, svg, png, dot, json", format), http.StatusBadRequest)
+	}
 }
 
 // handleAppGraph handles /api/graph/<app> requests with enhanced graph data
