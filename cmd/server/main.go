@@ -112,7 +112,9 @@ func main() {
 				srv = server.NewServer()
 			} else {
 				logger.Info("Database connected successfully")
+				logger.Info("Initializing server with database...")
 				srv = server.NewServerWithDB(db)
+				logger.Info("Server initialization complete")
 			}
 		}
 	} else {
@@ -120,15 +122,38 @@ func main() {
 		srv = server.NewServer()
 	}
 
+	logger.Info("Initializing AI service...")
+
 	// Initialize AI service (optional - continues without AI if not configured)
-	aiService, err := ai.NewServiceFromEnv(context.Background())
-	if err != nil {
-		logger.WarnWithFields("Failed to initialize AI service", map[string]interface{}{
-			"error": err.Error(),
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	aiServiceDone := make(chan struct{})
+	var aiService *ai.Service
+	var aiErr error
+
+	go func() {
+		aiService, aiErr = ai.NewServiceFromEnv(ctx)
+		close(aiServiceDone)
+	}()
+
+	select {
+	case <-aiServiceDone:
+		if aiErr != nil {
+			logger.WarnWithFields("Failed to initialize AI service", map[string]interface{}{
+				"error": aiErr.Error(),
+			})
+		} else if aiService.IsEnabled() {
+			srv.SetAIService(aiService)
+			logger.Info("AI assistant service initialized successfully")
+		} else {
+			logger.Info("AI assistant service disabled (missing API keys)")
+		}
+	case <-ctx.Done():
+		logger.WarnWithFields("AI service initialization timed out", map[string]interface{}{
+			"timeout": "30s",
 		})
-	} else if aiService.IsEnabled() {
-		srv.SetAIService(aiService)
-		logger.Info("AI assistant service initialized successfully")
+		fmt.Println("Continuing without AI service...")
 	}
 
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
