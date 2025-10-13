@@ -211,6 +211,7 @@ func NewServerWithDB(db *database.Database) *Server {
 		fmt.Println("OIDC authentication enabled")
 	}
 
+	// Create repositories
 	workflowRepo := database.NewWorkflowRepository(db)
 	resourceRepo := database.NewResourceRepository(db)
 	resourceManager := resources.NewManager(resourceRepo)
