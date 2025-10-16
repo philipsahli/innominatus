@@ -667,5 +667,213 @@ innominatus follows [Semantic Versioning](https://semver.org/):
 
 ---
 
+## Development Principles
+
+### SOLID Principles
+
+innominatus follows SOLID design principles for maintainable, scalable code:
+
+**Single Responsibility Principle (SRP)**
+- Each component has one reason to change
+- `internal/server/handlers.go` - HTTP routing only
+- `internal/database/` - Database operations only
+- `internal/workflow/` - Workflow execution only
+
+**Open/Closed Principle (OCP)**
+- Workflow steps are extensible via configuration
+- Golden paths can be added without modifying core engine
+- Resource definitions configurable via `admin-config.yaml`
+
+**Liskov Substitution Principle (LSP)**
+- Workflow step interfaces are polymorphic
+- Database interfaces (PostgreSQL, SQLite) are interchangeable
+- Storage backends can be swapped without breaking contracts
+
+**Interface Segregation Principle (ISP)**
+- Small, focused interfaces (WorkflowExecutor, DatabaseRepository, AuthProvider)
+- Clients depend only on methods they use
+
+**Dependency Inversion Principle (DIP)**
+- High-level modules depend on abstractions, not implementations
+- Database layer abstracted via interfaces
+- Workflow engine doesn't depend on concrete step implementations
+
+### KISS Philosophy (Keep It Simple, Stupid)
+
+**Simplicity Over Complexity**
+- Configuration via YAML files, not complex DSLs
+- RESTful API with standard HTTP methods
+- Database schema normalized, no over-engineering
+- Workflow steps are shell commands with clear inputs/outputs
+
+**Simple > Clever**
+- Readable code over performance tricks
+- Clear error messages over generic failures
+- Straightforward authentication (API keys, OIDC) over custom auth schemes
+
+**Avoid Premature Optimization**
+- Build features when needed, not "just in case"
+- Measure before optimizing (use Prometheus metrics)
+- Simple PostgreSQL queries first, optimize only when proven necessary
+
+### YAGNI (You Aren't Gonna Need It)
+
+**Build What You Need**
+- No speculative features or "future-proofing"
+- Implement based on actual requirements, not hypothetical use cases
+- Remove unused code aggressively
+
+**Defer Decisions**
+- Don't build abstraction layers until you have 3+ use cases
+- Start with simple implementation, refactor when patterns emerge
+- Configuration files over hard-coded values, but avoid config bloat
+
+**Examples in innominatus:**
+- Golden paths added when users requested them, not upfront
+- OIDC authentication added when enterprise users needed it
+- Prometheus metrics added when observability became required
+
+### Minimal Documentation Philosophy
+
+**Code is Documentation**
+- Self-documenting code with clear names (`handleGraphHistory`, `executeWorkflow`, `validateScoreSpec`)
+- Type-safe interfaces over comments (Go types, TypeScript interfaces)
+- Examples in code over lengthy prose
+
+**When to Document:**
+- **Public APIs**: RESTful endpoints, CLI commands (required)
+- **Complex Algorithms**: Critical path calculation, workflow engine logic
+- **Configuration**: YAML structure, environment variables
+- **Architecture**: High-level system design (Mermaid diagrams)
+
+**When NOT to Document:**
+- **Obvious Code**: `getUserByID()` doesn't need "Gets a user by their ID" comment
+- **Implementation Details**: How loops work, basic language features
+- **Temporary Workarounds**: Fix the code instead of documenting hacks
+
+**Documentation Hierarchy:**
+1. **Code First**: Clear function/variable names, type signatures
+2. **Inline Comments**: Only when "why" is not obvious from code
+3. **README Files**: Quick starts, examples, architecture diagrams
+4. **Comprehensive Guides**: User guide, platform team guide (minimal, example-driven)
+
+**innominatus Documentation Strategy:**
+- `CLAUDE.md`: Development context for AI assistants
+- `README.md`: Quick overview with setup commands
+- `docs/`: Minimal guides (getting-started, troubleshooting)
+- Code comments: Only for non-obvious business logic
+
+### Verification-First Development Protocol
+
+**Test Before Code**
+1. Write verification script first (what does success look like?)
+2. Implement feature
+3. Run verification
+4. Iterate until verified
+
+**Verification Types:**
+- **Unit Tests**: Go test suite (`go test ./...`)
+- **Integration Tests**: Database, API, workflow execution
+- **UI Tests**: Puppeteer tests for web-ui
+- **Manual Verification**: CLI commands, curl tests
+
+**Example Workflow:**
+```bash
+# 1. Write verification script
+cat > verification/test-golden-path.mjs <<EOF
+// Verify golden path execution
+EOF
+
+# 2. Implement feature
+# ... code changes ...
+
+# 3. Run verification
+node verification/test-golden-path.mjs
+
+# 4. Iterate until pass
+```
+
+**CI/CD Verification:**
+- GitHub Actions runs tests on every PR
+- Security scanning (CodeQL)
+- Build verification (multi-platform)
+- Docker image build and push
+
+**Verification Artifacts:**
+- `verification/` directory contains test scripts
+- `.github/workflows/` contains CI automation
+- `tests/` directory for integration tests
+
+---
+
+## Code Quality Standards
+
+### Go Backend Standards
+
+**File Organization:**
+- `cmd/` - Entry points (server, cli)
+- `internal/` - Private application code
+- `pkg/` - Public libraries (if any)
+- `migrations/` - Database schema migrations
+
+**Naming Conventions:**
+- Packages: lowercase, single word (`database`, `server`, `workflow`)
+- Interfaces: noun or adjective (`Repository`, `Executor`, `Authenticator`)
+- Functions: verb or verb phrase (`executeWorkflow`, `validateSpec`)
+
+**Error Handling:**
+- Always return errors, never panic in production code
+- Wrap errors with context: `fmt.Errorf("failed to execute workflow %s: %w", name, err)`
+- Use structured logging (`zerolog`) for error context
+
+**Testing:**
+- Unit tests alongside code (`handlers_test.go`)
+- Table-driven tests for multiple scenarios
+- Mock external dependencies (database, HTTP clients)
+
+### TypeScript/React Frontend Standards
+
+**Component Organization:**
+- `web-ui/src/components/` - Reusable components
+- `web-ui/src/app/` - Next.js pages and routing
+- One component per file, named after component
+
+**Naming Conventions:**
+- Components: PascalCase (`GraphVisualization`, `PerformanceMetrics`)
+- Hooks: camelCase with `use` prefix (`useAuth`, `useFetchGraph`)
+- Types/Interfaces: PascalCase (`WorkflowExecution`, `GraphNode`)
+
+**State Management:**
+- React hooks for local state (`useState`, `useEffect`)
+- Context API for global state (auth, theme)
+- Avoid prop drilling beyond 2-3 levels
+
+**Type Safety:**
+- Define interfaces for all API responses
+- Use TypeScript strict mode
+- No `any` types except for truly dynamic data
+
+### Database Standards
+
+**Migration Rules:**
+- Never modify existing migrations
+- New changes = new migration file
+- Rollback migrations must be provided
+- Test migrations against production-like data
+
+**Query Patterns:**
+- Use GORM for simple queries
+- Raw SQL for complex joins/aggregations
+- Always use parameterized queries (prevent SQL injection)
+- Index columns used in WHERE/JOIN clauses
+
+**Schema Conventions:**
+- Table names: plural, lowercase, snake_case (`workflow_executions`, `user_api_keys`)
+- Column names: snake_case (`created_at`, `workflow_name`)
+- Primary keys: `id SERIAL PRIMARY KEY`
+- Timestamps: `created_at`, `updated_at` (auto-managed)
+
+---
+
 *Created: 2025-09-13*
-*Updated: 2025-10-01* - Added release process and GoReleaser documentation
+*Updated: 2025-10-16* - Added SOLID, KISS, YAGNI, Minimal Documentation, Verification-First, and Code Quality Standards
