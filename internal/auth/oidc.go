@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -62,7 +63,9 @@ func NewOIDCAuthenticator(cfg OIDCConfig) (*OIDCAuthenticator, error) {
 		return &OIDCAuthenticator{enabled: false}, nil
 	}
 
-	ctx := context.Background()
+	// Use a timeout context to prevent blocking indefinitely
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	// Initialize provider
 	provider, err := oidc.NewProvider(ctx, cfg.IssuerURL)

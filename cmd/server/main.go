@@ -129,6 +129,8 @@ func main() {
 	} else if aiService.IsEnabled() {
 		srv.SetAIService(aiService)
 		logger.Info("AI assistant service initialized successfully")
+	} else {
+		logger.Info("AI assistant service disabled (missing API keys)")
 	}
 
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
