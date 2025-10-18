@@ -6,7 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, Database, Server, Clock, ExternalLink, FileCode, Settings } from 'lucide-react';
+import {
+  X,
+  Database,
+  Server,
+  Clock,
+  ExternalLink,
+  FileCode,
+  Settings,
+  GitBranch,
+  Download,
+  Link2,
+  Terminal,
+  Lock,
+  Globe,
+  Copy,
+  CheckCheck,
+} from 'lucide-react';
 import { ResourceInstance } from '@/lib/api';
 
 interface ResourceDetailsPaneProps {
@@ -15,9 +31,51 @@ interface ResourceDetailsPaneProps {
 }
 
 export function ResourceDetailsPane({ resource, onClose }: ResourceDetailsPaneProps) {
+  const [copiedHint, setCopiedHint] = React.useState<string | null>(null);
+
   if (!resource) {
     return null;
   }
+
+  const getHintIcon = (icon?: string) => {
+    const iconClass = 'h-5 w-5 text-gray-500 dark:text-gray-400';
+    switch (icon) {
+      case 'git-branch':
+        return <GitBranch className={iconClass} />;
+      case 'download':
+        return <Download className={iconClass} />;
+      case 'settings':
+        return <Settings className={iconClass} />;
+      case 'terminal':
+        return <Terminal className={iconClass} />;
+      case 'database':
+        return <Database className={iconClass} />;
+      case 'lock':
+        return <Lock className={iconClass} />;
+      case 'external-link':
+        return <ExternalLink className={iconClass} />;
+      default:
+        return <Link2 className={iconClass} />;
+    }
+  };
+
+  const copyToClipboard = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedHint(label);
+      setTimeout(() => setCopiedHint(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleHintClick = (hint: any) => {
+    if (hint.type === 'url' || hint.type === 'dashboard') {
+      window.open(hint.value, '_blank', 'noopener,noreferrer');
+    } else {
+      copyToClipboard(hint.value, hint.label);
+    }
+  };
 
   const getStateBadgeVariant = (
     state: string
@@ -89,6 +147,51 @@ export function ResourceDetailsPane({ resource, onClose }: ResourceDetailsPanePr
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-4 mt-4">
+            {/* Quick Access Section (Resource Hints) */}
+            {resource.hints && resource.hints.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                  <Link2 className="w-4 h-4" />
+                  Quick Access
+                </h3>
+                <div className="grid grid-cols-1 gap-3">
+                  {resource.hints.map((hint, index) => (
+                    <Card
+                      key={index}
+                      className="relative overflow-hidden border shadow-sm bg-white dark:bg-gray-800 hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => handleHintClick(hint)}
+                    >
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+                        <CardTitle className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {hint.label}
+                        </CardTitle>
+                        {getHintIcon(hint.icon)}
+                      </CardHeader>
+                      <CardContent className="relative z-10">
+                        <div className="text-xs font-mono text-gray-600 dark:text-gray-400 break-all pr-8">
+                          {hint.value}
+                        </div>
+                        {copiedHint === hint.label && (
+                          <div className="absolute top-2 right-2 flex items-center gap-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded text-xs">
+                            <CheckCheck className="w-3 h-3" />
+                            Copied!
+                          </div>
+                        )}
+                        <div className="absolute bottom-2 right-2">
+                          {hint.type === 'url' || hint.type === 'dashboard' ? (
+                            <ExternalLink className="w-3 h-3 text-gray-400" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-gray-400" />
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Resource Information */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">

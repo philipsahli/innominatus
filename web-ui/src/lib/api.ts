@@ -122,6 +122,13 @@ export interface DemoStatusResponse {
   timestamp: string;
 }
 
+export interface ResourceHint {
+  type: string; // "url", "connection_string", "dashboard", "docs", "api_endpoint", "git_clone", "command"
+  label: string; // Display name: "Repository URL", "Admin Dashboard", etc.
+  value: string; // Actual value: URL, connection string, command, etc.
+  icon?: string; // Optional icon: "external-link", "database", "lock", "terminal", "git-branch"
+}
+
 export interface ResourceInstance {
   id: number;
   application_name: string;
@@ -142,6 +149,7 @@ export interface ResourceInstance {
   provider_id?: string;
   provider_metadata?: Record<string, any>;
   workflow_execution_id?: number;
+  hints?: ResourceHint[]; // Multiple contextual hints for the resource
   created_at: string;
   updated_at: string;
   last_health_check?: string;
