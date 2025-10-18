@@ -155,7 +155,37 @@ func (ap *ArgoCDProvisioner) Provision(resource *database.ResourceInstance, conf
 	}
 
 	// ArgoCD app info - outputs updated by Manager
-	fmt.Printf("   🔗 ArgoCD Application: %s/applications/%s\n", adminConfig.ArgoCD.URL, appName)
+	appURL := fmt.Sprintf("%s/applications/%s", adminConfig.ArgoCD.URL, appName)
+	fmt.Printf("   🔗 ArgoCD Application: %s\n", appURL)
+
+	// Add multiple hints for easy access to ArgoCD application
+	hints := []database.ResourceHint{
+		{
+			Type:  "dashboard",
+			Label: "ArgoCD Application",
+			Value: appURL,
+			Icon:  "external-link",
+		},
+		{
+			Type:  "url",
+			Label: "Git Repository",
+			Value: repoURL,
+			Icon:  "git-branch",
+		},
+		{
+			Type:  "namespace",
+			Label: "Target Namespace",
+			Value: namespace,
+			Icon:  "server",
+		},
+	}
+
+	// Update resource hints in database
+	if err := ap.repo.UpdateResourceHints(resource.ID, hints); err != nil {
+		// Log error but don't fail the provisioning
+		fmt.Printf("   ⚠️  Warning: Failed to update resource hints: %v\n", err)
+	}
+
 	return nil
 }
 
