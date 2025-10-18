@@ -108,7 +108,39 @@ func (gp *GiteaProvisioner) Provision(resource *database.ResourceInstance, confi
 
 	// Store repository URL - outputs updated by Manager
 	repoURL := fmt.Sprintf("%s/%s/%s", adminConfig.Gitea.URL, owner, repoName)
+	cloneURL := fmt.Sprintf("%s/%s/%s.git", adminConfig.Gitea.URL, owner, repoName)
+	settingsURL := fmt.Sprintf("%s/%s/%s/settings", adminConfig.Gitea.URL, owner, repoName)
+
 	fmt.Printf("   🔗 Repository available at: %s\n", repoURL)
+
+	// Add multiple hints for easy access to repository resources
+	hints := []database.ResourceHint{
+		{
+			Type:  "url",
+			Label: "Repository URL",
+			Value: repoURL,
+			Icon:  "git-branch",
+		},
+		{
+			Type:  "git_clone",
+			Label: "Clone URL",
+			Value: cloneURL,
+			Icon:  "download",
+		},
+		{
+			Type:  "dashboard",
+			Label: "Repository Settings",
+			Value: settingsURL,
+			Icon:  "settings",
+		},
+	}
+
+	// Update resource hints in database
+	if err := gp.repo.UpdateResourceHints(resource.ID, hints); err != nil {
+		// Log error but don't fail the provisioning
+		fmt.Printf("   ⚠️  Warning: Failed to update resource hints: %v\n", err)
+	}
+
 	return nil
 }
 

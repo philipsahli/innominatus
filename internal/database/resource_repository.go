@@ -243,6 +243,26 @@ func (r *ResourceRepository) UpdateResourceInstanceHealth(id int64, healthStatus
 	return nil
 }
 
+// UpdateResourceHints updates the hints for a resource instance
+func (r *ResourceRepository) UpdateResourceHints(id int64, hints []ResourceHint) error {
+	hintsJSON, err := json.Marshal(hints)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hints: %w", err)
+	}
+
+	query := `
+		UPDATE resource_instances
+		SET hints = $1, updated_at = NOW()
+		WHERE id = $2`
+
+	_, err = r.db.db.Exec(query, hintsJSON, id)
+	if err != nil {
+		return fmt.Errorf("failed to update resource hints: %w", err)
+	}
+
+	return nil
+}
+
 // CreateHealthCheck records a health check result
 func (r *ResourceRepository) CreateHealthCheck(resourceID int64, checkType, status string, responseTime *int64, errorMessage *string, metrics map[string]interface{}) error {
 	metricsJSON, _ := json.Marshal(metrics)

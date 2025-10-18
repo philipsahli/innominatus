@@ -215,12 +215,24 @@ CREATE TABLE IF NOT EXISTS resource_instances (
     reference_url TEXT NULL,
     external_state VARCHAR(50) NULL,
     last_sync TIMESTAMP WITH TIME ZONE NULL,
+    hints JSONB DEFAULT '[]',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_health_check TIMESTAMP WITH TIME ZONE NULL,
     error_message TEXT NULL,
     UNIQUE(application_name, resource_name)
 );
+
+-- Add hints column if it doesn't exist (for existing databases)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='resource_instances' AND column_name='hints'
+    ) THEN
+        ALTER TABLE resource_instances ADD COLUMN hints JSONB DEFAULT '[]';
+    END IF;
+END $$;
 
 -- Resource state transitions for audit trail
 CREATE TABLE IF NOT EXISTS resource_state_transitions (
@@ -262,6 +274,7 @@ CREATE INDEX IF NOT EXISTS idx_resource_instances_state ON resource_instances(st
 CREATE INDEX IF NOT EXISTS idx_resource_instances_type ON resource_instances(resource_type);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_health ON resource_instances(health_status);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_updated ON resource_instances(updated_at);
+CREATE INDEX IF NOT EXISTS idx_resource_instances_hints ON resource_instances USING GIN (hints);
 -- Note: Indexes for type, provider, external_state are created in migration 006_add_delegated_resources.sql
 
 CREATE INDEX IF NOT EXISTS idx_resource_state_transitions_resource_id ON resource_state_transitions(resource_instance_id);

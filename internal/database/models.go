@@ -127,6 +127,14 @@ func (c *WorkflowStepConfigJSON) Scan(value interface{}) error {
 	}
 }
 
+// ResourceHint represents a contextual hint for a resource (URL, connection string, etc.)
+type ResourceHint struct {
+	Type  string `json:"type"`            // "url", "connection_string", "dashboard", "docs", "api_endpoint", "git_clone", "command"
+	Label string `json:"label"`           // Display name: "Repository URL", "Admin Dashboard", etc.
+	Value string `json:"value"`           // Actual value: URL, connection string, command, etc.
+	Icon  string `json:"icon,omitempty"`  // Optional icon: "external-link", "database", "lock", "terminal", "git-branch"
+}
+
 // ResourceInstance represents a managed resource with lifecycle tracking
 type ResourceInstance struct {
 	ID                  int64                  `json:"id" db:"id"`
@@ -144,6 +152,7 @@ type ResourceInstance struct {
 	ExternalState       *string                `json:"external_state,omitempty" db:"external_state"` // External system state
 	LastSync            *time.Time             `json:"last_sync,omitempty" db:"last_sync"`           // Last synchronization time
 	WorkflowExecutionID *int64                 `json:"workflow_execution_id,omitempty" db:"workflow_execution_id"`
+	Hints               []ResourceHint         `json:"hints,omitempty" db:"hints"`                   // Multiple contextual hints for the resource
 	CreatedAt           time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at" db:"updated_at"`
 	LastHealthCheck     *time.Time             `json:"last_health_check,omitempty" db:"last_health_check"`
