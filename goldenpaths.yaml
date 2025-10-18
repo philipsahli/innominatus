@@ -1,4 +1,26 @@
 goldenpaths:
+  team-setup:
+    workflow: ./workflows/team-setup.yaml
+    description: Create Gitea team organization for collaborative development
+    category: platform
+    tags: [team, setup, gitea, organization, collaboration]
+    estimated_duration: 1-2 minutes
+    parameters:
+      org_name:
+        type: string
+        default: platform-team
+        description: Name of the Gitea team organization to create
+        pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
+      org_description:
+        type: string
+        default: Platform engineering team organization
+        description: Description for the team organization
+      org_visibility:
+        type: enum
+        default: public
+        description: Team organization visibility setting
+        allowed_values: [public, limited, private]
+
   deploy-app:
     workflow: ./workflows/deploy-app.yaml
     description: Deploy application with full GitOps pipeline including Git repository and ArgoCD onboarding

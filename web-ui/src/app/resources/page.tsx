@@ -31,9 +31,10 @@ import {
 } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 import { useResources } from '@/hooks/use-api';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import type { ResourceInstance } from '@/lib/api';
+import { ResourceDetailsPane } from '@/components/resource-details-pane';
 
 function getStatusBadge(state: string, healthStatus: string) {
   const isHealthy = healthStatus === 'healthy';
@@ -160,7 +161,7 @@ function formatTimestamp(timestamp: string) {
 }
 
 export default function ResourcesPage() {
-  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     data: resourcesData,
     loading: resourcesLoading,
@@ -170,9 +171,21 @@ export default function ResourcesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [selectedResource, setSelectedResource] = useState<ResourceInstance | null>(null);
 
   // Flatten resources data into a single array
   const allResources: ResourceInstance[] = resourcesData ? Object.values(resourcesData).flat() : [];
+
+  // Auto-select resource from query parameter
+  useEffect(() => {
+    const resourceId = searchParams.get('resourceId');
+    if (resourceId && allResources.length > 0 && !selectedResource) {
+      const resource = allResources.find((r) => r.id === parseInt(resourceId, 10));
+      if (resource) {
+        setSelectedResource(resource);
+      }
+    }
+  }, [searchParams, allResources, selectedResource]);
 
   // Filter resources based on search term, state, and type
   const filteredResources = allResources.filter((resource) => {
@@ -203,261 +216,278 @@ export default function ResourcesPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-white dark:bg-gray-900 p-6">
-        <div className="relative space-y-6">
-          {/* Header */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700">
-                  <Package className="w-6 h-6 text-gray-900 dark:text-gray-100" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-                    Resources
-                  </h1>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    Monitor and manage resource instances across applications
-                  </p>
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                onClick={handleRefresh}
-                disabled={resourcesLoading}
-                className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${resourcesLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          {/* Error Display */}
-          {resourcesError && (
-            <Card className="bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700">
-              <CardContent className="pt-6">
-                <p className="text-gray-800 dark:text-gray-200 text-sm">
-                  Using offline mode - resource data may not be current. Error: {resourcesError}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Statistics Cards */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.total}</div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Active</CardTitle>
-                <CheckCircle className="h-4 w-4 text-green-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {stats.active}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Provisioning</CardTitle>
-                <Zap className="h-4 w-4 text-blue-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {stats.provisioning}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Failed</CardTitle>
-                <XCircle className="h-4 w-4 text-red-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {stats.failed}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Healthy</CardTitle>
-                <Activity className="h-4 w-4 text-green-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {stats.healthy}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Filters and Search */}
-          <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-white/20 shadow-lg">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg">Filters</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search resources, applications, or types..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-                <div className="sm:w-48">
-                  <select
-                    value={stateFilter}
-                    onChange={(e) => setStateFilter(e.target.value)}
-                    className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">All States</option>
-                    <option value="active">Active</option>
-                    <option value="provisioning">Provisioning</option>
-                    <option value="failed">Failed</option>
-                    <option value="requested">Requested</option>
-                    <option value="terminating">Terminating</option>
-                  </select>
-                </div>
-                <div className="sm:w-48">
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value)}
-                    className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">All Types</option>
-                    {uniqueTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Resources Table */}
-          <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-white/20 shadow-lg">
-            <CardHeader>
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex">
+        {/* Main content area */}
+        <div className={`flex-1 p-6 overflow-auto ${selectedResource ? 'pr-0' : ''}`}>
+          <div className="relative space-y-6">
+            {/* Header */}
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-xl">Resource Instances</CardTitle>
-                  <CardDescription>
-                    {filteredResources.length} of {allResources.length} resources
-                    {searchTerm && ` matching "${searchTerm}"`}
-                    {stateFilter !== 'all' && ` with state "${stateFilter}"`}
-                    {typeFilter !== 'all' && ` of type "${typeFilter}"`}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {resourcesLoading ? (
-                <div className="flex items-center justify-center p-12">
-                  <RefreshCw className="w-6 h-6 animate-spin mr-2 text-muted-foreground" />
-                  <span className="text-muted-foreground">Loading resources...</span>
-                </div>
-              ) : filteredResources.length === 0 ? (
-                <div className="flex items-center justify-center p-12 text-center">
-                  <div className="space-y-2">
-                    <Package className="w-8 h-8 text-muted-foreground mx-auto" />
-                    <p className="text-muted-foreground">
-                      {searchTerm || stateFilter !== 'all' || typeFilter !== 'all'
-                        ? 'No resources match your filters'
-                        : 'No resources found'}
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-gray-200 dark:bg-gray-700">
+                    <Package className="w-6 h-6 text-gray-900 dark:text-gray-100" />
+                  </div>
+                  <div>
+                    <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+                      Resources
+                    </h1>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      Monitor and manage resource instances across applications
                     </p>
                   </div>
                 </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12"></TableHead>
-                        <TableHead>Resource</TableHead>
-                        <TableHead>Application</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>State</TableHead>
-                        <TableHead>Health</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="w-12"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredResources.map((resource) => (
-                        <TableRow
-                          key={resource.id}
-                          className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-                          onClick={() => router.push(`/resources/${resource.id}`)}
-                        >
-                          <TableCell>
-                            <div className="flex items-center justify-center">
-                              {getResourceTypeIcon(resource.resource_type)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <p className="font-medium text-sm">{resource.resource_name}</p>
-                              <p className="text-xs text-muted-foreground">ID: {resource.id}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {resource.application_name}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className="text-xs">
-                              {resource.resource_type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {getStatusBadge(resource.state, resource.health_status)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {resource.health_status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                              <Calendar className="w-3 h-3" />
-                              {formatTimestamp(resource.created_at)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <ArrowUpRight className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+                <Button
+                  variant="outline"
+                  onClick={handleRefresh}
+                  disabled={resourcesLoading}
+                  className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${resourcesLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {/* Error Display */}
+            {resourcesError && (
+              <Card className="bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700">
+                <CardContent className="pt-6">
+                  <p className="text-gray-800 dark:text-gray-200 text-sm">
+                    Using offline mode - resource data may not be current. Error: {resourcesError}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Statistics Cards */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total</CardTitle>
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.total}</div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Active</CardTitle>
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {stats.active}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Provisioning</CardTitle>
+                  <Zap className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {stats.provisioning}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Failed</CardTitle>
+                  <XCircle className="h-4 w-4 text-red-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {stats.failed}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Healthy</CardTitle>
+                  <Activity className="h-4 w-4 text-green-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {stats.healthy}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Filters and Search */}
+            <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-white/20 shadow-lg">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg">Filters</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search resources, applications, or types..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                  <div className="sm:w-48">
+                    <select
+                      value={stateFilter}
+                      onChange={(e) => setStateFilter(e.target.value)}
+                      className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="all">All States</option>
+                      <option value="active">Active</option>
+                      <option value="provisioning">Provisioning</option>
+                      <option value="failed">Failed</option>
+                      <option value="requested">Requested</option>
+                      <option value="terminating">Terminating</option>
+                    </select>
+                  </div>
+                  <div className="sm:w-48">
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="w-full h-10 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="all">All Types</option>
+                      {uniqueTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </select>
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Resources Table */}
+            <Card className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-white/20 shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xl">Resource Instances</CardTitle>
+                    <CardDescription>
+                      {filteredResources.length} of {allResources.length} resources
+                      {searchTerm && ` matching "${searchTerm}"`}
+                      {stateFilter !== 'all' && ` with state "${stateFilter}"`}
+                      {typeFilter !== 'all' && ` of type "${typeFilter}"`}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {resourcesLoading ? (
+                  <div className="flex items-center justify-center p-12">
+                    <RefreshCw className="w-6 h-6 animate-spin mr-2 text-muted-foreground" />
+                    <span className="text-muted-foreground">Loading resources...</span>
+                  </div>
+                ) : filteredResources.length === 0 ? (
+                  <div className="flex items-center justify-center p-12 text-center">
+                    <div className="space-y-2">
+                      <Package className="w-8 h-8 text-muted-foreground mx-auto" />
+                      <p className="text-muted-foreground">
+                        {searchTerm || stateFilter !== 'all' || typeFilter !== 'all'
+                          ? 'No resources match your filters'
+                          : 'No resources found'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12"></TableHead>
+                          <TableHead>Resource</TableHead>
+                          <TableHead>Application</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>State</TableHead>
+                          <TableHead>Health</TableHead>
+                          <TableHead>Created</TableHead>
+                          <TableHead className="w-12"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredResources.map((resource) => (
+                          <TableRow
+                            key={resource.id}
+                            className={`hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer ${
+                              selectedResource?.id === resource.id
+                                ? 'bg-blue-50 dark:bg-blue-900/20'
+                                : ''
+                            }`}
+                            onClick={() => setSelectedResource(resource)}
+                          >
+                            <TableCell>
+                              <div className="flex items-center justify-center">
+                                {getResourceTypeIcon(resource.resource_type)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="font-medium text-sm">{resource.resource_name}</p>
+                                <p className="text-xs text-muted-foreground">ID: {resource.id}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {resource.application_name}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="text-xs">
+                                {resource.resource_type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {getStatusBadge(resource.state, resource.health_status)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {resource.health_status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                <Calendar className="w-3 h-3" />
+                                {formatTimestamp(resource.created_at)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <ArrowUpRight className="w-4 h-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
+
+        {/* Details pane on the right */}
+        {selectedResource && (
+          <div className="w-[500px] h-screen sticky top-0 flex-shrink-0 overflow-auto">
+            <ResourceDetailsPane
+              resource={selectedResource}
+              onClose={() => setSelectedResource(null)}
+            />
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   );

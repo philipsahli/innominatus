@@ -209,9 +209,22 @@ func main() {
 	http.HandleFunc("/api/demo/time", withTraceCORSAuth(srv.HandleDemoTime))
 	http.HandleFunc("/api/demo/nuke", withTraceCORSAuth(srv.HandleDemoNuke))
 
+	// Admin-only demo routes
+	http.HandleFunc("/api/admin/demo/reset", withTraceCORSAdmin(srv.HandleDemoReset))
+
 	// Graph API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/graph", withTraceCORSAuth(srv.HandleGraph))
-	http.HandleFunc("/api/graph/", withTraceCORSAuth(srv.HandleGraph))
+	// WebSocket endpoint needs special handling - no response-wrapping middleware
+	http.HandleFunc("/api/graph/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/ws") {
+			// WebSocket: auth only, no middleware that wraps ResponseWriter
+			// Response wrappers prevent WebSocket upgrades (http.Hijacker interface required)
+			srv.AuthMiddleware(srv.HandleGraph)(w, r)
+		} else {
+			// Regular API: full middleware stack
+			withTraceCORSAuth(srv.HandleGraph)(w, r)
+		}
+	})
 
 	// Resource management API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/resources", withTraceCORSAuth(srv.HandleResources))

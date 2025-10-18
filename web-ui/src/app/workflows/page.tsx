@@ -25,11 +25,16 @@ import {
   FileText,
   Play,
   GitBranch,
+  RotateCcw,
+  Network,
 } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 import { useWorkflows } from '@/hooks/use-api';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { GraphModal } from '@/components/graph-modal';
+import { WorkflowDetailView } from '@/components/workflow-detail-view';
+import { Pagination } from '@/components/pagination';
 
 function getStatusBadge(status: string) {
   return (
@@ -62,38 +67,70 @@ function formatDuration(duration: string) {
 
 export default function WorkflowsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const appFilter = searchParams.get('app');
+  const workflowId = searchParams.get('id');
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<'executions' | 'templates'>('executions');
+  const [graphModalOpen, setGraphModalOpen] = useState(false);
+  const [selectedAppForGraph, setSelectedAppForGraph] = useState<string | null>(null);
+
   const {
-    data: workflows,
+    data: workflowsData,
     loading: workflowsLoading,
     error: workflowsError,
     refetch: refetchWorkflows,
-  } = useWorkflows();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [activeTab, setActiveTab] = useState<'executions' | 'templates'>('executions');
+  } = useWorkflows(appFilter || undefined, searchTerm, statusFilter, currentPage, 50);
 
-  const displayWorkflows = workflows || [];
+  // Set search term if app filter is provided via URL
+  useEffect(() => {
+    if (appFilter) {
+      setSearchTerm(appFilter);
+    }
+  }, [appFilter]);
 
-  // Filter workflows based on search term and status
-  const filteredWorkflows = displayWorkflows.filter((workflow) => {
-    const matchesSearch =
-      workflow.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (workflow.app_name && workflow.app_name.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = statusFilter === 'all' || workflow.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  // If workflow ID is in URL, show detail view
+  if (workflowId) {
+    return <WorkflowDetailView workflowId={workflowId} />;
+  }
+
+  const workflows = workflowsData?.data || [];
+  const totalWorkflows = workflowsData?.total || 0;
+  const totalPages = workflowsData?.total_pages || 1;
 
   const handleRefresh = () => {
     refetchWorkflows();
   };
 
-  // Get workflow statistics
+  const handleRetry = async (workflowId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click
+    // TODO: Implement retry workflow dialog to get updated workflow spec
+    alert(
+      `Retry workflow ${workflowId}\n\nNote: This requires uploading an updated workflow specification file.`
+    );
+  };
+
+  const handleViewGraph = (appName: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click
+    setSelectedAppForGraph(appName);
+    setGraphModalOpen(true);
+  };
+
+  // Get workflow statistics from current page data
   const stats = {
-    total: displayWorkflows.length,
-    running: displayWorkflows.filter((w) => w.status === 'running').length,
-    completed: displayWorkflows.filter((w) => w.status === 'completed').length,
-    failed: displayWorkflows.filter((w) => w.status === 'failed').length,
-    pending: displayWorkflows.filter((w) => w.status === 'pending').length,
+    total: totalWorkflows, // Use real database total
+    running: workflows.filter((w) => w.status === 'running').length,
+    completed: workflows.filter((w) => w.status === 'completed').length,
+    failed: workflows.filter((w) => w.status === 'failed').length,
+    pending: workflows.filter((w) => w.status === 'pending').length,
   };
 
   return (
@@ -282,7 +319,7 @@ export default function WorkflowsPage() {
                     <div>
                       <CardTitle className="text-xl">Workflow Executions</CardTitle>
                       <CardDescription>
-                        {filteredWorkflows.length} of {displayWorkflows.length} workflows
+                        Showing {workflows.length} of {totalWorkflows} workflows
                         {searchTerm && ` matching "${searchTerm}"`}
                         {statusFilter !== 'all' && ` with status "${statusFilter}"`}
                       </CardDescription>
@@ -295,7 +332,7 @@ export default function WorkflowsPage() {
                       <RefreshCw className="w-6 h-6 animate-spin mr-2 text-muted-foreground" />
                       <span className="text-muted-foreground">Loading workflows...</span>
                     </div>
-                  ) : filteredWorkflows.length === 0 ? (
+                  ) : workflows.length === 0 ? (
                     <div className="flex items-center justify-center p-12 text-center">
                       <div className="space-y-2">
                         <Activity className="w-8 h-8 text-muted-foreground mx-auto" />
@@ -317,15 +354,15 @@ export default function WorkflowsPage() {
                             <TableHead>Status</TableHead>
                             <TableHead>Duration</TableHead>
                             <TableHead>Started</TableHead>
-                            <TableHead className="w-12"></TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredWorkflows.map((workflow) => (
+                          {workflows.map((workflow) => (
                             <TableRow
                               key={workflow.id}
                               className="hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-                              onClick={() => router.push(`/workflows/${workflow.id}`)}
+                              onClick={() => router.push(`/workflows?id=${workflow.id}`)}
                             >
                               <TableCell>
                                 <div className="flex items-center justify-center">
@@ -362,14 +399,49 @@ export default function WorkflowsPage() {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <ArrowUpRight className="w-4 h-4" />
-                                </Button>
+                                <div className="flex items-center justify-end gap-2">
+                                  {workflow.app_name && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={(e) => handleViewGraph(workflow.app_name!, e)}
+                                      className="h-8 gap-2 text-blue-600 hover:text-blue-700 border-blue-200 hover:bg-blue-50 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950"
+                                    >
+                                      <Network className="w-3 h-3" />
+                                      Graph
+                                    </Button>
+                                  )}
+                                  {workflow.status === 'failed' && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={(e) => handleRetry(workflow.id, e)}
+                                      className="h-8 gap-2 text-orange-600 hover:text-orange-700 border-orange-200 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-800 dark:hover:bg-orange-950"
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      Retry
+                                    </Button>
+                                  )}
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <ArrowUpRight className="w-4 h-4" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                    </div>
+                  )}
+
+                  {/* Pagination */}
+                  {!workflowsLoading && workflows.length > 0 && totalPages > 1 && (
+                    <div className="mt-4 flex justify-center">
+                      <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        onPageChange={setCurrentPage}
+                      />
                     </div>
                   )}
                 </CardContent>
@@ -520,6 +592,15 @@ export default function WorkflowsPage() {
             </Card>
           )}
         </div>
+
+        {/* Graph Modal */}
+        {selectedAppForGraph && (
+          <GraphModal
+            appName={selectedAppForGraph}
+            isOpen={graphModalOpen}
+            onClose={() => setGraphModalOpen(false)}
+          />
+        )}
       </div>
     </ProtectedRoute>
   );

@@ -1,0 +1,12 @@
+{
+  "name": "innominatus-ui-tests",
+  "version": "1.0.0",
+  "description": "Puppeteer UI tests for innominatus",
+  "scripts": {
+    "test": "node graph-visualization.test.js",
+    "test:debug": "node --inspect-brk graph-visualization.test.js"
+  },
+  "dependencies": {
+    "puppeteer": "^22.0.0"
+  }
+}

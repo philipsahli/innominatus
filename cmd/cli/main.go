@@ -33,6 +33,8 @@ func main() {
 		"demo-time":        true,
 		"demo-nuke":        true,
 		"demo-status":      true,
+		"demo-reset":       true,
+		"fix-gitea-oauth":  true,
 		"login":            true,
 		"logout":           true,
 		"chat":             true, // AI assistant chat
@@ -217,6 +219,12 @@ func main() {
 	case "demo-status":
 		err = client.DemoStatusCommand()
 
+	case "demo-reset":
+		err = client.DemoResetCommand()
+
+	case "fix-gitea-oauth":
+		err = client.FixGiteaOAuthCommand()
+
 	case "list-workflows":
 		appName := ""
 		if len(flag.Args()) >= 2 {
@@ -297,6 +305,16 @@ func main() {
 		appName := flag.Args()[1]
 		err = client.GraphStatusCommand(appName)
 
+	case "retry":
+		if len(flag.Args()) < 3 {
+			fmt.Fprintf(os.Stderr, "Error: retry command requires workflow ID and workflow spec file\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s retry <workflow-id> <workflow-spec.yaml>\n", os.Args[0])
+			os.Exit(1)
+		}
+		workflowID := flag.Args()[1]
+		workflowSpec := flag.Args()[2]
+		err = client.RetryWorkflowCommand(workflowID, workflowSpec)
+
 	case "login":
 		// Login command - authenticate and store credentials
 		err = client.LoginCommand(flag.Args()[1:])
@@ -306,31 +324,9 @@ func main() {
 		err = client.LogoutCommand()
 
 	case "chat":
-		// AI chat command - interactive chat or one-shot question
-		args := flag.Args()[1:]
-		if len(args) == 0 {
-			// Interactive chat mode
-			err = ChatCommand()
-		} else {
-			// Check for flags
-			chatFlags := flag.NewFlagSet("chat", flag.ExitOnError)
-			oneShotFlag := chatFlags.String("one-shot", "", "Ask a single question and exit")
-			generateSpecFlag := chatFlags.String("generate-spec", "", "Generate a Score spec from description")
-			outputFlag := chatFlags.String("o", "spec.yaml", "Output file for generated spec")
-			if err := chatFlags.Parse(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error parsing chat flags: %v\n", err)
-				os.Exit(1)
-			}
-
-			if *oneShotFlag != "" {
-				err = OneShotCommand(*oneShotFlag)
-			} else if *generateSpecFlag != "" {
-				err = GenerateSpecCommand(*generateSpecFlag, *outputFlag)
-			} else {
-				// Default: interactive chat
-				err = ChatCommand()
-			}
-		}
+		// AI chat command - TODO: implement AI chat functionality
+		fmt.Fprintf(os.Stderr, "Chat command not yet implemented\n")
+		os.Exit(1)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n", command)
@@ -358,6 +354,7 @@ func printUsage() {
 	fmt.Printf("  list-workflows [app]  List workflow executions (optionally filtered by app)\n")
 	fmt.Printf("  list-resources [app]  List resource instances (optionally filtered by app)\n")
 	fmt.Printf("  logs <workflow-id>    Show workflow execution logs with step details\n")
+	fmt.Printf("  retry <id> <spec>     Retry failed workflow from first failed step\n")
 	fmt.Printf("  graph-export <app>    Export workflow graph visualization\n")
 	fmt.Printf("  graph-status <app>    Show workflow graph status and statistics\n")
 	fmt.Printf("  list-goldenpaths      List available golden paths\n")
@@ -381,7 +378,9 @@ func printUsage() {
 	fmt.Printf("                        (e.g., grafana, gitea,argocd). Dependencies are\n")
 	fmt.Printf("                        automatically included. Omit to install all.\n")
 	fmt.Printf("  demo-nuke             Uninstall and clean demo environment\n")
-	fmt.Printf("  demo-status           Check demo environment health and status\n\n")
+	fmt.Printf("  demo-status           Check demo environment health and status\n")
+	fmt.Printf("  demo-reset            Reset database to clean state (deletes all data)\n")
+	fmt.Printf("  fix-gitea-oauth       Fix Gitea OAuth2 auto-registration with Keycloak\n\n")
 	fmt.Printf("Options:\n")
 	fmt.Printf("  --server <url>        Orchestrator server URL (default: http://localhost:8081)\n\n")
 	fmt.Printf("Examples:\n")
@@ -403,7 +402,9 @@ func printUsage() {
 	fmt.Printf("  %s demo-time -component grafana\n", os.Args[0])
 	fmt.Printf("  %s demo-time -component gitea,argocd\n", os.Args[0])
 	fmt.Printf("  %s demo-status\n", os.Args[0])
+	fmt.Printf("  %s demo-reset\n", os.Args[0])
 	fmt.Printf("  %s demo-nuke\n", os.Args[0])
+	fmt.Printf("  %s fix-gitea-oauth\n", os.Args[0])
 	fmt.Printf("  %s login\n", os.Args[0])
 	fmt.Printf("  %s login --name my-laptop --expiry-days 30\n", os.Args[0])
 	fmt.Printf("  %s logout\n", os.Args[0])

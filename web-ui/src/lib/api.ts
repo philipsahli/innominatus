@@ -35,6 +35,7 @@ export interface WorkflowStepExecution {
   duration_ms?: number;
   error_message?: string;
   output_logs?: string;
+  step_config?: Record<string, any>;
 }
 
 export interface WorkflowExecutionDetail {
@@ -63,6 +64,15 @@ interface WorkflowExecutionApiResponse {
   duration_ms?: number;
 }
 
+// Paginated response interface
+export interface PaginatedWorkflowsResponse {
+  data: WorkflowExecution[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export interface GraphData {
   app_name: string;
   nodes: GraphNode[];
@@ -76,6 +86,14 @@ export interface GraphNode {
   type: string;
   status: string;
   description: string;
+  step_number?: number;
+  total_steps?: number;
+  workflow_id?: number;
+  duration_ms?: number;
+  execution_order?: number;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: any;
 }
 
 export interface GraphEdge {
@@ -264,13 +282,32 @@ class ApiClient {
   }
 
   // Workflows
-  async getWorkflows(appName?: string): Promise<ApiResponse<WorkflowExecution[]>> {
-    const query = appName ? `?app=${appName}` : '';
-    const response = await this.request<WorkflowExecutionApiResponse[]>(`/workflows${query}`);
+  async getWorkflows(
+    appName?: string,
+    search?: string,
+    status?: string,
+    page: number = 1,
+    limit: number = 50
+  ): Promise<ApiResponse<PaginatedWorkflowsResponse>> {
+    const params = new URLSearchParams();
+    if (appName) params.append('app', appName);
+    if (search) params.append('search', search);
+    if (status && status !== 'all') params.append('status', status);
+    params.append('page', page.toString());
+    params.append('limit', limit.toString());
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await this.request<{
+      data: WorkflowExecutionApiResponse[];
+      total: number;
+      page: number;
+      page_size: number;
+      total_pages: number;
+    }>(`/workflows${query}`);
 
     if (response.success && response.data) {
       // Transform backend response to frontend interface
-      const transformedData: WorkflowExecution[] = response.data.map((workflow) => {
+      const transformedData: WorkflowExecution[] = response.data.data.map((workflow) => {
         // Calculate relative timestamp
         const startTime = new Date(workflow.started_at);
         const now = new Date();
@@ -317,7 +354,13 @@ class ApiClient {
 
       return {
         success: true,
-        data: transformedData,
+        data: {
+          data: transformedData,
+          total: response.data.total,
+          page: response.data.page,
+          page_size: response.data.page_size,
+          total_pages: response.data.total_pages,
+        },
       };
     }
 
@@ -331,9 +374,33 @@ class ApiClient {
     return this.request<WorkflowExecutionDetail>(`/workflows/${id}`);
   }
 
+  async retryWorkflow(
+    id: string,
+    workflow?: any
+  ): Promise<ApiResponse<{ success: boolean; message: string }>> {
+    const options: RequestInit = {
+      method: 'POST',
+    };
+
+    // Only include body if workflow is provided (for manual retry with updated spec)
+    // If workflow is undefined/null, send empty body for automatic retry
+    if (workflow) {
+      options.body = JSON.stringify(workflow);
+    }
+
+    return this.request<{ success: boolean; message: string }>(`/workflows/${id}/retry`, options);
+  }
+
   // Resource Graph
   async getResourceGraph(appName: string): Promise<ApiResponse<GraphData>> {
     return this.request<GraphData>(`/graph/${appName}`);
+  }
+
+  async getWorkflowDetailsForGraph(
+    appName: string,
+    workflowId: string
+  ): Promise<ApiResponse<WorkflowExecutionDetail>> {
+    return this.request<WorkflowExecutionDetail>(`/graph/${appName}/workflow/${workflowId}`);
   }
 
   // Dashboard Stats
@@ -380,6 +447,24 @@ class ApiClient {
   async runDemoNuke(): Promise<ApiResponse<{ message: string }>> {
     return this.request('/demo/nuke', {
       method: 'POST',
+    });
+  }
+
+  async runDemoReset(): Promise<
+    ApiResponse<{
+      success: boolean;
+      tables_truncated: number;
+      tasks_stopped: number;
+      message: string;
+      timestamp: string;
+    }>
+  > {
+    return this.request('/admin/demo/reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ confirm: true }),
     });
   }
 

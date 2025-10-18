@@ -15,10 +15,11 @@ import {
   Timer,
   Play,
   FileText,
+  Network,
 } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 import { useWorkflow } from '@/hooks/use-api';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 function getStatusBadge(status: string) {
   switch (status) {
@@ -115,10 +116,8 @@ function formatDuration(startedAt: string, completedAt?: string) {
   }
 }
 
-export default function WorkflowExecutionDetailsPage() {
-  const params = useParams();
+export function WorkflowDetailView({ workflowId }: { workflowId: string }) {
   const router = useRouter();
-  const workflowId = params.id as string;
   const {
     data: workflowDetail,
     loading: workflowLoading,
@@ -186,6 +185,16 @@ export default function WorkflowExecutionDetailsPage() {
                 <RefreshCw className={`w-4 h-4 mr-2 ${workflowLoading ? 'animate-spin' : ''}`} />
                 Refresh
               </Button>
+              {workflowDetail && workflowDetail.application_name && (
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(`/graph/${workflowDetail.application_name}`)}
+                  className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900"
+                >
+                  <Network className="w-4 h-4 mr-2" />
+                  View Graph
+                </Button>
+              )}
             </div>
 
             <div className="flex items-center gap-4">

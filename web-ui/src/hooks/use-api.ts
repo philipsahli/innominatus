@@ -56,8 +56,17 @@ export function useApplication(name: string | null) {
   );
 }
 
-export function useWorkflows(appName?: string) {
-  return useApi(() => api.getWorkflows(appName), [appName]);
+export function useWorkflows(
+  appName?: string,
+  search?: string,
+  status?: string,
+  page: number = 1,
+  limit: number = 50
+) {
+  return useApi(
+    () => api.getWorkflows(appName, search, status, page, limit),
+    [appName, search, status, page, limit]
+  );
 }
 
 export function useWorkflow(id: string | null) {
@@ -138,5 +147,6 @@ export function useDemoActions() {
   return {
     runDemoTime: useApiMutation(() => api.runDemoTime()),
     runDemoNuke: useApiMutation(() => api.runDemoNuke()),
+    runDemoReset: useApiMutation(() => api.runDemoReset()),
   };
 }

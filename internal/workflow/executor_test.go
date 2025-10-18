@@ -134,8 +134,81 @@ func (m *MockWorkflowRepository) GetWorkflowExecution(id int64) (*database.Workf
 	return exec, nil
 }
 
-func (m *MockWorkflowRepository) ListWorkflowExecutions(appName string, limit, offset int) ([]*database.WorkflowExecutionSummary, error) {
+func (m *MockWorkflowRepository) CountWorkflowExecutions(appName, workflowName, status string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	count := int64(0)
+	for _, exec := range m.executions {
+		if appName != "" && exec.ApplicationName != appName {
+			continue
+		}
+		if workflowName != "" && exec.WorkflowName != workflowName {
+			continue
+		}
+		if status != "" && exec.Status != status {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (m *MockWorkflowRepository) ListWorkflowExecutions(appName, workflowName, status string, limit, offset int) ([]*database.WorkflowExecutionSummary, error) {
 	return nil, nil
+}
+
+func (m *MockWorkflowRepository) GetLatestWorkflowExecution(appName, workflowName string) (*database.WorkflowExecution, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var latest *database.WorkflowExecution
+	for _, exec := range m.executions {
+		if exec.ApplicationName == appName && exec.WorkflowName == workflowName {
+			if latest == nil || exec.StartedAt.After(latest.StartedAt) {
+				latest = exec
+			}
+		}
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("no execution found for app %s and workflow %s", appName, workflowName)
+	}
+	return latest, nil
+}
+
+func (m *MockWorkflowRepository) GetFirstFailedStepNumber(executionID int64) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, step := range m.steps {
+		if step.WorkflowExecutionID == executionID && step.Status == database.StepStatusFailed {
+			return step.StepNumber, nil
+		}
+	}
+	return 0, fmt.Errorf("no failed step found for execution %d", executionID)
+}
+
+func (m *MockWorkflowRepository) CreateRetryExecution(parentID int64, appName, workflowName string, totalSteps, resumeFromStep int) (*database.WorkflowExecution, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	exec := &database.WorkflowExecution{
+		ID:              m.nextExecID,
+		ApplicationName: appName,
+		WorkflowName:    workflowName,
+		Status:          database.WorkflowStatusRunning,
+		StartedAt:       time.Now(),
+		TotalSteps:      totalSteps,
+	}
+
+	m.executions[m.nextExecID] = exec
+	m.nextExecID++
+
+	return exec, nil
+}
+
+func (m *MockWorkflowRepository) ReconstructWorkflowFromExecution(executionID int64) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not implemented in mock")
 }
 
 // Helper to get timing information for parallel verification

@@ -6,6 +6,7 @@ require (
 	github.com/bxcodec/faker/v3 v3.8.1
 	github.com/chzyer/readline v1.5.1
 	github.com/coreos/go-oidc/v3 v3.16.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251007053528-20f88711dd07
 	github.com/philipsahli/innominatus-graph v0.0.0-20251005160933-4d0670151100

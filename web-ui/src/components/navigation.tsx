@@ -31,6 +31,8 @@ import {
   Plug,
   UsersRound,
   Bot,
+  Database,
+  GitBranch,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -53,94 +55,116 @@ interface NavItem {
   external?: boolean;
 }
 
-// Normal User Navigation
-const userNavigation: NavItem[] = [
+interface NavSection {
+  title?: string;
+  items: NavItem[];
+}
+
+// User Navigation organized in sections
+const userNavigationSections: NavSection[] = [
   {
-    href: '/dashboard',
-    label: 'Dashboard',
-    icon: Home,
-  },
-  {
-    href: '/apps',
-    label: 'Applications',
-    icon: Package,
-  },
-  {
-    label: 'Workflows',
-    icon: Activity,
-    children: [
+    title: 'Overview',
+    items: [
       {
-        href: '/workflows',
-        label: 'Workflow Executions',
-        icon: Activity,
+        href: '/dashboard',
+        label: 'Dashboard',
+        icon: Home,
+      },
+    ],
+  },
+  {
+    title: 'Platform',
+    items: [
+      {
+        href: '/apps',
+        label: 'Applications',
+        icon: Package,
       },
       {
-        href: '/workflows/analyze',
-        label: 'Workflow Analysis',
+        href: '/resources',
+        label: 'Resources',
+        icon: Database,
+      },
+      {
+        href: '/graph',
+        label: 'Dependency Graph',
         icon: Network,
       },
     ],
   },
   {
-    href: '/graph',
-    label: 'Graphs',
-    icon: Network,
+    title: 'Workflows',
+    items: [
+      {
+        href: '/workflows',
+        label: 'Executions',
+        icon: Activity,
+      },
+      {
+        href: '/workflows/analyze',
+        label: 'Analysis',
+        icon: FileSearch,
+      },
+      {
+        href: '/goldenpaths',
+        label: 'Golden Paths',
+        icon: GitBranch,
+      },
+    ],
   },
   {
-    href: '/goldenpaths',
-    label: 'Golden Paths',
-    icon: Activity,
+    title: 'Tools',
+    items: [
+      {
+        href: '/ai-assistant',
+        label: 'AI Assistant',
+        icon: Bot,
+      },
+      {
+        href: '/demo',
+        label: 'Demo Environment',
+        icon: Monitor,
+      },
+    ],
   },
   {
-    href: '/demo',
-    label: 'Demo Environment',
-    icon: Monitor,
-  },
-  {
-    href: '/profile',
-    label: 'Profile',
-    icon: User,
-  },
-  {
-    href: '/ai-assistant',
-    label: 'AI Assistant',
-    icon: Bot,
-  },
-  {
-    href: '/docs',
-    label: 'Documentation',
-    icon: BookOpen,
-  },
-  {
-    href: 'http://localhost:8081/swagger-user',
-    label: 'API Docs',
-    icon: FileText,
-    external: true,
+    title: 'Help',
+    items: [
+      {
+        href: '/docs',
+        label: 'Documentation',
+        icon: BookOpen,
+      },
+      {
+        href: 'http://localhost:8081/swagger-user',
+        label: 'API Docs',
+        icon: FileText,
+        external: true,
+      },
+    ],
   },
 ];
 
-// Admin Navigation (extends user navigation)
-const adminNavigation: NavItem[] = [
+// Admin Navigation sections
+const adminNavigationSections: NavSection[] = [
   {
-    label: 'Admin',
-    icon: Shield,
-    adminOnly: true,
-    children: [
+    title: 'Administration',
+    items: [
       {
         href: '/admin/users',
-        label: 'User Management',
+        label: 'Users',
         icon: Users,
         adminOnly: true,
       },
       {
         href: '/admin/teams',
-        label: 'Team Management',
+        label: 'Teams',
         icon: UsersRound,
         adminOnly: true,
       },
       {
         href: '/admin/secrets',
-        label: 'Secrets & Vault',
+        label: 'Secrets',
         icon: Key,
         adminOnly: true,
       },
@@ -150,16 +174,21 @@ const adminNavigation: NavItem[] = [
         icon: FileSearch,
         adminOnly: true,
       },
+    ],
+  },
+  {
+    title: 'System',
+    items: [
+      {
+        href: '/admin/system',
+        label: 'Health',
+        icon: Server,
+        adminOnly: true,
+      },
       {
         href: '/admin/settings',
         label: 'Settings',
         icon: Settings,
-        adminOnly: true,
-      },
-      {
-        href: '/admin/system',
-        label: 'System Health',
-        icon: Server,
         adminOnly: true,
       },
       {
@@ -176,7 +205,7 @@ const adminNavigation: NavItem[] = [
       },
       {
         href: 'http://localhost:8081/swagger-admin',
-        label: 'Admin API Docs',
+        label: 'Admin API',
         icon: FileText,
         external: true,
         adminOnly: true,
@@ -189,20 +218,13 @@ export function Navigation() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { logout } = useAuth();
-  const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   // TODO: Get user role from API/session - for now, assume admin for demo
   const isAdmin = true;
 
-  const navigation = isAdmin ? [...userNavigation, ...adminNavigation] : userNavigation;
-
-  const toggleExpanded = (label: string) => {
-    setExpandedItems((prev) =>
-      prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label]
-    );
-  };
-
-  const isExpanded = (label: string) => expandedItems.includes(label);
+  const navigationSections = isAdmin
+    ? [...userNavigationSections, ...adminNavigationSections]
+    : userNavigationSections;
 
   const NavContent = () => (
     <div className="h-full flex flex-col bg-gray-800 text-white dark:bg-gray-900">
@@ -212,125 +234,78 @@ export function Navigation() {
       </div>
 
       <nav className="flex-1 p-4 overflow-y-auto">
-        <ul className="space-y-2">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            const hasChildren = item.children && item.children.length > 0;
-            const expanded = isExpanded(item.label);
+        <div className="space-y-6">
+          {navigationSections.map((section, sectionIndex) => (
+            <div key={section.title || `section-${sectionIndex}`}>
+              {section.title && (
+                <h3 className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  {section.title}
+                </h3>
+              )}
+              <ul className="space-y-1">
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname === item.href;
 
-            return (
-              <li key={item.label}>
-                {hasChildren ? (
-                  <>
-                    <button
-                      onClick={() => toggleExpanded(item.label)}
-                      className={cn(
-                        'flex items-center justify-between w-full gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                        item.adminOnly
-                          ? 'text-amber-400 hover:text-amber-300'
-                          : 'text-gray-100 hover:text-white dark:text-gray-200'
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4" />
-                        {item.label}
-                      </div>
-                      {expanded ? (
-                        <ChevronDown className="w-4 h-4" />
+                  return (
+                    <li key={item.label}>
+                      {item.external ? (
+                        <a
+                          href={item.href!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                            item.adminOnly
+                              ? 'text-amber-400 hover:text-amber-300'
+                              : 'text-gray-100 hover:text-white dark:text-gray-200'
+                          )}
+                        >
+                          <Icon className="w-4 h-4" />
+                          {item.label}
+                          <ExternalLink className="w-3 h-3 ml-auto" />
+                        </a>
                       ) : (
-                        <ChevronRight className="w-4 h-4" />
+                        <Link
+                          href={item.href!}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
+                            isActive
+                              ? item.adminOnly
+                                ? 'bg-amber-700 text-white dark:bg-amber-600'
+                                : 'bg-gray-700 text-white dark:bg-gray-600'
+                              : item.adminOnly
+                                ? 'text-amber-400 hover:text-amber-300'
+                                : 'text-gray-100 hover:text-white dark:text-gray-200'
+                          )}
+                        >
+                          <Icon className="w-4 h-4" />
+                          {item.label}
+                        </Link>
                       )}
-                    </button>
-                    {expanded && item.children && (
-                      <ul className="ml-4 mt-2 space-y-1">
-                        {item.children.map((subItem) => {
-                          const SubIcon = subItem.icon;
-                          const isSubActive = pathname === subItem.href;
-
-                          return (
-                            <li key={subItem.href}>
-                              {subItem.external ? (
-                                <a
-                                  href={subItem.href}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className={cn(
-                                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                                    subItem.adminOnly
-                                      ? 'text-amber-400 hover:text-amber-300'
-                                      : 'text-gray-100 hover:text-white dark:text-gray-200'
-                                  )}
-                                >
-                                  <SubIcon className="w-4 h-4" />
-                                  {subItem.label}
-                                  <ExternalLink className="w-3 h-3 ml-auto" />
-                                </a>
-                              ) : (
-                                <Link
-                                  href={subItem.href}
-                                  className={cn(
-                                    'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                                    isSubActive
-                                      ? subItem.adminOnly
-                                        ? 'bg-amber-700 text-white dark:bg-amber-600'
-                                        : 'bg-gray-700 text-white dark:bg-gray-600'
-                                      : subItem.adminOnly
-                                        ? 'text-amber-400 hover:text-amber-300'
-                                        : 'text-gray-100 hover:text-white dark:text-gray-200'
-                                  )}
-                                >
-                                  <SubIcon className="w-4 h-4" />
-                                  {subItem.label}
-                                </Link>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </>
-                ) : item.external ? (
-                  <a
-                    href={item.href!}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                      item.adminOnly
-                        ? 'text-amber-400 hover:text-amber-300'
-                        : 'text-gray-100 hover:text-white dark:text-gray-200'
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
-                    <ExternalLink className="w-3 h-3 ml-auto" />
-                  </a>
-                ) : (
-                  <Link
-                    href={item.href!}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:bg-gray-700 dark:hover:bg-gray-600',
-                      isActive
-                        ? item.adminOnly
-                          ? 'bg-amber-700 text-white dark:bg-amber-600'
-                          : 'bg-gray-700 text-white dark:bg-gray-600'
-                        : item.adminOnly
-                          ? 'text-amber-400 hover:text-amber-300'
-                          : 'text-gray-100 hover:text-white dark:text-gray-200'
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
-                  </Link>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
       </nav>
 
       <div className="p-4 border-t border-gray-700 dark:border-gray-600 space-y-2">
+        <Link href="/profile">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'w-full justify-start text-gray-100 hover:text-white hover:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600',
+              pathname === '/profile' && 'bg-gray-700 text-white dark:bg-gray-600'
+            )}
+          >
+            <User className="w-4 h-4 mr-2" />
+            Profile
+          </Button>
+        </Link>
         <Button
           variant="ghost"
           size="sm"

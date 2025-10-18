@@ -509,6 +509,70 @@ func (d *Database) GetUserByAPIKeyHash(keyHash string) (username string, team st
 	return username, "oidc-users", "user", nil
 }
 
+// TruncateAllTables deletes all data from all database tables (except migrations)
+// This is used for demo-reset functionality to provide a clean slate
+func (d *Database) TruncateAllTables() (int, error) {
+	if d == nil || d.db == nil {
+		return 0, fmt.Errorf("database connection is nil")
+	}
+
+	// Query all table names from information_schema
+	query := `
+		SELECT tablename
+		FROM pg_tables
+		WHERE schemaname = 'public'
+		AND tablename != 'schema_migrations'
+		ORDER BY tablename
+	`
+
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query table names: %w", err)
+	}
+	defer rows.Close()
+
+	var tables []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return 0, fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, tableName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating table names: %w", err)
+	}
+
+	if len(tables) == 0 {
+		return 0, nil // No tables to truncate
+	}
+
+	// Begin transaction
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Disable foreign key checks temporarily and truncate all tables
+	// Using RESTART IDENTITY to reset serial counters and CASCADE for dependencies
+	for _, table := range tables {
+		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE", table)
+		if _, err := tx.Exec(truncateSQL); err != nil {
+			return 0, fmt.Errorf("failed to truncate table %s: %w", table, err)
+		}
+		log.Printf("Truncated table: %s", table)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return len(tables), nil
+}
+
 // getEnvWithDefault returns environment variable value or default if not set
 func getEnvWithDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

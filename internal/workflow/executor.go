@@ -31,7 +31,12 @@ type WorkflowRepositoryInterface interface {
 	UpdateWorkflowStepStatus(stepID int64, status string, errorMessage *string) error
 	UpdateWorkflowExecution(execID int64, status string, errorMessage *string) error
 	GetWorkflowExecution(id int64) (*database.WorkflowExecution, error)
-	ListWorkflowExecutions(appName string, limit, offset int) ([]*database.WorkflowExecutionSummary, error)
+	CountWorkflowExecutions(appName, workflowName, status string) (int64, error)
+	ListWorkflowExecutions(appName, workflowName, status string, limit, offset int) ([]*database.WorkflowExecutionSummary, error)
+	GetLatestWorkflowExecution(appName, workflowName string) (*database.WorkflowExecution, error)
+	GetFirstFailedStepNumber(executionID int64) (int, error)
+	CreateRetryExecution(parentID int64, appName, workflowName string, totalSteps, resumeFromStep int) (*database.WorkflowExecution, error)
+	ReconstructWorkflowFromExecution(executionID int64) (map[string]interface{}, error)
 }
 
 // ResourceManager interface defines the methods needed for resource management
@@ -123,6 +128,24 @@ func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInte
 // SetGraphAdapter sets the graph adapter for workflow tracking
 func (e *WorkflowExecutor) SetGraphAdapter(adapter *graph.Adapter) {
 	e.graphAdapter = adapter
+}
+
+// stepToConfig converts a Step struct to a map for storage in the database
+// This ensures all step fields are preserved when storing workflow executions
+func stepToConfig(step types.Step) (map[string]interface{}, error) {
+	// Marshal the step to JSON first
+	stepJSON, err := json.Marshal(step)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal step: %w", err)
+	}
+
+	// Unmarshal to map to preserve all fields
+	var config map[string]interface{}
+	if err := json.Unmarshal(stepJSON, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal step config: %w", err)
+	}
+
+	return config, nil
 }
 
 // ExecuteMultiTierWorkflows executes resolved multi-tier workflows
@@ -296,12 +319,10 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 	stepRecords := make(map[int]*database.WorkflowStepExecution)
 	stepNodeIDs := make(map[int]string)
 	for i, step := range workflow.Steps {
-		stepConfig := map[string]interface{}{
-			"name":      step.Name,
-			"type":      step.Type,
-			"path":      step.Path,
-			"playbook":  step.Playbook,
-			"namespace": step.Namespace,
+		stepConfig, err := stepToConfig(step)
+		if err != nil {
+			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, stringPtr(fmt.Sprintf("Failed to serialize step config: %v", err)))
+			return fmt.Errorf("failed to serialize step config: %w", err)
 		}
 
 		stepRecord, err := e.repo.CreateWorkflowStep(execution.ID, i+1, step.Name, step.Type, stepConfig)
@@ -437,9 +458,228 @@ func (e *WorkflowExecutor) GetWorkflowExecution(id int64) (*database.WorkflowExe
 	return e.repo.GetWorkflowExecution(id)
 }
 
-// ListWorkflowExecutions lists workflow executions for an application
-func (e *WorkflowExecutor) ListWorkflowExecutions(appName string, limit, offset int) ([]*database.WorkflowExecutionSummary, error) {
-	return e.repo.ListWorkflowExecutions(appName, limit, offset)
+// GetRepository returns the workflow repository for accessing database methods
+func (e *WorkflowExecutor) GetRepository() WorkflowRepositoryInterface {
+	return e.repo
+}
+
+// CountWorkflowExecutions counts total workflow executions matching filters
+func (e *WorkflowExecutor) CountWorkflowExecutions(appName, workflowName, status string) (int64, error) {
+	return e.repo.CountWorkflowExecutions(appName, workflowName, status)
+}
+
+// ListWorkflowExecutions lists workflow executions with optional filtering
+func (e *WorkflowExecutor) ListWorkflowExecutions(appName, workflowName, status string, limit, offset int) ([]*database.WorkflowExecutionSummary, error) {
+	return e.repo.ListWorkflowExecutions(appName, workflowName, status, limit, offset)
+}
+
+// RetryWorkflowFromFailedStep retries a failed workflow execution from the first failed step
+func (e *WorkflowExecutor) RetryWorkflowFromFailedStep(appName, workflowName string, workflow types.Workflow, parentExecutionID int64) error {
+	// Ensure logger is initialized
+	if e.logger == nil {
+		e.logger = logging.NewStructuredLogger("workflow")
+	}
+
+	// Get the failed step number from parent execution
+	failedStepNumber, err := e.repo.GetFirstFailedStepNumber(parentExecutionID)
+	if err != nil {
+		return fmt.Errorf("failed to find failed step: %w", err)
+	}
+
+	e.logger.InfoWithFields("Retrying workflow from failed step", map[string]interface{}{
+		"app_name":            appName,
+		"workflow_name":       workflowName,
+		"parent_execution_id": parentExecutionID,
+		"resume_from_step":    failedStepNumber,
+	})
+
+	// Create retry execution record
+	execution, err := e.repo.CreateRetryExecution(parentExecutionID, appName, workflowName, len(workflow.Steps), failedStepNumber)
+	if err != nil {
+		return fmt.Errorf("failed to create retry execution: %w", err)
+	}
+
+	e.logger.InfoWithFields("Created retry execution", map[string]interface{}{
+		"execution_id":     execution.ID,
+		"retry_count":      execution.RetryCount,
+		"resume_from_step": failedStepNumber,
+	})
+
+	// Execute workflow starting from the failed step
+	return e.executeWorkflowFromStep(appName, workflowName, workflow, execution, failedStepNumber)
+}
+
+// executeWorkflowFromStep executes a workflow starting from a specific step number
+func (e *WorkflowExecutor) executeWorkflowFromStep(appName, workflowName string, workflow types.Workflow, execution *database.WorkflowExecution, startFromStep int) error {
+	// Create OpenTelemetry span
+	tracer := otel.Tracer("innominatus/workflow")
+	_, span := tracer.Start(context.Background(), "workflow.retry",
+		trace.WithAttributes(
+			attribute.String("app.name", appName),
+			attribute.String("workflow.name", workflowName),
+			attribute.Int64("execution.id", execution.ID),
+			attribute.Int("start_from_step", startFromStep),
+		),
+	)
+	defer span.End()
+
+	// Initialize workflow variables
+	if len(workflow.Variables) > 0 {
+		e.execContext.SetWorkflowVariables(workflow.Variables)
+	}
+
+	// Create workflow node in graph
+	workflowNodeID := fmt.Sprintf("workflow-%d", execution.ID)
+	if e.graphAdapter != nil {
+		workflowNode := &sdk.Node{
+			ID:    workflowNodeID,
+			Type:  sdk.NodeTypeWorkflow,
+			Name:  workflowName,
+			State: sdk.NodeStatePending,
+			Properties: map[string]interface{}{
+				"execution_id":     execution.ID,
+				"app_name":         appName,
+				"total_steps":      len(workflow.Steps),
+				"is_retry":         execution.IsRetry,
+				"retry_count":      execution.RetryCount,
+				"resume_from_step": startFromStep,
+			},
+		}
+		if err := e.graphAdapter.AddNode(appName, workflowNode); err != nil {
+			fmt.Printf("Warning: failed to add workflow node to graph: %v\n", err)
+		}
+	}
+
+	// Create step records and execute from startFromStep
+	stepRecords := make(map[int]*database.WorkflowStepExecution)
+
+	for i := startFromStep - 1; i < len(workflow.Steps); i++ {
+		step := workflow.Steps[i]
+		stepNumber := i + 1
+
+		// Create step execution record
+		stepConfig, err := stepToConfig(step)
+		if err != nil {
+			return fmt.Errorf("failed to serialize step config: %w", err)
+		}
+
+		stepRecord, err := e.repo.CreateWorkflowStep(execution.ID, stepNumber, step.Name, step.Type, stepConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create workflow step: %w", err)
+		}
+		stepRecords[stepNumber] = stepRecord
+
+		e.logger.InfoWithFields("Executing step (retry)", map[string]interface{}{
+			"step_number": stepNumber,
+			"step_name":   step.Name,
+			"step_type":   step.Type,
+		})
+
+		// Create step node in graph
+		stepNodeID := fmt.Sprintf("step-%d", stepRecord.ID)
+		if e.graphAdapter != nil {
+			stepNode := &sdk.Node{
+				ID:    stepNodeID,
+				Type:  sdk.NodeTypeStep,
+				Name:  step.Name,
+				State: sdk.NodeStatePending,
+				Properties: map[string]interface{}{
+					"step_number": stepNumber,
+					"step_type":   step.Type,
+					"step_id":     stepRecord.ID,
+				},
+			}
+			if err := e.graphAdapter.AddNode(appName, stepNode); err != nil {
+				fmt.Printf("Warning: failed to add step node to graph: %v\n", err)
+			}
+
+			// Create edge from workflow to step
+			edge := &sdk.Edge{
+				ID:         fmt.Sprintf("workflow-%d-to-step-%d", execution.ID, stepRecord.ID),
+				FromNodeID: workflowNodeID,
+				ToNodeID:   stepNodeID,
+				Type:       sdk.EdgeTypeContains,
+			}
+			if err := e.graphAdapter.AddEdge(appName, edge); err != nil {
+				fmt.Printf("Warning: failed to add workflow-step edge to graph: %v\n", err)
+			}
+		}
+
+		// Update step to running
+		if err := e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusRunning, nil); err != nil {
+			fmt.Printf("Warning: failed to update step status: %v\n", err)
+		}
+
+		if e.graphAdapter != nil {
+			if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateRunning); err != nil {
+				fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+			}
+		}
+
+		// Execute the step with spinner
+		spinner := NewSpinner(fmt.Sprintf("Executing step '%s' (%s)...", step.Name, step.Type))
+		spinner.Start()
+
+		// Store spinner reference for step execution
+		stepErr := runStepWithSpinner(step, appName, "default", spinner)
+
+		if stepErr != nil {
+			spinner.Stop(false, fmt.Sprintf("Step '%s' failed", step.Name))
+
+			errMsg := stepErr.Error()
+			if updateErr := e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errMsg); updateErr != nil {
+				fmt.Printf("Warning: failed to update step status: %v\n", updateErr)
+			}
+
+			if e.graphAdapter != nil {
+				if updateErr := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateFailed); updateErr != nil {
+					fmt.Printf("Warning: failed to update step state in graph: %v\n", updateErr)
+				}
+			}
+
+			// Update workflow as failed
+			workflowErr := e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &errMsg)
+			if workflowErr != nil {
+				fmt.Printf("Warning: failed to update workflow status: %v\n", workflowErr)
+			}
+
+			if e.graphAdapter != nil {
+				if updateErr := e.graphAdapter.UpdateNodeState(appName, workflowNodeID, sdk.NodeStateFailed); updateErr != nil {
+					fmt.Printf("Warning: failed to update workflow state in graph: %v\n", updateErr)
+				}
+			}
+
+			return fmt.Errorf("step %d (%s) failed: %w", stepNumber, step.Name, stepErr)
+		}
+
+		// Update step as completed
+		if err := e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusCompleted, nil); err != nil {
+			fmt.Printf("Warning: failed to update step status: %v\n", err)
+		}
+
+		if e.graphAdapter != nil {
+			if err := e.graphAdapter.UpdateNodeState(appName, stepNodeID, sdk.NodeStateSucceeded); err != nil {
+				fmt.Printf("Warning: failed to update step state in graph: %v\n", err)
+			}
+		}
+
+		spinner.Stop(true, fmt.Sprintf("Step '%s' completed successfully", step.Name))
+		fmt.Println()
+	}
+
+	// Update workflow as completed
+	if err := e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusCompleted, nil); err != nil {
+		fmt.Printf("Warning: failed to update workflow completion: %v\n", err)
+	}
+
+	if e.graphAdapter != nil {
+		if err := e.graphAdapter.UpdateNodeState(appName, workflowNodeID, sdk.NodeStateSucceeded); err != nil {
+			fmt.Printf("Warning: failed to update workflow state in graph: %v\n", err)
+		}
+	}
+
+	fmt.Println("🎉 Workflow retry completed successfully!")
+	return nil
 }
 
 // RunWorkflowWithDB executes a workflow with database persistence (convenience function)
@@ -540,11 +780,9 @@ func (e *WorkflowExecutor) executeStepsSequentially(ctx context.Context, appName
 		fmt.Printf("    🔄 Step %d/%d: %s (%s)\n", i+1, len(steps), step.Name, step.Type)
 
 		// Create step execution record
-		stepConfig := map[string]interface{}{
-			"name":      step.Name,
-			"type":      step.Type,
-			"path":      step.Path,
-			"namespace": step.Namespace,
+		stepConfig, err := stepToConfig(step)
+		if err != nil {
+			return fmt.Errorf("failed to serialize step config: %w", err)
 		}
 
 		stepRecord, err := e.repo.CreateWorkflowStep(execID, i+1, step.Name, step.Type, stepConfig)
@@ -696,15 +934,12 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 		fmt.Printf("      ⏭️  %s (%s) - SKIPPED: %s\n", step.Name, step.Type, skipReason)
 
 		// Create step execution record as skipped
-		stepConfig := map[string]interface{}{
-			"name":          step.Name,
-			"type":          step.Type,
-			"path":          step.Path,
-			"namespace":     step.Namespace,
-			"parallel":      step.Parallel,
-			"parallelGroup": step.ParallelGroup,
-			"skip_reason":   skipReason,
+		stepConfig, err := stepToConfig(step)
+		if err != nil {
+			return fmt.Errorf("failed to serialize step config: %w", err)
 		}
+		// Add skip reason to config
+		stepConfig["skip_reason"] = skipReason
 
 		stepRecord, err := e.repo.CreateWorkflowStep(execID, stepNumber+1, step.Name, step.Type, stepConfig)
 		if err != nil {
@@ -724,13 +959,9 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 	fmt.Printf("      🔄 %s (%s)\n", step.Name, step.Type)
 
 	// Create step execution record
-	stepConfig := map[string]interface{}{
-		"name":          step.Name,
-		"type":          step.Type,
-		"path":          step.Path,
-		"namespace":     step.Namespace,
-		"parallel":      step.Parallel,
-		"parallelGroup": step.ParallelGroup,
+	stepConfig, err := stepToConfig(step)
+	if err != nil {
+		return fmt.Errorf("failed to serialize step config: %w", err)
 	}
 
 	stepRecord, err := e.repo.CreateWorkflowStep(execID, stepNumber+1, step.Name, step.Type, stepConfig)
@@ -902,8 +1133,47 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 
 	// Policy validation executor
 	e.stepExecutors["policy"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
-		time.Sleep(1 * time.Second)
-		fmt.Printf("      📋 Policy validation completed\n")
+		fmt.Printf("      📋 Executing policy script: %s\n", step.Name)
+
+		// Get script from config
+		script, ok := step.Config["script"].(string)
+		if !ok || script == "" {
+			return fmt.Errorf("policy step requires 'script' in config")
+		}
+
+		// Create temporary script file
+		tmpFile, err := os.CreateTemp("", "policy-*.sh")
+		if err != nil {
+			return fmt.Errorf("failed to create temp script file: %w", err)
+		}
+		defer os.Remove(tmpFile.Name())
+
+		// Write script to file
+		if _, err := tmpFile.WriteString(script); err != nil {
+			return fmt.Errorf("failed to write script: %w", err)
+		}
+		tmpFile.Close()
+
+		// Make script executable
+		if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+			return fmt.Errorf("failed to make script executable: %w", err)
+		}
+
+		// Execute script
+		cmd := exec.Command("/bin/bash", tmpFile.Name())
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		// Set environment variables
+		cmd.Env = append(os.Environ(),
+			fmt.Sprintf("APP_NAME=%s", appName),
+		)
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("policy script failed: %w", err)
+		}
+
+		fmt.Printf("      ✅ Policy script completed successfully\n")
 		return nil
 	}
 

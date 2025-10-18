@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
@@ -27,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -126,7 +128,8 @@ type Server struct {
 	healthChecker     *health.HealthChecker
 	rateLimiter       *RateLimiter
 	graphAdapter      *graph.Adapter
-	aiService         AIService // AI assistant service (optional)
+	wsHub             *GraphWebSocketHub // WebSocket hub for real-time graph updates
+	aiService         AIService          // AI assistant service (optional)
 	loginAttempts     map[string][]time.Time
 	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -183,12 +186,17 @@ func NewServer() *Server {
 	// Register basic health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 
+	// Initialize WebSocket hub for real-time graph updates
+	wsHub := NewGraphWebSocketHub()
+	go wsHub.Run()
+
 	server := &Server{
 		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
 		teamManager:       teams.NewTeamManager(),
 		sessionManager:    auth.NewSessionManager(),
 		oidcAuthenticator: oidcAuth,
 		healthChecker:     healthChecker,
+		wsHub:             wsHub,
 		loginAttempts:     make(map[string][]time.Time),
 		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
 		workflowCounter:   0,
@@ -231,12 +239,18 @@ func NewServerWithDB(db *database.Database) *Server {
 		fmt.Println("Graph adapter initialized successfully")
 		// Set graph adapter on workflow executor
 		workflowExecutor.SetGraphAdapter(graphAdapter)
+		// Set graph adapter on resource manager for resource tracking
+		resourceManager.SetGraphAdapter(graphAdapter)
 	}
 
 	healthChecker := health.NewHealthChecker()
 	// Register health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
+
+	// Initialize WebSocket hub for real-time graph updates
+	wsHub := NewGraphWebSocketHub()
+	go wsHub.Run()
 
 	server := &Server{
 		db:                db,
@@ -249,6 +263,7 @@ func NewServerWithDB(db *database.Database) *Server {
 		sessionManager:    auth.NewDBSessionManager(db),
 		oidcAuthenticator: oidcAuth,
 		healthChecker:     healthChecker,
+		wsHub:             wsHub,
 		graphAdapter:      graphAdapter,
 		loginAttempts:     make(map[string][]time.Time),
 		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
@@ -658,6 +673,67 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Check if it's a history request
+		if strings.Contains(remainder, "/history") {
+			parts := strings.Split(remainder, "/history")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphHistory(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a WebSocket request
+		if strings.Contains(remainder, "/ws") {
+			parts := strings.Split(remainder, "/ws")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphWebSocket(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's an annotations request
+		if strings.Contains(remainder, "/annotations") {
+			parts := strings.Split(remainder, "/annotations")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphAnnotations(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a critical path request
+		if strings.Contains(remainder, "/critical-path") {
+			parts := strings.Split(remainder, "/critical-path")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleCriticalPath(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a metrics request
+		if strings.Contains(remainder, "/metrics") {
+			parts := strings.Split(remainder, "/metrics")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handlePerformanceMetrics(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a workflow details request: /api/graph/<app>/workflow/<id>
+		if strings.Contains(remainder, "/workflow/") {
+			parts := strings.Split(remainder, "/workflow/")
+			if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+				appName := parts[0]
+				workflowID := parts[1]
+				s.handleGraphWorkflowDetails(w, r, appName, workflowID)
+				return
+			}
+		}
+
 		// Regular graph request
 		s.handleAppGraph(w, r, remainder)
 		return
@@ -799,12 +875,67 @@ func (s *Server) handleAppGraph(w http.ResponseWriter, r *http.Request, appName 
 	}
 }
 
+// handleGraphHistory handles /api/graph/<app>/history requests
+// Returns historical snapshots of graph states based on workflow executions
+func (s *Server) handleGraphHistory(w http.ResponseWriter, r *http.Request, appName string) {
+	// Parse query parameters
+	limitStr := r.URL.Query().Get("limit")
+	limit := 10 // default
+	if limitStr != "" {
+		var parsedLimit int
+		if _, err := fmt.Sscanf(limitStr, "%d", &parsedLimit); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+			limit = parsedLimit
+		}
+	}
+
+	// Use workflow repository to get execution history
+	executions, err := s.workflowRepo.ListWorkflowExecutions(appName, "", "", limit, 0)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to query history: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to response format
+	snapshots := make([]map[string]interface{}, 0, len(executions))
+	for _, exec := range executions {
+		snapshot := map[string]interface{}{
+			"id":              exec.ID,
+			"workflow_name":   exec.WorkflowName,
+			"status":          exec.Status,
+			"started_at":      exec.StartedAt,
+			"completed_at":    exec.CompletedAt,
+			"total_steps":     exec.TotalSteps,
+			"completed_steps": exec.CompletedSteps,
+			"failed_steps":    exec.FailedSteps,
+		}
+
+		// Calculate duration if completed
+		if exec.CompletedAt != nil {
+			duration := exec.CompletedAt.Sub(exec.StartedAt)
+			snapshot["duration_seconds"] = duration.Seconds()
+		}
+
+		snapshots = append(snapshots, snapshot)
+	}
+
+	response := map[string]interface{}{
+		"application": appName,
+		"snapshots":   snapshots,
+		"count":       len(snapshots),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // convertSDKGraphToFrontend converts the SDK Graph format to frontend JSON format
 func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
-	// Convert nodes map to array
+	// Convert nodes map to array with enriched information
 	nodes := make([]map[string]interface{}, 0, len(sdkGraph.Nodes))
 	for _, node := range sdkGraph.Nodes {
-		nodes = append(nodes, map[string]interface{}{
+		nodeData := map[string]interface{}{
 			"id":          node.ID,
 			"name":        node.Name,
 			"type":        string(node.Type),
@@ -813,7 +944,82 @@ func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
 			"metadata":    node.Properties,
 			"created_at":  node.CreatedAt,
 			"updated_at":  node.UpdatedAt,
-		})
+		}
+
+		// Enrich with step number if available
+		if stepNum, ok := node.Properties["step_number"].(int); ok {
+			nodeData["step_number"] = stepNum
+		} else if stepNum, ok := node.Properties["step_number"].(float64); ok {
+			nodeData["step_number"] = int(stepNum)
+		}
+
+		// Enrich with total steps if available
+		if totalSteps, ok := node.Properties["total_steps"].(int); ok {
+			nodeData["total_steps"] = totalSteps
+		} else if totalSteps, ok := node.Properties["total_steps"].(float64); ok {
+			nodeData["total_steps"] = int(totalSteps)
+		}
+
+		// Enrich with workflow execution ID if available
+		if wfID, ok := node.Properties["workflow_execution_id"]; ok {
+			nodeData["workflow_id"] = wfID
+		}
+
+		// Calculate duration if both timestamps exist
+		if !node.CreatedAt.IsZero() && !node.UpdatedAt.IsZero() {
+			duration := node.UpdatedAt.Sub(node.CreatedAt)
+			nodeData["duration_ms"] = duration.Milliseconds()
+		}
+
+		nodes = append(nodes, nodeData)
+	}
+
+	// Sort nodes for consistent ordering:
+	// 1. By node type priority (workflow > step > resource)
+	// 2. By creation timestamp (oldest first)
+	// 3. By node ID (tie-breaker)
+	sort.Slice(nodes, func(i, j int) bool {
+		// Type priority: workflow=1, step=2, resource=3, other=4
+		typePriority := map[string]int{
+			"workflow": 1,
+			"step":     2,
+			"resource": 3,
+		}
+
+		typeI := nodes[i]["type"].(string)
+		typeJ := nodes[j]["type"].(string)
+		priorityI := typePriority[typeI]
+		priorityJ := typePriority[typeJ]
+		if priorityI == 0 {
+			priorityI = 4
+		}
+		if priorityJ == 0 {
+			priorityJ = 4
+		}
+
+		if priorityI != priorityJ {
+			return priorityI < priorityJ
+		}
+
+		// Sort by creation timestamp
+		createdI, okI := nodes[i]["created_at"].(time.Time)
+		createdJ, okJ := nodes[j]["created_at"].(time.Time)
+
+		if okI && okJ && !createdI.IsZero() && !createdJ.IsZero() {
+			if !createdI.Equal(createdJ) {
+				return createdI.Before(createdJ)
+			}
+		}
+
+		// Final tie-breaker: node ID
+		idI := nodes[i]["id"].(string)
+		idJ := nodes[j]["id"].(string)
+		return idI < idJ
+	})
+
+	// Add execution order based on sorted position
+	for idx := range nodes {
+		nodes[idx]["execution_order"] = idx + 1
 	}
 
 	// Convert edges map to array
@@ -828,6 +1034,18 @@ func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
 			"metadata":    edge.Properties,
 		})
 	}
+
+	// Sort edges for consistent ordering (by source, then target)
+	sort.Slice(edges, func(i, j int) bool {
+		sourceI := edges[i]["source_id"].(string)
+		sourceJ := edges[j]["source_id"].(string)
+		if sourceI != sourceJ {
+			return sourceI < sourceJ
+		}
+		targetI := edges[i]["target_id"].(string)
+		targetJ := edges[j]["target_id"].(string)
+		return targetI < targetJ
+	})
 
 	return map[string]interface{}{
 		"nodes": nodes,
@@ -873,6 +1091,16 @@ func (s *Server) HandleWorkflowDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for retry sub-route: /api/workflows/{id}/retry
+	if strings.HasSuffix(path, "/retry") {
+		if r.Method == "POST" {
+			s.handleRetryWorkflow(w, r, workflowID)
+			return
+		}
+		http.Error(w, "Method not allowed - use POST for retry", http.StatusMethodNotAllowed)
+		return
+	}
+
 	switch r.Method {
 	case "GET":
 		s.handleGetWorkflow(w, r, workflowID)
@@ -881,11 +1109,23 @@ func (s *Server) HandleWorkflowDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// PaginatedWorkflowsResponse represents a paginated list of workflow executions
+type PaginatedWorkflowsResponse struct {
+	Data       []*database.WorkflowExecutionSummary `json:"data"`
+	Total      int64                                `json:"total"`
+	Page       int                                  `json:"page"`
+	PageSize   int                                  `json:"page_size"`
+	TotalPages int                                  `json:"total_pages"`
+}
+
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// Get query parameters
 	appName := r.URL.Query().Get("app")
+	searchTerm := r.URL.Query().Get("search")
+	statusFilter := r.URL.Query().Get("status")
+
 	limit := 50 // default limit
-	offset := 0 // default offset
+	page := 1   // default page
 
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || l != 1 || limit > 100 {
@@ -893,20 +1133,49 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if o, err := fmt.Sscanf(offsetStr, "%d", &offset); err != nil || o != 1 || offset < 0 {
-			offset = 0
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := fmt.Sscanf(pageStr, "%d", &page); err != nil || p != 1 || page < 1 {
+			page = 1
 		}
 	}
 
-	workflows, err := s.workflowExecutor.ListWorkflowExecutions(appName, limit, offset)
+	// Calculate offset from page number
+	offset := (page - 1) * limit
+
+	// Get total count matching filters
+	total, err := s.workflowExecutor.CountWorkflowExecutions(appName, searchTerm, statusFilter)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to count workflows: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get paginated workflows
+	workflows, err := s.workflowExecutor.ListWorkflowExecutions(appName, searchTerm, statusFilter, limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to list workflows: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	// Calculate total pages
+	totalPages := int(total) / limit
+	if int(total)%limit > 0 {
+		totalPages++
+	}
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	// Build paginated response
+	response := PaginatedWorkflowsResponse{
+		Data:       workflows,
+		Total:      total,
+		Page:       page,
+		PageSize:   limit,
+		TotalPages: totalPages,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(workflows); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }
@@ -924,6 +1193,98 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request, workf
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// handleRetryWorkflow handles retrying a failed workflow execution from the first failed step
+// @Summary Retry a failed workflow execution
+// @Description Retry a failed workflow execution from the first failed step with an updated workflow specification
+// @Tags workflows
+// @Accept json
+// @Produce json
+// @Param id path int true "Workflow Execution ID"
+// @Param workflow body types.Workflow true "Updated workflow specification to retry with"
+// @Success 200 {object} map[string]interface{} "Retry successful"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 404 {object} map[string]string "Workflow execution not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/workflows/{id}/retry [post]
+func (s *Server) handleRetryWorkflow(w http.ResponseWriter, r *http.Request, workflowID int64) {
+	// Get the parent workflow execution to retrieve app name and workflow name
+	parentExec, err := s.workflowExecutor.GetWorkflowExecution(workflowID)
+	if err != nil {
+		if err.Error() == "workflow execution not found" {
+			http.Error(w, "Workflow execution not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to get workflow execution: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Try to parse workflow from request body (optional)
+	// If body is empty, reconstruct workflow from database
+	var workflowMap map[string]interface{}
+	bodyBytes, _ := io.ReadAll(r.Body)
+
+	if len(bodyBytes) > 0 {
+		// User provided updated workflow specification
+		if err := json.Unmarshal(bodyBytes, &workflowMap); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid workflow specification: %v", err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		// Reconstruct workflow from database (automatic retry)
+		reconstructed, err := s.workflowExecutor.GetRepository().ReconstructWorkflowFromExecution(workflowID)
+		if err != nil {
+			// Check if error is due to missing steps (old workflow executions)
+			if strings.Contains(err.Error(), "no steps found") {
+				http.Error(w, "This workflow execution has no stored step configuration and cannot be retried automatically. This may be an older workflow execution created before step configuration storage was implemented.", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to reconstruct workflow: %v", err), http.StatusInternalServerError)
+			return
+		}
+		workflowMap = reconstructed
+	}
+
+	// Convert map to types.Workflow
+	workflowJSON, err := json.Marshal(workflowMap)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to marshal workflow: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var workflow types.Workflow
+	if err := json.Unmarshal(workflowJSON, &workflow); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to unmarshal workflow: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Execute retry from failed step
+	err = s.workflowExecutor.RetryWorkflowFromFailedStep(
+		parentExec.ApplicationName,
+		parentExec.WorkflowName,
+		workflow,
+		workflowID,
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to retry workflow: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
+	response := map[string]interface{}{
+		"success":             true,
+		"message":             "Workflow retry completed successfully",
+		"parent_execution_id": workflowID,
+		"app_name":            parentExec.ApplicationName,
+		"workflow_name":       parentExec.WorkflowName,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }
@@ -1568,6 +1929,56 @@ func (s *Server) HandleDemoNuke(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleDemoReset handles POST /api/admin/demo/reset - Reset database to clean state
+func (s *Server) HandleDemoReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Require database connection
+	if s.workflowRepo == nil {
+		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse request body for confirmation
+	var reqBody struct {
+		Confirm bool `json:"confirm"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		// If no body provided, treat as not confirmed
+		reqBody.Confirm = false
+	}
+
+	if !reqBody.Confirm {
+		http.Error(w, "Confirmation required: send {\"confirm\": true} in request body", http.StatusBadRequest)
+		return
+	}
+
+	// Truncate all tables
+	tableCount, err := s.db.TruncateAllTables()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to reset database: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"success":          true,
+		"tables_truncated": tableCount,
+		"tasks_stopped":    0, // Future enhancement: stop queue tasks
+		"message":          "Database reset complete",
+		"timestamp":        time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // HandleStats handles GET /api/stats - Returns dashboard statistics
 func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -1597,18 +2008,22 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	applicationsCount := len(apps)
 
-	// Count workflows
+	// Count active (running) workflows only
 	var workflowsCount int
 	if s.workflowExecutor != nil {
-		// Use database workflow count if available
-		workflows, err := s.workflowExecutor.ListWorkflowExecutions("", 1000, 0)
+		// Use database workflow count - filter by "running" status only
+		workflows, err := s.workflowExecutor.ListWorkflowExecutions("", "", "running", 0, 0)
 		if err == nil {
 			workflowsCount = len(workflows)
 		}
 	} else {
-		// Use memory workflow count
+		// Use memory workflow count - count only running workflows
 		s.workflowMutex.RLock()
-		workflowsCount = len(s.memoryWorkflows)
+		for _, wf := range s.memoryWorkflows {
+			if wf.Status == "running" {
+				workflowsCount++
+			}
+		}
 		s.workflowMutex.RUnlock()
 	}
 
@@ -3074,6 +3489,44 @@ func (s *Server) generateDatabaseAPIKey(username, keyName string, expiryDays int
 		CreatedAt: time.Now(),
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// handleGraphWorkflowDetails handles /api/graph/<app>/workflow/<id> requests
+// Returns workflow execution details including steps with configuration and logs
+func (s *Server) handleGraphWorkflowDetails(w http.ResponseWriter, r *http.Request, appName, workflowID string) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.workflowExecutor == nil {
+		http.Error(w, "Workflow executor not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse workflow ID
+	id, err := strconv.ParseInt(workflowID, 10, 64)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid workflow ID: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get workflow execution details
+	execution, err := s.workflowExecutor.GetWorkflowExecution(id)
+	if err != nil {
+		if err.Error() == "workflow execution not found" {
+			http.Error(w, "Workflow execution not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to get workflow execution: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the full workflow execution with steps
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(execution); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // generateAPIKeyString generates a cryptographically secure API key

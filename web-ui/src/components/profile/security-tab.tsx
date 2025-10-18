@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import { api, APIKeyInfo, APIKeyFull } from '@/lib/api';
 import { CopyButton } from '@/components/copy-button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +14,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Key, Plus, Trash2, AlertCircle } from 'lucide-react';
 
 export default function SecurityTab() {
   const [apiKeys, setApiKeys] = useState<APIKeyInfo[]>([]);
@@ -85,83 +90,98 @@ export default function SecurityTab() {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold">API Keys</h2>
-        <button
-          onClick={() => setShowDialog(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-        >
-          Generate New Key
-        </button>
-      </div>
-
-      {error && (
-        <div className="mb-4 p-3 bg-red-900/50 border border-red-600 rounded text-red-200">
-          {error}
+    <Card>
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Key className="w-5 h-5" />
+            API Keys
+          </CardTitle>
+          <Button onClick={() => setShowDialog(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Generate New Key
+          </Button>
         </div>
-      )}
-
-      {newKey && (
-        <div className="mb-6 p-4 bg-yellow-900/50 border border-yellow-600 rounded">
-          <h3 className="text-lg font-semibold text-yellow-200 mb-2">⚠️ Save Your API Key</h3>
-          <p className="text-sm text-yellow-100 mb-3">
-            This is the only time you&apos;ll see the full key. Copy it now and store it securely.
-          </p>
-          <div className="bg-gray-900 p-3 rounded font-mono text-sm break-all mb-3">
-            {newKey.key}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {error && (
+          <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-800 dark:text-red-200">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <p className="text-sm">{error}</p>
           </div>
-          <div className="flex gap-2">
-            <CopyButton text={newKey.key} label="Copy Key" />
-            <button
-              onClick={() => setNewKey(null)}
-              className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {loading ? (
-        <div className="text-center py-8 text-gray-400">Loading API keys...</div>
-      ) : apiKeys.length === 0 ? (
-        <div className="text-center py-8 text-gray-400">
-          No API keys found. Generate one to get started.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {apiKeys.map((key) => (
-            <div
-              key={key.name}
-              className="flex items-center justify-between p-4 bg-gray-700 rounded"
-            >
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="font-semibold">{key.name}</h3>
-                  {isExpired(key.expires_at) && (
-                    <span className="text-xs px-2 py-1 bg-red-600 rounded">Expired</span>
-                  )}
-                </div>
-                <div className="text-sm text-gray-400 space-y-1">
-                  <div>Key: {key.masked_key}</div>
-                  <div className="flex gap-4">
-                    <span>Created: {formatDate(key.created_at)}</span>
-                    <span>Expires: {formatDate(key.expires_at)}</span>
-                    {key.last_used_at && <span>Last used: {formatDate(key.last_used_at)}</span>}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => handleRevokeKey(key.name)}
-                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-              >
-                Revoke
-              </button>
+        {newKey && (
+          <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+            <h3 className="text-lg font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              Save Your API Key
+            </h3>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300 mb-3">
+              This is the only time you&apos;ll see the full key. Copy it now and store it securely.
+            </p>
+            <div className="bg-white dark:bg-gray-900 p-3 rounded border border-gray-200 dark:border-gray-700 font-mono text-sm break-all mb-3 text-gray-900 dark:text-gray-100">
+              {newKey.key}
             </div>
-          ))}
-        </div>
-      )}
+            <div className="flex gap-2">
+              <CopyButton text={newKey.key} label="Copy Key" />
+              <Button onClick={() => setNewKey(null)} variant="outline">
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading API keys...</div>
+        ) : apiKeys.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No API keys found. Generate one to get started.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {apiKeys.map((key) => (
+              <Card key={key.name}>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <Key className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                        <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                          {key.name}
+                        </h3>
+                        {isExpired(key.expires_at) && (
+                          <Badge variant="destructive" className="text-xs">
+                            Expired
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground space-y-1 ml-7">
+                        <div className="font-mono">{key.masked_key}</div>
+                        <div className="flex gap-4">
+                          <span>Created: {formatDate(key.created_at)}</span>
+                          <span>Expires: {formatDate(key.expires_at)}</span>
+                          {key.last_used_at && (
+                            <span>Last used: {formatDate(key.last_used_at)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={() => handleRevokeKey(key.name)}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      Revoke
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </CardContent>
 
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
         <DialogContent>
@@ -174,46 +194,37 @@ export default function SecurityTab() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Key Name</label>
-              <input
+              <label className="block text-sm font-medium mb-2">Key Name</label>
+              <Input
                 type="text"
                 value={keyName}
                 onChange={(e) => setKeyName(e.target.value)}
                 placeholder="e.g., production-api"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Expiry (days)</label>
-              <input
+              <label className="block text-sm font-medium mb-2">Expiry (days)</label>
+              <Input
                 type="number"
                 value={expiryDays}
                 onChange={(e) => setExpiryDays(parseInt(e.target.value) || 90)}
                 min="1"
                 max="365"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:border-blue-500"
               />
             </div>
 
             <div className="flex gap-2 pt-2">
-              <button
-                onClick={handleGenerateKey}
-                disabled={generating}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
+              <Button onClick={handleGenerateKey} disabled={generating} className="flex-1">
                 {generating ? 'Generating...' : 'Generate'}
-              </button>
-              <button
-                onClick={() => setShowDialog(false)}
-                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
-              >
+              </Button>
+              <Button onClick={() => setShowDialog(false)} variant="outline">
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </Card>
   );
 }

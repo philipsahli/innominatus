@@ -72,7 +72,7 @@ gitea:
   url: "http://gitea.localtest.me"
   internalURL: "http://gitea-http.gitea.svc.cluster.local:3000"
   username: "giteaadmin"
-  password: "admin"
+  password: "admin123"
   orgName: "platform-team"
 
 argocd:

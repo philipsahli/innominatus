@@ -684,27 +684,89 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
+	// Retry logic with exponential backoff for transient failures
+	maxRetries := 3
+	var resp *http.Response
+	var body []byte
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute workflow: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt*attempt) * time.Second
+			formatter.PrintInfo(fmt.Sprintf("Retrying request (attempt %d/%d) after %v...", attempt+1, maxRetries+1, backoff))
+			time.Sleep(backoff)
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("workflow execution failed (status %d): %s", resp.StatusCode, string(body))
+			// Recreate request body for retry
+			if scoreData != nil {
+				req, err = http.NewRequest("POST", url, bytes.NewBuffer(scoreData))
+				if err != nil {
+					return fmt.Errorf("failed to create retry request: %w", err)
+				}
+				req.Header.Set("Content-Type", "application/yaml")
+			} else {
+				req, err = http.NewRequest("POST", url, nil)
+				if err != nil {
+					return fmt.Errorf("failed to create retry request: %w", err)
+				}
+			}
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+
+		resp, err = client.Do(req)
+		if err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to execute workflow after %d retries: %w", maxRetries+1, err)
+			}
+			formatter.PrintWarning(fmt.Sprintf("Request failed: %v", err))
+			continue
+		}
+
+		body, err = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to read response after %d retries: %w", maxRetries+1, err)
+			}
+			formatter.PrintWarning(fmt.Sprintf("Failed to read response: %v", err))
+			continue
+		}
+
+		// Check for transient errors (5xx) or JSON parsing issues
+		if resp.StatusCode >= 500 {
+			if attempt == maxRetries {
+				return fmt.Errorf("workflow execution failed (status %d) after %d retries: %s", resp.StatusCode, maxRetries+1, string(body))
+			}
+			formatter.PrintWarning(fmt.Sprintf("Server error (status %d), will retry", resp.StatusCode))
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("workflow execution failed (status %d): %s", resp.StatusCode, string(body))
+		}
+
+		// Success - break out of retry loop
+		break
 	}
 
 	// Parse response
 	var response map[string]interface{}
+
+	// Check if response is HTML (likely an error page)
+	if len(body) > 0 && body[0] == '<' {
+		truncated := string(body)
+		if len(truncated) > 500 {
+			truncated = truncated[:500] + "..."
+		}
+		return fmt.Errorf("server returned HTML instead of JSON (possible gateway/server error):\n%s", truncated)
+	}
+
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		preview := string(body)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		return fmt.Errorf("failed to parse response: %w\nReceived: %s", err, preview)
 	}
 
 	// Display execution results
@@ -1003,6 +1065,167 @@ func (c *Client) DemoStatusCommand() error {
 
 	// Print useful commands
 	cheatSheet.PrintCommands()
+
+	return nil
+}
+
+// DemoResetCommand resets the database to a clean state
+func (c *Client) DemoResetCommand() error {
+	// Create demo environment and reset handler
+	env := demo.NewDemoEnvironment()
+	resetHandler := demo.NewDemoReset(env.KubeContext)
+
+	fmt.Println("🔄 Demo Database Reset")
+	fmt.Println("")
+
+	// Check if demo-time has been run
+	fmt.Println("Checking if demo environment is installed...")
+	installed, err := resetHandler.CheckDemoInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to check demo installation: %w", err)
+	}
+
+	if !installed {
+		fmt.Println("❌ Demo environment not detected.")
+		fmt.Println("   Run 'demo-time' first to install the demo environment.")
+		return fmt.Errorf("demo environment not installed")
+	}
+
+	fmt.Println("✅ Demo environment detected")
+	fmt.Println("")
+
+	// Display warning
+	fmt.Println("⚠️  WARNING: This will DELETE ALL DATA from the database!")
+	fmt.Println("   This includes:")
+	fmt.Println("   - All workflow executions and step logs")
+	fmt.Println("   - All applications and resources")
+	fmt.Println("   - All graph data and annotations")
+	fmt.Println("   - All sessions and API keys")
+	fmt.Println("   - All queue tasks")
+	fmt.Println("")
+	fmt.Println("   The database will be completely empty (except schema).")
+	fmt.Println("")
+
+	// Require explicit confirmation
+	fmt.Print("Type 'yes' to confirm: ")
+	var confirmation string
+	_, _ = fmt.Scanln(&confirmation) // nolint:errcheck
+
+	if confirmation != "yes" {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	fmt.Println("")
+	fmt.Println("🔄 Resetting database...")
+
+	// Connect to database
+	db, err := database.NewDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer func() { _ = db.Close() }() // nolint:errcheck
+
+	// Truncate all tables
+	tableCount, err := db.TruncateAllTables()
+	if err != nil {
+		return fmt.Errorf("failed to truncate tables: %w", err)
+	}
+
+	fmt.Println("")
+	fmt.Println("✅ Database reset complete!")
+	fmt.Println("")
+	fmt.Printf("   📊 Statistics:\n")
+	fmt.Printf("      • Tables truncated: %d\n", tableCount)
+	fmt.Println("")
+	fmt.Println("   The database is now empty and ready for fresh data.")
+	fmt.Println("   Visit http://localhost:8081 to verify.")
+	fmt.Println("")
+
+	return nil
+}
+
+// FixGiteaOAuthCommand fixes Gitea OAuth2 configuration to enable auto-registration
+func (c *Client) FixGiteaOAuthCommand() error {
+	fmt.Println("🔧 Fixing Gitea OAuth2 configuration for auto-registration...")
+	fmt.Println("")
+
+	namespace := "gitea"
+	keycloakURL := "http://keycloak.localtest.me"
+	keycloakRealm := "demo-realm"
+	oauthName := "Keycloak"
+
+	// Get Gitea pod name
+	fmt.Println("📦 Finding Gitea pod...")
+	getPodCmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-l", "app.kubernetes.io/name=gitea", "-o", "jsonpath={.items[0].metadata.name}") // #nosec G204 - kubectl command with controlled namespace
+	podNameBytes, err := getPodCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get Gitea pod: %v. Make sure demo environment is running (./innominatus-ctl demo-time)", err)
+	}
+
+	podName := strings.TrimSpace(string(podNameBytes))
+	if podName == "" {
+		return fmt.Errorf("no Gitea pod found in namespace %s. Make sure demo environment is running", namespace)
+	}
+
+	fmt.Printf("   Found pod: %s\n\n", podName)
+
+	// List existing OAuth2 sources
+	fmt.Println("🔍 Checking existing OAuth2 sources...")
+	listCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", "gitea", "admin", "auth", "list") // #nosec G204 - kubectl exec with controlled pod name
+	listCmd.Stdout = os.Stdout
+	listCmd.Stderr = os.Stderr
+	_ = listCmd.Run()
+	fmt.Println("")
+
+	// Try to delete existing OAuth2 source (ignore errors if it doesn't exist)
+	fmt.Println("🗑️  Removing existing OAuth2 source (if any)...")
+	deleteCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", "gitea", "admin", "auth", "delete", "--id", "1") // #nosec G204 - kubectl exec with controlled pod name
+	_ = deleteCmd.Run()
+	fmt.Println("")
+
+	// Add OAuth2 source
+	// Note: Auto-registration is controlled by app.ini [oauth2] ENABLE_AUTO_REGISTRATION = true, not by CLI flag
+	fmt.Println("➕ Adding OAuth2 source...")
+	addCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", // #nosec G204 - kubectl exec with controlled parameters
+		"gitea", "admin", "auth", "add-oauth",
+		"--name", oauthName,
+		"--provider", "openidConnect",
+		"--key", "gitea",
+		"--secret", "gitea-client-secret",
+		"--auto-discover-url", fmt.Sprintf("%s/realms/%s/.well-known/openid-configuration", keycloakURL, keycloakRealm),
+		"--skip-local-2fa",
+		"--scopes", "openid", "email", "profile")
+
+	addCmd.Stdout = os.Stdout
+	addCmd.Stderr = os.Stderr
+	err = addCmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to add OAuth2 source: %v", err)
+	}
+
+	fmt.Println("   ✅ OAuth2 source added successfully with auto-registration!")
+	fmt.Println("")
+
+	// Verify the OAuth2 source was added
+	fmt.Println("✅ Verifying OAuth2 sources...")
+	verifyCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", "gitea", "admin", "auth", "list") // #nosec G204 - kubectl exec with controlled pod name
+	verifyCmd.Stdout = os.Stdout
+	verifyCmd.Stderr = os.Stderr
+	_ = verifyCmd.Run()
+	fmt.Println("")
+
+	fmt.Println("🎉 OAuth2 configuration fix completed!")
+	fmt.Println("")
+	fmt.Println("📝 Next steps:")
+	fmt.Println("   1. Go to http://gitea.localtest.me")
+	fmt.Println("   2. Click 'Sign In'")
+	fmt.Println("   3. Click 'Sign in with OAuth' and select 'Keycloak'")
+	fmt.Println("   4. Login with Keycloak credentials:")
+	fmt.Println("      - Username: demo-user")
+	fmt.Println("      - Password: password123")
+	fmt.Println("   5. Your account should be automatically created in Gitea!")
+	fmt.Println("")
 
 	return nil
 }
@@ -1798,6 +2021,67 @@ type LogsOptions struct {
 	Tail     int    // Number of lines to show from end of logs (0 = all)
 	Follow   bool   // Follow logs in real-time (for running workflows)
 	Verbose  bool   // Show additional metadata
+}
+
+// RetryWorkflowCommand retries a failed workflow execution from the first failed step
+func (c *Client) RetryWorkflowCommand(workflowID, workflowSpecFile string) error {
+	formatter := NewOutputFormatter()
+
+	// Read and parse the workflow specification file
+	workflowData, err := os.ReadFile(workflowSpecFile)
+	if err != nil {
+		return fmt.Errorf("failed to read workflow spec file: %w", err)
+	}
+
+	var workflow types.Workflow
+	if err := yaml.Unmarshal(workflowData, &workflow); err != nil {
+		return fmt.Errorf("failed to parse workflow spec: %w", err)
+	}
+
+	// Convert workflow to JSON for API request
+	workflowJSON, err := json.Marshal(workflow)
+	if err != nil {
+		return fmt.Errorf("failed to marshal workflow: %w", err)
+	}
+
+	formatter.PrintInfo(fmt.Sprintf("%s Retrying workflow execution %s...", SymbolWorkflow, workflowID))
+
+	// Make API request to retry endpoint
+	url := fmt.Sprintf("%s/api/workflows/%s/retry", c.baseURL, workflowID)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(workflowJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send retry request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }() // nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("retry failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Display success message
+	formatter.PrintSuccess("Workflow retry completed successfully!")
+	formatter.PrintKeyValue(1, "Parent Execution ID", result["parent_execution_id"])
+	formatter.PrintKeyValue(1, "Application", result["app_name"])
+	formatter.PrintKeyValue(1, "Workflow", result["workflow_name"])
+
+	return nil
 }
 
 // displayWorkflowHeader shows workflow execution summary

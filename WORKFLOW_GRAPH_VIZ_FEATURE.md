@@ -276,6 +276,439 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ---
 
+## Screenshots & Visual Examples
+
+### 1. Web UI - Graph List Page
+
+**Location:** `http://localhost:8081/graph`
+
+The graph list page displays all deployed applications with quick access to their workflow visualizations.
+
+**Features:**
+- Grid layout of application cards
+- Application status badges
+- "View Graph" button for each app
+- Real-time application count
+- Responsive design
+
+**To Take Screenshot:**
+```bash
+# 1. Navigate to http://localhost:8081/graph
+# 2. Login with credentials (demo-user/password123)
+# 3. Screenshot shows grid of applications
+```
+
+**Screenshot Placeholder:** `docs/images/workflow-graph/01-graph-list.png`
+
+---
+
+### 2. Interactive Graph Visualization (React Flow)
+
+**Location:** `http://localhost:8081/graph/<app-name>`
+
+Real-time interactive graph showing workflow execution with zoom/pan controls.
+
+**Key Visual Elements:**
+- **Nodes**: Color-coded by type (Blue=Spec, Yellow=Workflow, Orange=Step, Green=Resource)
+- **Edges**: Animated arrows showing relationships
+- **Minimap**: Bottom-right corner for navigation
+- **Controls**: Zoom in/out, fit view buttons
+- **Legend**: Bottom bar explaining colors and states
+
+**Example with score-spec-k8s.yaml:**
+
+Based on the Score specification provided, the graph would show:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     world-app3 Graph                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   [spec:world-app3]                                         │
+│         │                                                   │
+│         ├──▶ [workflow:deploy-app]                          │
+│         │        │                                          │
+│         │        ├──▶ [step:validate-spec]                  │
+│         │        │                                          │
+│         │        ├──▶ [step:provision-resources]            │
+│         │        │         │                                │
+│         │        │         ├──▶ (resource:db:postgres)      │
+│         │        │         ├──▶ (resource:storage:volume)   │
+│         │        │         └──▶ (resource:hostname:route)   │
+│         │        │                                          │
+│         │        └──▶ [step:deploy-application]             │
+│         │                 │                                 │
+│         │                 └──▶ [container:nginx:1.21]       │
+│                                                             │
+│  Legend: [Step] (Resource) {Workflow}                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Node States During Deployment:**
+- **Gray (waiting)**: Resources not yet provisioned
+- **Orange + Pulse (running)**: Step currently executing
+- **Green (succeeded)**: Successfully completed
+- **Red (failed)**: Execution failed
+
+**To Take Screenshot:**
+```bash
+# 1. Deploy the application
+./innominatus-ctl run deploy-app score-spec-k8s.yaml
+
+# 2. Immediately open browser to graph page
+open http://localhost:8081/graph/world-app3
+
+# 3. Capture screenshot during execution (shows pulsing animations)
+```
+
+**Screenshot Placeholder:** `docs/images/workflow-graph/02-interactive-graph.png`
+
+---
+
+### 3. Mermaid Diagram Export
+
+**Command:** `curl -H "Authorization: Bearer $TOKEN" "http://localhost:8081/api/graph/world-app3/export?format=mermaid"`
+
+**Output Example (Based on score-spec-k8s.yaml):**
+
+```mermaid
+flowchart TD
+    %% Workflow Execution Graph
+
+    %% Nodes
+    spec_world_app3["○ world-app3<br/>spec"]
+    workflow_deploy["▶ deploy-app<br/>workflow"]
+    step_validate["✓ validate-spec<br/>step"]
+    step_provision["▶ provision-resources<br/>step"]
+    step_deploy["○ deploy-application<br/>step"]
+    resource_db("○ postgres-db<br/>resource")
+    resource_storage("○ storage-volume<br/>resource")
+    resource_route("○ hostname-route<br/>resource")
+
+    %% Edges
+    spec_world_app3 -->|contains| workflow_deploy
+    workflow_deploy -->|contains| step_validate
+    workflow_deploy -->|contains| step_provision
+    workflow_deploy -->|contains| step_deploy
+    step_provision -->|provisions| resource_db
+    step_provision -->|provisions| resource_storage
+    step_provision -->|provisions| resource_route
+    step_deploy -->|depends on| resource_db
+    step_deploy -->|depends on| resource_storage
+    step_deploy -->|depends on| resource_route
+
+    %% Styling
+    classDef spec fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff
+    classDef workflow fill:#eab308,stroke:#ca8a04,stroke-width:2px,color:#fff
+    classDef step fill:#fb923c,stroke:#ea580c,stroke-width:2px,color:#fff
+    classDef resource fill:#22c55e,stroke:#16a34a,stroke-width:2px,color:#fff
+    classDef running fill:#06b6d4,stroke:#0891b2,stroke-width:2px,color:#fff,stroke-dasharray: 5 5
+
+    %% Apply styles
+    class spec_world_app3 spec
+    class workflow_deploy workflow
+    class step_validate,step_provision,step_deploy step
+    class resource_db,resource_storage,resource_route resource
+    class workflow_deploy,step_provision running
+```
+
+**Visualization:**
+
+When rendered in Mermaid Live Editor (https://mermaid.live):
+- **Blue rectangle**: Spec node (world-app3)
+- **Yellow hexagon**: Workflow node (deploy-app) with dashed border (running)
+- **Orange rectangles**: Step nodes with checkmark/play/circle icons
+- **Green rounded boxes**: Resource nodes (database, storage, route)
+- **Arrows with labels**: Relationships (contains, provisions, depends on)
+
+**Screenshot Placeholder:** `docs/images/workflow-graph/03-mermaid-export.png`
+
+---
+
+### 4. CLI Graph Status Output
+
+**Command:** `./innominatus-ctl graph-status world-app3`
+
+**Expected Output:**
+```
+Graph Status for Application: world-app3
+
+Total Nodes: 8
+
+Node Counts by Type:
+  spec: 1
+  workflow: 1
+  step: 3
+  resource: 3
+
+Node Counts by State:
+  succeeded: 2
+  running: 2
+  waiting: 4
+
+Total Edges: 9
+
+Edge Types:
+  contains: 4
+  provisions: 3
+  depends_on: 2
+
+Recent Activity:
+  ✓ validate-spec        succeeded  10s ago
+  ▶ provision-resources  running    5s ago
+  ○ deploy-application   waiting    -
+```
+
+**Screenshot Placeholder:** `docs/images/workflow-graph/04-cli-status.png`
+
+---
+
+### 5. Real-Time State Updates (SSE)
+
+**Demonstration:**
+
+Open two browser windows side-by-side:
+1. Left: Graph visualization at `http://localhost:8081/graph/world-app3`
+2. Right: Terminal running deployment
+
+**Sequence of Visual Changes:**
+
+```
+T+0s:  All nodes gray (waiting state)
+       |
+T+2s:  step_validate turns orange + pulse (running)
+       |
+T+5s:  step_validate turns green + checkmark (succeeded)
+       |
+T+6s:  step_provision turns orange + pulse (running)
+       |
+T+10s: resource_db appears and turns green (provisioned)
+       |
+T+12s: resource_storage appears and turns green (provisioned)
+       |
+T+14s: resource_route appears and turns green (provisioned)
+       |
+T+15s: step_provision turns green (succeeded)
+       |
+T+16s: step_deploy turns orange + pulse (running)
+       |
+T+25s: step_deploy turns green (succeeded)
+       |
+T+26s: workflow_deploy turns green (succeeded)
+```
+
+**SSE Stream Output (visible in browser DevTools → Network):**
+```
+data: {"node":"step:validate-spec:123","status":"running"}
+
+data: {"node":"step:validate-spec:123","status":"succeeded"}
+
+data: {"node":"step:provision-resources:123","status":"running"}
+
+data: {"node":"resource:db:postgres","status":"provisioned"}
+
+data: {"node":"resource:storage:volume","status":"provisioned"}
+
+data: {"node":"resource:hostname:route","status":"provisioned"}
+
+data: {"node":"step:provision-resources:123","status":"succeeded"}
+
+data: {"node":"step:deploy-application:123","status":"running"}
+
+data: {"node":"step:deploy-application:123","status":"succeeded"}
+
+data: {"node":"workflow:deploy-app:123","status":"succeeded"}
+```
+
+**Screenshot Placeholder:** `docs/images/workflow-graph/05-realtime-updates.gif` (animated)
+
+---
+
+### 6. Exported SVG Visualization
+
+**Command:** `./innominatus-ctl graph-export world-app3 --format svg --output world-app3-graph.svg`
+
+**Output File:** High-quality SVG vector graphic suitable for:
+- Technical documentation
+- Confluence/Wiki pages
+- Presentations
+- Print materials
+
+**Features:**
+- Scalable without quality loss
+- Embedded fonts and styling
+- Professional appearance
+- Can be opened in browsers, Inkscape, Adobe Illustrator
+
+**Screenshot Placeholder:** `docs/images/workflow-graph/06-svg-export.png`
+
+---
+
+## Example: Complete Workflow Visualization
+
+### Score Specification (score-spec-k8s.yaml)
+
+```yaml
+apiVersion: score.dev/v1b1
+metadata:
+  name: world-app3
+
+containers:
+  main:
+    image: nginx:1.21
+    variables:
+      SERVER_NAME: ${resources.hostname.value}
+      DATABASE_URL: postgresql://${resources.db.username}:${resources.db.password}@${resources.db.host}:${resources.db.port}/${resources.db.name}
+
+resources:
+  hostname:
+    type: route
+    params:
+      value: "web.example.com"
+      port: 80
+
+  db:
+    type: postgres
+    params:
+      host: "postgres-service"
+      port: 5432
+      name: "webdb"
+      username: "webuser"
+      password: "secretpass"
+
+  storage:
+    type: volume
+    params:
+      size: "2Gi"
+      mountPath: "/var/www/html"
+
+environment:
+  type: development
+  ttl: 24h
+```
+
+### Resulting Graph Structure
+
+**Nodes Created:**
+1. **Spec Node**: `world-app3` (type: spec, state: pending)
+2. **Workflow Node**: `deploy-app` (type: workflow, state: running)
+3. **Step Nodes**:
+   - `validate-spec` (type: step, state: succeeded)
+   - `provision-resources` (type: step, state: running)
+   - `deploy-application` (type: step, state: waiting)
+4. **Resource Nodes**:
+   - `hostname-route` (type: resource, state: provisioned)
+   - `postgres-db` (type: resource, state: provisioned)
+   - `storage-volume` (type: resource, state: provisioning)
+
+**Edges Created:**
+1. `spec → workflow` (type: contains)
+2. `workflow → validate-spec` (type: contains)
+3. `workflow → provision-resources` (type: contains)
+4. `workflow → deploy-application` (type: contains)
+5. `provision-resources → hostname-route` (type: provisions)
+6. `provision-resources → postgres-db` (type: provisions)
+7. `provision-resources → storage-volume` (type: provisions)
+8. `deploy-application → postgres-db` (type: depends_on)
+9. `deploy-application → storage-volume` (type: depends_on)
+
+**Total**: 8 nodes, 9 edges
+
+---
+
+## User Guide: Taking Screenshots
+
+### Prerequisites
+
+```bash
+# Ensure server is running
+./innominatus
+
+# Deploy sample application
+./innominatus-ctl run deploy-app score-spec-k8s.yaml
+```
+
+### Screenshot Checklist
+
+- [ ] **Graph List Page** - Navigate to /graph, capture grid view
+- [ ] **Interactive Visualization** - Open specific app graph, show full controls
+- [ ] **Legend and Controls** - Capture bottom legend bar
+- [ ] **Running State** - Deploy app and capture pulsing animations
+- [ ] **CLI Output** - Run graph-status command in terminal
+- [ ] **SVG Export** - Export and open SVG in browser
+- [ ] **Mermaid Render** - Copy Mermaid to mermaid.live, screenshot result
+
+### macOS Screenshot Commands
+
+```bash
+# Full window screenshot
+screencapture -w docs/images/workflow-graph/01-graph-list.png
+
+# Selected area
+screencapture -i docs/images/workflow-graph/02-interactive-graph.png
+
+# Timed screenshot (10 seconds)
+screencapture -T 10 docs/images/workflow-graph/03-running.png
+
+# Record screen to GIF (using third-party tool)
+# Install: brew install gifski
+# Use: QuickTime → Record Screen → Convert to GIF
+```
+
+---
+
+## Additional Resources
+
+### Mermaid Live Editor
+
+Test Mermaid diagrams online: https://mermaid.live
+
+**Steps:**
+1. Export graph: `curl ... ?format=mermaid > graph.mmd`
+2. Copy contents to clipboard: `cat graph.mmd | pbcopy`
+3. Open https://mermaid.live
+4. Paste and see live rendering
+5. Export as PNG/SVG from editor
+
+### React Flow Documentation
+
+Learn about graph interactivity: https://reactflow.dev
+
+**Key Features Used:**
+- Node customization
+- Edge styling
+- Controls (zoom, pan, fit view)
+- Minimap
+- Background patterns
+- SSE integration for real-time updates
+
+### Graph Visualization Best Practices
+
+1. **Color Coding**:
+   - Use consistent colors for node types
+   - Red always means failure/error
+   - Green means success/completed
+   - Pulsing animations for active states
+
+2. **Layout**:
+   - Top-down (TD) for workflows
+   - Left-right (LR) for pipelines
+   - Keep edge crossings minimal
+
+3. **Labels**:
+   - Short, descriptive node names
+   - Clear edge types
+   - State indicators (icons or text)
+
+4. **Export Formats**:
+   - **SVG**: Documentation, web embedding
+   - **PNG**: Presentations, wikis
+   - **Mermaid**: Markdown files, GitHub READMEs
+   - **DOT**: Advanced Graphviz processing
+
+---
+
 *Created: 2025-10-09*
+*Updated: 2025-10-14* - Added comprehensive screenshots section with visual examples
 *Branch: feature/workflow-graph-viz*
-*Ready for: Code review and merge*
+*Ready for: Production use*

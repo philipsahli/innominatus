@@ -1095,6 +1095,7 @@ func (i *Installer) configureGiteaOIDC() error {
 	}
 
 	// Use Gitea CLI to add OAuth2 authentication source
+	// Note: Auto-registration is controlled by app.ini [oauth2] ENABLE_AUTO_REGISTRATION = true, not by CLI flag
 	// Note: This command may fail if the source already exists, which is acceptable
 	addAuthCmd := exec.Command("kubectl", "--context", i.kubeContext, // #nosec G204 - kubectl exec gitea command
 		"exec", "-n", "gitea", podName, "--",
@@ -1103,7 +1104,9 @@ func (i *Installer) configureGiteaOIDC() error {
 		"--provider", "openidConnect",
 		"--key", "gitea",
 		"--secret", "gitea-client-secret",
-		"--auto-discover-url", "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration")
+		"--auto-discover-url", "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration",
+		"--skip-local-2fa",
+		"--scopes", "openid", "email", "profile")
 
 	output, err := addAuthCmd.CombinedOutput()
 	if err != nil {
