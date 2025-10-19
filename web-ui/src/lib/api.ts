@@ -306,7 +306,7 @@ class ApiClient {
   // Applications
   async getApplications(): Promise<ApiResponse<Application[]>> {
     try {
-      const response = await this.request<Record<string, any>>('/specs');
+      const response = await this.request<Record<string, any>>('/applications');
 
       if (response.success && response.data) {
         // Transform specs data to Application format
@@ -340,24 +340,36 @@ class ApiClient {
   }
 
   async getSpecs(): Promise<ApiResponse<Record<string, any>>> {
-    return this.request<Record<string, any>>('/specs');
+    // Kept for backward compatibility, now calls /applications
+    return this.request<Record<string, any>>('/applications');
   }
 
   async getApplication(name: string): Promise<ApiResponse<Application>> {
-    return this.request<Application>(`/apps/${name}`);
+    return this.request<Application>(`/applications/${name}`);
   }
 
   async deployApplication(scoreSpec: string): Promise<ApiResponse<{ message: string }>> {
-    return this.request('/apps', {
+    return this.request('/applications', {
       method: 'POST',
       body: JSON.stringify({ spec: scoreSpec }),
     });
   }
 
   async deleteApplication(name: string): Promise<ApiResponse<{ message: string }>> {
-    return this.request(`/apps/${name}`, {
+    return this.request(`/applications/${name}`, {
       method: 'DELETE',
     });
+  }
+
+  async deprovisionApplication(name: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request(`/applications/${name}/deprovision`, {
+      method: 'POST',
+    });
+  }
+
+  // Environments
+  async getEnvironments(): Promise<ApiResponse<Record<string, any>>> {
+    return this.request<Record<string, any>>('/environments');
   }
 
   // Workflows
@@ -590,6 +602,11 @@ class ApiClient {
     });
   }
 
+  // Users Management
+  async listUsers(): Promise<ApiResponse<any>> {
+    return this.request('/users');
+  }
+
   // Admin Configuration
   async getAdminConfig(): Promise<ApiResponse<AdminConfig>> {
     return this.request<AdminConfig>('/admin/config');
@@ -619,6 +636,32 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ description, metadata }),
     });
+  }
+
+  // Impersonation
+  async startImpersonation(username: string): Promise<ApiResponse<any>> {
+    return this.request('/impersonate', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+  }
+
+  async stopImpersonation(): Promise<ApiResponse<any>> {
+    return this.request('/impersonate', {
+      method: 'DELETE',
+    });
+  }
+
+  async getImpersonationStatus(): Promise<ApiResponse<ImpersonationStatus>> {
+    return this.request('/impersonate');
+  }
+
+  async getProviders(): Promise<ApiResponse<ProviderSummary[]>> {
+    return this.request('/api/providers');
+  }
+
+  async getProviderStats(): Promise<ApiResponse<ProviderStats>> {
+    return this.request('/api/providers/stats');
   }
 }
 
@@ -650,6 +693,34 @@ export interface AIGenerateSpecResponse {
   explanation: string;
   citations?: string[];
   tokens_used?: number;
+}
+
+export interface ImpersonationStatus {
+  is_impersonating: boolean;
+  original_user?: {
+    username: string;
+    team: string;
+    role: string;
+  };
+  impersonated_user?: {
+    username: string;
+    team: string;
+    role: string;
+  };
+}
+
+export interface ProviderSummary {
+  name: string;
+  version: string;
+  category: string;
+  description: string;
+  provisioners: number;
+  golden_paths: number;
+}
+
+export interface ProviderStats {
+  providers: number;
+  provisioners: number;
 }
 
 export const api = new ApiClient();

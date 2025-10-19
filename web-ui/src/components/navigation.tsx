@@ -33,6 +33,7 @@ import {
   Bot,
   Database,
   GitBranch,
+  Globe,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -84,6 +85,16 @@ const userNavigationSections: NavSection[] = [
         href: '/resources',
         label: 'Resources',
         icon: Database,
+      },
+      {
+        href: '/environments',
+        label: 'Environments',
+        icon: Globe,
+      },
+      {
+        href: '/providers',
+        label: 'Providers',
+        icon: Package,
       },
       {
         href: '/graph',
