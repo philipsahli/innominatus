@@ -152,10 +152,26 @@ func main() {
 	case "admin":
 		if len(flag.Args()) < 2 {
 			fmt.Fprintf(os.Stderr, "Error: admin command requires a subcommand\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s admin <show|add-user|list-users|delete-user>\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "Usage: %s admin <show|add-user|list-users|delete-user|user-api-keys|user-generate-key|user-revoke-key>\n", os.Args[0])
 			os.Exit(1)
 		}
 		err = client.AdminCommand(flag.Args()[1:])
+
+	case "team":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: team command requires a subcommand\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s team <list|get|create|delete>\n", os.Args[0])
+			os.Exit(1)
+		}
+		err = client.TeamCommand(flag.Args()[1:])
+
+	case "provider":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: provider command requires a subcommand\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s provider <list|stats>\n", os.Args[0])
+			os.Exit(1)
+		}
+		err = client.ProviderCommand(flag.Args()[1:])
 
 	case "list-goldenpaths":
 		err = client.ListGoldenPathsCommand()
@@ -243,6 +259,14 @@ func main() {
 			appName = flag.Args()[1]
 		}
 		err = client.ListResourcesCommand(appName)
+
+	case "resource":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: resource command requires a subcommand\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s resource <get|delete|update|transition|health> <resource-id> [options]\n", os.Args[0])
+			os.Exit(1)
+		}
+		err = client.ResourceCommand(flag.Args()[1:])
 
 	case "logs":
 		if len(flag.Args()) < 2 {
@@ -358,6 +382,12 @@ func printUsage() {
 	fmt.Printf("  deprovision <name>    Deprovision infrastructure (keep audit trail)\n")
 	fmt.Printf("  list-workflows [app]  List workflow executions (optionally filtered by app)\n")
 	fmt.Printf("  list-resources [app]  List resource instances (optionally filtered by app)\n")
+	fmt.Printf("  resource <command>    Manage resource instances\n")
+	fmt.Printf("    get <id>            Get resource details\n")
+	fmt.Printf("    delete <id>         Delete resource\n")
+	fmt.Printf("    update <id> <json>  Update resource configuration\n")
+	fmt.Printf("    transition <id> <state>  Transition resource state\n")
+	fmt.Printf("    health <id> [--check]    Get/check resource health\n")
 	fmt.Printf("  logs <workflow-id>    Show workflow execution logs with step details\n")
 	fmt.Printf("  retry <id> <spec>     Retry failed workflow from first failed step\n")
 	fmt.Printf("  graph-export <app>    Export workflow graph visualization\n")
@@ -378,6 +408,14 @@ func printUsage() {
 	fmt.Printf("    generate-api-key    Generate API key for user\n")
 	fmt.Printf("    list-api-keys       List API keys for user\n")
 	fmt.Printf("    revoke-api-key      Revoke API key for user\n")
+	fmt.Printf("  team <command>        Team management commands\n")
+	fmt.Printf("    list                List all teams\n")
+	fmt.Printf("    get <id>            Get team details\n")
+	fmt.Printf("    create              Create new team\n")
+	fmt.Printf("    delete <id>         Delete team\n")
+	fmt.Printf("  provider <command>    Provider management commands\n")
+	fmt.Printf("    list                List all loaded providers\n")
+	fmt.Printf("    stats               Show provider statistics\n")
 	fmt.Printf("  demo-time [options]   Install/reconcile demo environment\n")
 	fmt.Printf("    -component <names>  Comma-separated list of components to install\n")
 	fmt.Printf("                        (e.g., grafana, gitea,argocd). Dependencies are\n")
@@ -397,6 +435,9 @@ func printUsage() {
 	fmt.Printf("  %s list-workflows my-app\n", os.Args[0])
 	fmt.Printf("  %s list-resources\n", os.Args[0])
 	fmt.Printf("  %s list-resources my-app\n", os.Args[0])
+	fmt.Printf("  %s resource get 42\n", os.Args[0])
+	fmt.Printf("  %s resource health 42 --check\n", os.Args[0])
+	fmt.Printf("  %s resource transition 42 deprovisioning\n", os.Args[0])
 	fmt.Printf("  %s logs 1234\n", os.Args[0])
 	fmt.Printf("  %s logs 1234 --step deploy-application --verbose\n", os.Args[0])
 	fmt.Printf("  %s logs 1234 --tail 50 --step-only\n", os.Args[0])
@@ -423,6 +464,13 @@ func printUsage() {
 	fmt.Printf("  %s admin generate-api-key --name cli-key --expiry-days 90\n", os.Args[0])
 	fmt.Printf("  %s admin list-api-keys\n", os.Args[0])
 	fmt.Printf("  %s admin revoke-api-key --name cli-key\n", os.Args[0])
+	fmt.Printf("  %s admin user-api-keys alice  # List API keys for user alice\n", os.Args[0])
+	fmt.Printf("  %s admin user-generate-key --username alice --name alice-cli --expiry-days 30\n", os.Args[0])
+	fmt.Printf("  %s admin user-revoke-key --username alice --key-name alice-cli\n", os.Args[0])
+	fmt.Printf("  %s team list\n", os.Args[0])
+	fmt.Printf("  %s team get platform-team\n", os.Args[0])
+	fmt.Printf("  %s team create --name dev-team --description \"Development Team\"\n", os.Args[0])
+	fmt.Printf("  %s team delete dev-team\n", os.Args[0])
 	fmt.Printf("  export IDP_API_KEY=your_api_key_here\n")
 	fmt.Printf("  %s list  # Uses API key from environment\n", os.Args[0])
 	fmt.Printf("  %s --server http://prod-orchestrator:8081 list\n", os.Args[0])

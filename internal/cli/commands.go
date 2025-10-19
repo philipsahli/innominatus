@@ -384,9 +384,15 @@ func (c *Client) AdminCommand(args []string) error {
 
 	case "revoke-api-key":
 		return c.revokeAPIKeyCommand(args[1:])
+	case "user-api-keys":
+		return c.userAPIKeysCommand(args[1:])
+	case "user-generate-key":
+		return c.userGenerateKeyCommand(args[1:])
+	case "user-revoke-key":
+		return c.userRevokeKeyCommand(args[1:])
 
 	default:
-		return fmt.Errorf("unknown admin subcommand '%s'. Available: show, add-user, list-users, delete-user, generate-api-key, list-api-keys, revoke-api-key", subcommand)
+		return fmt.Errorf("unknown admin subcommand '%s'. Available: show, add-user, list-users, delete-user, generate-api-key, list-api-keys, revoke-api-key, user-api-keys, user-generate-key, user-revoke-key", subcommand)
 	}
 }
 
@@ -409,14 +415,10 @@ func (c *Client) addUserCommand(args []string) error {
 		return fmt.Errorf("role must be 'user' or 'admin'")
 	}
 
-	store, err := users.LoadUsers()
+	// Use API instead of direct file access
+	err := c.CreateUser(*username, *password, *team, *role)
 	if err != nil {
-		return fmt.Errorf("failed to load users: %w", err)
-	}
-
-	err = store.AddUser(*username, *password, *team, *role)
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to create user: %w", err)
 	}
 
 	formatter := NewOutputFormatter()
@@ -426,18 +428,20 @@ func (c *Client) addUserCommand(args []string) error {
 
 func (c *Client) listUsersCommand() error {
 	formatter := NewOutputFormatter()
-	store, err := users.LoadUsers()
+
+	// Use API instead of direct file access
+	users, err := c.ListUsers()
 	if err != nil {
-		return fmt.Errorf("failed to load users: %w", err)
+		return fmt.Errorf("failed to list users: %w", err)
 	}
 
-	if len(store.Users) == 0 {
+	if len(users) == 0 {
 		formatter.PrintEmptyState("No users found")
 		return nil
 	}
 
 	formatter.PrintHeader("Users:")
-	for _, user := range store.Users {
+	for _, user := range users {
 		formatter.PrintItem(1, "", fmt.Sprintf("%s (%s, %s)", user.Username, user.Team, user.Role))
 	}
 
@@ -446,17 +450,234 @@ func (c *Client) listUsersCommand() error {
 
 func (c *Client) deleteUserCommand(username string) error {
 	formatter := NewOutputFormatter()
-	store, err := users.LoadUsers()
-	if err != nil {
-		return fmt.Errorf("failed to load users: %w", err)
-	}
 
-	err = store.DeleteUser(username)
+	// Use API instead of direct file access
+	err := c.DeleteUser(username)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete user: %w", err)
 	}
 
 	formatter.PrintSuccess(fmt.Sprintf("User '%s' deleted successfully", username))
+	return nil
+}
+
+// Admin API key management commands
+
+func (c *Client) userAPIKeysCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("username is required")
+	}
+	username := args[0]
+
+	keys, err := c.AdminGetAPIKeys(username)
+	if err != nil {
+		return fmt.Errorf("failed to get API keys: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	if len(keys) == 0 {
+		formatter.PrintEmptyState(fmt.Sprintf("No API keys found for user '%s'", username))
+		return nil
+	}
+
+	formatter.PrintHeader(fmt.Sprintf("API Keys for %s:", username))
+	for _, key := range keys {
+		formatter.PrintEmpty()
+		if name, ok := key["name"].(string); ok {
+			formatter.PrintSection(1, SymbolWorkflow, name)
+		}
+		if keyVal, ok := key["key"].(string); ok {
+			formatter.PrintKeyValue(2, "Key", keyVal)
+		}
+		if createdAt, ok := key["created_at"].(string); ok {
+			formatter.PrintKeyValue(2, "Created", createdAt)
+		}
+		if expiresAt, ok := key["expires_at"].(string); ok {
+			formatter.PrintKeyValue(2, "Expires", expiresAt)
+		}
+		if lastUsed, ok := key["last_used_at"].(string); ok {
+			formatter.PrintKeyValue(2, "Last Used", lastUsed)
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) userGenerateKeyCommand(args []string) error {
+	fs := flag.NewFlagSet("user-generate-key", flag.ContinueOnError)
+	username := fs.String("username", "", "Username to generate key for")
+	name := fs.String("name", "", "Name for the API key")
+	expiryDays := fs.Int("expiry-days", 90, "Number of days until expiry")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *username == "" || *name == "" {
+		return fmt.Errorf("username and name are required")
+	}
+
+	result, err := c.AdminGenerateAPIKey(*username, *name, *expiryDays)
+	if err != nil {
+		return fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("API key generated for user '%s'", *username))
+	formatter.PrintEmpty()
+	if key, ok := result["key"].(string); ok {
+		formatter.PrintWarning("IMPORTANT: Save this key now - it won't be shown again!")
+		formatter.PrintKeyValue(1, "API Key", key)
+	}
+	if name, ok := result["name"].(string); ok {
+		formatter.PrintKeyValue(1, "Name", name)
+	}
+	if createdAt, ok := result["created_at"].(string); ok {
+		formatter.PrintKeyValue(1, "Created", createdAt)
+	}
+	if expiresAt, ok := result["expires_at"].(string); ok {
+		formatter.PrintKeyValue(1, "Expires", expiresAt)
+	}
+
+	return nil
+}
+
+func (c *Client) userRevokeKeyCommand(args []string) error {
+	fs := flag.NewFlagSet("user-revoke-key", flag.ContinueOnError)
+	username := fs.String("username", "", "Username")
+	keyName := fs.String("key-name", "", "Name of the API key to revoke")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *username == "" || *keyName == "" {
+		return fmt.Errorf("username and key-name are required")
+	}
+
+	err := c.AdminRevokeAPIKey(*username, *keyName)
+	if err != nil {
+		return fmt.Errorf("failed to revoke API key: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("API key '%s' revoked for user '%s'", *keyName, *username))
+	return nil
+}
+
+// TeamCommand handles team management subcommands
+func (c *Client) TeamCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("team command requires a subcommand (list|get|create|delete)")
+	}
+
+	subcommand := args[0]
+
+	switch subcommand {
+	case "list":
+		return c.listTeamsCommand()
+	case "get":
+		if len(args) < 2 {
+			return fmt.Errorf("team get requires a team ID")
+		}
+		return c.getTeamCommand(args[1])
+	case "create":
+		return c.createTeamCommand(args[1:])
+	case "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("team delete requires a team ID")
+		}
+		return c.deleteTeamCommand(args[1])
+	default:
+		return fmt.Errorf("unknown team subcommand: %s", subcommand)
+	}
+}
+
+// listTeamsCommand lists all teams
+func (c *Client) listTeamsCommand() error {
+	teams, err := c.ListTeams()
+	if err != nil {
+		return fmt.Errorf("failed to list teams: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	if len(teams) == 0 {
+		formatter.PrintEmptyState("No teams found")
+		return nil
+	}
+
+	formatter.PrintHeader(fmt.Sprintf("Teams (%d):", len(teams)))
+	for _, team := range teams {
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolTeam, fmt.Sprintf("Team: %s", team.Name))
+		formatter.PrintKeyValue(1, "ID", team.ID)
+		if team.Description != "" {
+			formatter.PrintKeyValue(1, "Description", team.Description)
+		}
+		if len(team.Members) > 0 {
+			formatter.PrintKeyValue(1, "Members", fmt.Sprintf("%d", len(team.Members)))
+		}
+	}
+
+	return nil
+}
+
+// getTeamCommand gets detailed team information
+func (c *Client) getTeamCommand(teamID string) error {
+	team, err := c.GetTeam(teamID)
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintHeader(fmt.Sprintf("Team: %s", team.Name))
+	formatter.PrintKeyValue(0, "ID", team.ID)
+	if team.Description != "" {
+		formatter.PrintKeyValue(0, "Description", team.Description)
+	}
+
+	if len(team.Members) > 0 {
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolUser, fmt.Sprintf("Members (%d):", len(team.Members)))
+		for _, member := range team.Members {
+			formatter.PrintItem(1, SymbolBullet, member)
+		}
+	}
+
+	return nil
+}
+
+// createTeamCommand creates a new team
+func (c *Client) createTeamCommand(args []string) error {
+	createFlags := flag.NewFlagSet("team create", flag.ContinueOnError)
+	name := createFlags.String("name", "", "Team name")
+	description := createFlags.String("description", "", "Team description")
+
+	if err := createFlags.Parse(args); err != nil {
+		return err
+	}
+
+	if *name == "" {
+		return fmt.Errorf("--name is required")
+	}
+
+	if err := c.CreateTeam(*name, *description); err != nil {
+		return fmt.Errorf("failed to create team: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("Team '%s' created successfully", *name))
+	return nil
+}
+
+// deleteTeamCommand deletes a team
+func (c *Client) deleteTeamCommand(teamID string) error {
+	if err := c.DeleteTeam(teamID); err != nil {
+		return fmt.Errorf("failed to delete team: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("Team '%s' deleted successfully", teamID))
 	return nil
 }
 
@@ -1822,6 +2043,131 @@ func (c *Client) ListResourcesCommand(appName string) error {
 	return nil
 }
 
+// ResourceCommand handles resource management subcommands
+func (c *Client) ResourceCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("resource command requires a subcommand (get, delete, update, transition, health)")
+	}
+
+	subcommand := args[0]
+	formatter := NewOutputFormatter()
+
+	switch subcommand {
+	case "get":
+		if len(args) < 2 {
+			return fmt.Errorf("get subcommand requires a resource ID")
+		}
+		resourceID := args[1]
+
+		resource, err := c.GetResource(resourceID)
+		if err != nil {
+			return fmt.Errorf("failed to get resource: %w", err)
+		}
+
+		formatter.PrintHeader(fmt.Sprintf("Resource Details: %s", resource.ResourceName))
+		formatter.PrintKeyValue(0, "ID", fmt.Sprintf("%d", resource.ID))
+		formatter.PrintKeyValue(0, "Application", resource.ApplicationName)
+		formatter.PrintKeyValue(0, "Name", resource.ResourceName)
+		formatter.PrintKeyValue(0, "Type", resource.ResourceType)
+		formatter.PrintKeyValue(0, "State", resource.State)
+		formatter.PrintKeyValue(0, "Health Status", resource.HealthStatus)
+
+		if resource.ProviderID != nil && *resource.ProviderID != "" {
+			formatter.PrintKeyValue(0, "Provider ID", *resource.ProviderID)
+		}
+
+		if len(resource.Configuration) > 0 {
+			formatter.PrintSection(0, SymbolResource, "Configuration:")
+			for key, value := range resource.Configuration {
+				formatter.PrintKeyValue(1, key, value)
+			}
+		}
+
+	case "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("delete subcommand requires a resource ID")
+		}
+		resourceID := args[1]
+
+		if err := c.DeleteResource(resourceID); err != nil {
+			return fmt.Errorf("failed to delete resource: %w", err)
+		}
+
+		formatter.PrintSuccess(fmt.Sprintf("Resource %s deleted successfully", resourceID))
+
+	case "update":
+		if len(args) < 3 {
+			return fmt.Errorf("update subcommand requires a resource ID and config JSON")
+		}
+		resourceID := args[1]
+		configJSON := args[2]
+
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+			return fmt.Errorf("invalid config JSON: %w", err)
+		}
+
+		if err := c.UpdateResource(resourceID, config); err != nil {
+			return fmt.Errorf("failed to update resource: %w", err)
+		}
+
+		formatter.PrintSuccess(fmt.Sprintf("Resource %s updated successfully", resourceID))
+
+	case "transition":
+		if len(args) < 3 {
+			return fmt.Errorf("transition subcommand requires a resource ID and target state")
+		}
+		resourceID := args[1]
+		targetState := args[2]
+
+		if err := c.TransitionResource(resourceID, targetState); err != nil {
+			return fmt.Errorf("failed to transition resource: %w", err)
+		}
+
+		formatter.PrintSuccess(fmt.Sprintf("Resource %s transitioned to %s", resourceID, targetState))
+
+	case "health":
+		if len(args) < 2 {
+			return fmt.Errorf("health subcommand requires a resource ID")
+		}
+		resourceID := args[1]
+
+		// Check if --check flag is present to trigger new health check
+		checkNew := false
+		for _, arg := range args {
+			if arg == "--check" {
+				checkNew = true
+				break
+			}
+		}
+
+		var health map[string]interface{}
+		var err error
+
+		if checkNew {
+			health, err = c.CheckResourceHealth(resourceID)
+			if err != nil {
+				return fmt.Errorf("failed to check resource health: %w", err)
+			}
+		} else {
+			health, err = c.GetResourceHealth(resourceID)
+			if err != nil {
+				return fmt.Errorf("failed to get resource health: %w", err)
+			}
+		}
+
+		formatter.PrintHeader(fmt.Sprintf("Resource Health: %s", resourceID))
+		for key, value := range health {
+			formatter.PrintKeyValue(0, key, value)
+		}
+
+	default:
+		return fmt.Errorf("unknown resource subcommand: %s (valid: get, delete, update, transition, health)", subcommand)
+	}
+
+	return nil
+}
+
 // AnalyzeCommand analyzes a Score specification for workflow dependencies and execution plan
 func (c *Client) AnalyzeCommand(filename string) error {
 	// Validate file path to prevent path traversal
@@ -2253,4 +2599,74 @@ func toTitle(s string) string {
 	runes := []rune(s)
 	runes[0] = unicode.ToUpper(runes[0])
 	return string(runes)
+}
+
+// ProviderCommand handles provider-related subcommands
+func (c *Client) ProviderCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("provider command requires a subcommand (list, stats)")
+	}
+
+	subcommand := args[0]
+
+	switch subcommand {
+	case "list":
+		return c.ListProvidersCommand()
+	case "stats":
+		return c.ProviderStatsCommand()
+	default:
+		return fmt.Errorf("unknown provider subcommand: %s (available: list, stats)", subcommand)
+	}
+}
+
+// ListProvidersCommand lists all loaded providers
+func (c *Client) ListProvidersCommand() error {
+	formatter := NewOutputFormatter()
+
+	providers, err := c.ListProviders()
+	if err != nil {
+		return fmt.Errorf("failed to list providers: %w", err)
+	}
+
+	if len(providers) == 0 {
+		formatter.PrintEmptyState("No providers loaded")
+		return nil
+	}
+
+	formatter.PrintHeader(fmt.Sprintf("Loaded Providers (%d):", len(providers)))
+
+	for _, provider := range providers {
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolApp, fmt.Sprintf("%s v%s", provider.Name, provider.Version))
+
+		if provider.Category != "" {
+			formatter.PrintKeyValue(1, "Category", provider.Category)
+		}
+		if provider.Description != "" {
+			formatter.PrintKeyValue(1, "Description", provider.Description)
+		}
+		formatter.PrintKeyValue(1, "Provisioners", fmt.Sprintf("%d", provider.Provisioners))
+		formatter.PrintKeyValue(1, "Golden Paths", fmt.Sprintf("%d", provider.GoldenPaths))
+	}
+
+	formatter.PrintEmpty()
+	return nil
+}
+
+// ProviderStatsCommand shows provider statistics
+func (c *Client) ProviderStatsCommand() error {
+	formatter := NewOutputFormatter()
+
+	stats, err := c.GetProviderStats()
+	if err != nil {
+		return fmt.Errorf("failed to get provider stats: %w", err)
+	}
+
+	formatter.PrintHeader("Provider Statistics")
+	formatter.PrintEmpty()
+	formatter.PrintKeyValue(0, "Total Providers", fmt.Sprintf("%d", stats.Providers))
+	formatter.PrintKeyValue(0, "Total Provisioners", fmt.Sprintf("%d", stats.Provisioners))
+	formatter.PrintEmpty()
+
+	return nil
 }
