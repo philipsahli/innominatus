@@ -548,13 +548,15 @@ This document tracks user stories, improvements, bug reports, and technical debt
 
 ## Improvements
 
-### [P1] Implement workflow retry dialog in Web UI (ID: BL-IMP-003)
+### [P1] Implement workflow retry dialog in Web UI (ID: BL-IMP-003) ✓
 - **Description**: Retry workflow dialog marked as TODO (web-ui/src/app/workflows/page.tsx:115). Users cannot retry failed workflows from Web UI. Create dialog to upload updated workflow spec and call retry API endpoint to enable self-service workflow recovery.
 - **Priority**: P1 (High)
 - **Effort**: S (Small, <2h)
 - **Source**: TODO Scanner
 - **Added**: 2025-10-19
-- **Files**: web-ui/src/app/workflows/page.tsx
+- **Completed**: 2025-10-19
+- **Files**: web-ui/src/app/workflows/page.tsx, web-ui/src/components/retry-workflow-dialog.tsx
+- **Implementation**: Created RetryWorkflowDialog component with automatic and manual retry modes. Dialog supports both empty-body retry (uses original workflow) and manual retry with uploaded JSON workflow file.
 ### [P1] Implement AI deployment functionality in Web UI (ID: BL-IMP-002)
 - **Description**: AI deployment marked as TODO (web-ui/src/app/ai-assistant/page.tsx:166). AI assistant can generate specs but cannot deploy them. Implement deployment via API call to POST /api/specs or golden path execution to complete the AI-assisted deployment workflow.
 - **Priority**: P1 (High)
@@ -814,6 +816,11 @@ This document tracks user stories, improvements, bug reports, and technical debt
 ---
 
 ## Completed Items (Archive)
+
+### BL-IMP-003: Implement Workflow Retry Dialog in Web UI ✓
+- **Completed:** 2025-10-19
+- **Implementation:** `web-ui/src/components/retry-workflow-dialog.tsx`, `web-ui/src/app/workflows/page.tsx`
+- **Notes:** Created RetryWorkflowDialog component with two modes: (1) Automatic retry - retries with original workflow specification, (2) Manual retry - allows upload of updated JSON workflow file. Users can now self-service workflow recovery from Web UI without CLI commands.
 
 ### BL-MNT-030: Update Metrics Pusher Logging ✓
 - **Completed:** 2025-10-19
