@@ -535,13 +535,6 @@ This document tracks user stories, improvements, bug reports, and technical debt
 - **Source**: TODO Scanner
 - **Added**: 2025-10-19
 - **Files**: internal/server/handlers.go, internal/demo/installer.go
-### [P1] Complete parameter substitution in golden paths (ID: BL-BUG-001)
-- **Description**: Golden path parameter substitution not fully implemented (internal/cli/commands.go:622). Parameters passed via CLI are not being substituted into workflow steps, breaking golden path workflows with parameters. Implement template variable replacement in workflow executor using golden path parameters. Related to existing BUG-002.
-- **Priority**: P1 (High)
-- **Effort**: M (Medium, 2-8h)
-- **Source**: TODO Scanner
-- **Added**: 2025-10-19
-- **Files**: internal/cli/commands.go, internal/workflow/executor.go
 *Items added automatically by autopilot backlog scanner - categorized by bug type*
 
 ---
@@ -816,6 +809,12 @@ This document tracks user stories, improvements, bug reports, and technical debt
 ---
 
 ## Completed Items (Archive)
+
+### BL-BUG-001: Complete Parameter Substitution in Golden Paths ✓
+- **Completed:** 2025-10-19
+- **Implementation:** `internal/cli/commands.go`, `internal/workflow/executor.go`, `internal/server/handlers.go`, `internal/queue/queue.go`
+- **Tests:** `internal/workflow/executor_test.go` (4 new tests: substitution, precedence, backward compatibility, multiple parameters)
+- **Notes:** Implemented end-to-end parameter flow from CLI to workflow execution. Parameters passed via `--param key=value` are transmitted via HTTP query string, extracted by server handler, and initialized in workflow execution context. All workflow steps can now use `${key}` variable interpolation with golden path parameters. Includes comprehensive test coverage for parameter substitution, variable precedence, and backward compatibility.
 
 ### BL-IMP-003: Implement Workflow Retry Dialog in Web UI ✓
 - **Completed:** 2025-10-19
