@@ -8,9 +8,11 @@ import (
 	"innominatus/internal/database"
 	"innominatus/internal/logging"
 	"innominatus/internal/metrics"
+	"innominatus/internal/providers"
 	"innominatus/internal/server"
 	"innominatus/internal/tracing"
 	"innominatus/internal/validation"
+	"innominatus/pkg/sdk"
 	"log"
 	"net/http"
 	"os"
@@ -88,6 +90,88 @@ func main() {
 		})
 	}
 
+	// Initialize provider registry and load providers
+	providerRegistry := providers.NewRegistry()
+	if adminConfig != nil && len(adminConfig.Providers) > 0 {
+		logger.InfoWithFields("Loading providers", map[string]interface{}{
+			"count": len(adminConfig.Providers),
+		})
+
+		fsLoader := providers.NewLoader(version)
+		gitLoader := providers.NewGitLoader("/tmp/innominatus-providers", version)
+
+		for _, providerSrc := range adminConfig.Providers {
+			if !providerSrc.Enabled {
+				logger.DebugWithFields("Skipping disabled provider", map[string]interface{}{
+					"name": providerSrc.Name,
+				})
+				continue
+			}
+
+			var provider *sdk.Provider
+			var loadErr error
+
+			switch providerSrc.Type {
+			case "filesystem":
+				// Load from filesystem path
+				manifestPath := providerSrc.Path + "/provider.yaml"
+				if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+					// Try legacy platform.yaml
+					manifestPath = providerSrc.Path + "/platform.yaml"
+				}
+				provider, loadErr = fsLoader.LoadFromFile(manifestPath)
+
+			case "git":
+				// Load from Git repository
+				provider, loadErr = gitLoader.LoadFromGit(providers.GitProviderSource{
+					Name:       providerSrc.Name,
+					Repository: providerSrc.Repository,
+					Ref:        providerSrc.Ref,
+				})
+
+			default:
+				logger.WarnWithFields("Unknown provider type", map[string]interface{}{
+					"name": providerSrc.Name,
+					"type": providerSrc.Type,
+				})
+				continue
+			}
+
+			if loadErr != nil {
+				logger.WarnWithFields("Failed to load provider", map[string]interface{}{
+					"name":  providerSrc.Name,
+					"type":  providerSrc.Type,
+					"error": loadErr.Error(),
+				})
+				continue
+			}
+
+			// Register provider
+			if err := providerRegistry.RegisterProvider(provider); err != nil {
+				logger.WarnWithFields("Failed to register provider", map[string]interface{}{
+					"name":  provider.Metadata.Name,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			logger.InfoWithFields("Provider loaded successfully", map[string]interface{}{
+				"name":         provider.Metadata.Name,
+				"version":      provider.Metadata.Version,
+				"category":     provider.Metadata.Category,
+				"provisioners": len(provider.Provisioners),
+			})
+		}
+
+		providerCount, provisionerCount := providerRegistry.Count()
+		logger.InfoWithFields("Provider loading complete", map[string]interface{}{
+			"providers":    providerCount,
+			"provisioners": provisionerCount,
+		})
+	} else {
+		logger.Info("No providers configured in admin-config.yaml")
+	}
+
 	var srv *server.Server
 
 	if !*disableDB {
@@ -116,6 +200,12 @@ func main() {
 	} else {
 		logger.Info("Database features disabled")
 		srv = server.NewServer()
+	}
+
+	// Set provider registry on server
+	if providerRegistry != nil {
+		srv.SetProviderRegistry(providerRegistry)
+		logger.Info("Provider registry configured")
 	}
 
 	// Initialize AI service (optional - continues without AI if not configured)
@@ -167,8 +257,13 @@ func main() {
 	http.HandleFunc("/auth/callback", withTrace(srv.HandleOIDCCallback))
 
 	// API routes (with trace ID, logging, CORS, and authentication)
-	http.HandleFunc("/api/specs", withTraceCORSAuth(srv.HandleSpecs))
-	http.HandleFunc("/api/specs/", withTraceCORSAuth(srv.HandleSpecDetail))
+	// Applications endpoints (preferred)
+	http.HandleFunc("/api/applications", withTraceCORSAuth(srv.HandleApplications))
+	http.HandleFunc("/api/applications/", withTraceCORSAuth(srv.HandleApplicationDetail))
+	// Deprecated: /api/specs endpoints (kept for backward compatibility)
+	http.HandleFunc("/api/specs", withTraceCORSAuth(srv.HandleSpecsDeprecated))
+	http.HandleFunc("/api/specs/", withTraceCORSAuth(srv.HandleSpecDetailDeprecated))
+
 	http.HandleFunc("/api/environments", withTraceCORSAuth(srv.HandleEnvironments))
 	http.HandleFunc("/api/workflows", withTraceCORSAuth(srv.HandleWorkflows))
 	http.HandleFunc("/api/workflows/", withTraceCORSAuth(srv.HandleWorkflowDetail))
@@ -181,6 +276,22 @@ func main() {
 	// Admin-only impersonation routes
 	http.HandleFunc("/api/impersonate", withTraceCORSAdmin(srv.HandleImpersonate))
 	http.HandleFunc("/api/users", withTraceCORSAdmin(srv.HandleListUsers))
+
+	// User management routes (admin only)
+	http.HandleFunc("/api/admin/users", withTraceCORSAdmin(srv.HandleUserManagement))
+	http.HandleFunc("/api/admin/users/", withTraceCORSAdmin(func(w http.ResponseWriter, r *http.Request) {
+		// Route to appropriate handler based on path
+		if strings.Contains(r.URL.Path, "/api-keys/") {
+			// /api/admin/users/{username}/api-keys/{keyname}
+			srv.HandleAdminUserAPIKeyDetail(w, r)
+		} else if strings.HasSuffix(r.URL.Path, "/api-keys") {
+			// /api/admin/users/{username}/api-keys
+			srv.HandleAdminUserAPIKeys(w, r)
+		} else {
+			// /api/admin/users/{username}
+			srv.HandleUserDetail(w, r)
+		}
+	}))
 
 	// Profile management routes (authenticated users only)
 	http.HandleFunc("/api/profile", withTraceCORSAuth(srv.HandleGetProfile))
@@ -231,8 +342,13 @@ func main() {
 	http.HandleFunc("/api/resources", withTraceCORSAuth(srv.HandleResources))
 	http.HandleFunc("/api/resources/", withTraceCORSAuth(srv.HandleResourceDetail))
 
-	// Application management API routes (with trace ID, logging, CORS, and authentication)
-	http.HandleFunc("/api/applications/", withTraceCORSAuth(srv.HandleApplicationManagement))
+	// Golden path API routes (with trace ID, logging, CORS, and authentication)
+	http.HandleFunc("/api/golden-paths", withTraceCORSAuth(srv.HandleGoldenPaths))
+
+	// Provider management API routes (with trace ID, logging, CORS, and authentication)
+	http.HandleFunc("/api/providers", withTraceCORSAuth(srv.HandleListProviders))
+	http.HandleFunc("/api/providers/stats", withTraceCORSAuth(srv.HandleProviderStats))
+	http.HandleFunc("/api/golden-paths/", withTraceCORSAuth(srv.HandleGoldenPaths))
 
 	// Golden path workflow execution API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/workflows/golden-paths/", withTraceCORSAuth(srv.HandleGoldenPathExecution))

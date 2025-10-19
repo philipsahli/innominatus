@@ -14,6 +14,7 @@ import (
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
 	"innominatus/internal/demo"
+	"innominatus/internal/goldenpaths"
 	"innominatus/internal/graph"
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
@@ -24,6 +25,7 @@ import (
 	"innominatus/internal/types"
 	"innominatus/internal/users"
 	"innominatus/internal/workflow"
+	providersdk "innominatus/pkg/sdk"
 	"net/http"
 	"os"
 	"os/exec"
@@ -45,6 +47,13 @@ type AIService interface {
 	HandleGenerateSpec(w http.ResponseWriter, r *http.Request)
 	HandleStatus(w http.ResponseWriter, r *http.Request)
 	IsEnabled() bool
+}
+
+// ProviderRegistry interface for provider management
+type ProviderRegistry interface {
+	ListProviders() []*providersdk.Provider
+	GetProvider(name string) (*providersdk.Provider, error)
+	Count() (providers int, provisioners int)
 }
 
 // LogBuffer captures command output for workflow step logging
@@ -130,6 +139,7 @@ type Server struct {
 	graphAdapter      *graph.Adapter
 	wsHub             *GraphWebSocketHub // WebSocket hub for real-time graph updates
 	aiService         AIService          // AI assistant service (optional)
+	providerRegistry  ProviderRegistry   // Provider registry (optional)
 	loginAttempts     map[string][]time.Time
 	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -144,6 +154,11 @@ type Server struct {
 // SetAIService sets the AI service for the server
 func (s *Server) SetAIService(aiSvc AIService) {
 	s.aiService = aiSvc
+}
+
+// SetProviderRegistry sets the provider registry for the server
+func (s *Server) SetProviderRegistry(registry ProviderRegistry) {
+	s.providerRegistry = registry
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
@@ -319,6 +334,34 @@ func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{
 	return server
 }
 
+// HandleApplications is the preferred endpoint for application management
+func (s *Server) HandleApplications(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		s.handleListSpecs(w, r)
+	case "POST":
+		s.handleDeploySpec(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleApplicationDetail handles operations on a specific application
+func (s *Server) HandleApplicationDetail(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Path[len("/api/applications/"):]
+
+	switch r.Method {
+	case "GET":
+		s.handleGetSpec(w, r, name)
+	case "DELETE":
+		s.handleDeleteSpec(w, r, name)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleSpecs is DEPRECATED - use HandleApplications instead
+// Kept for backward compatibility
 func (s *Server) HandleSpecs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -328,6 +371,20 @@ func (s *Server) HandleSpecs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleSpecsDeprecated wraps HandleSpecs with deprecation warning
+func (s *Server) HandleSpecsDeprecated(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-API-Warn", "Deprecated: Use /api/applications instead of /api/specs")
+	w.Header().Set("Deprecation", "true")
+	s.HandleSpecs(w, r)
+}
+
+// HandleSpecDetailDeprecated wraps HandleSpecDetail with deprecation warning
+func (s *Server) HandleSpecDetailDeprecated(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-API-Warn", "Deprecated: Use /api/applications/{name} instead of /api/specs/{name}")
+	w.Header().Set("Deprecation", "true")
+	s.HandleSpecDetail(w, r)
 }
 
 func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
@@ -2436,6 +2493,112 @@ func (s *Server) handleDeprovisionApplication(w http.ResponseWriter, r *http.Req
 	response := map[string]string{
 		"message": fmt.Sprintf("Successfully deprovisioned infrastructure for application '%s'", appName),
 		"note":    "Application metadata and audit trail preserved in database",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// HandleGoldenPaths handles listing and retrieving golden paths
+func (s *Server) HandleGoldenPaths(w http.ResponseWriter, r *http.Request) {
+	// Extract path to check if it's a specific golden path request
+	path := strings.TrimPrefix(r.URL.Path, "/api/golden-paths")
+	path = strings.TrimPrefix(path, "/")
+
+	if path == "" {
+		// List all golden paths
+		s.handleListGoldenPaths(w, r)
+	} else {
+		// Get specific golden path metadata
+		goldenPathName := strings.TrimSuffix(path, "/")
+		s.handleGetGoldenPath(w, r, goldenPathName)
+	}
+}
+
+func (s *Server) handleListGoldenPaths(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	config, err := goldenpaths.LoadGoldenPaths()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load golden paths: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	paths := config.ListPaths()
+
+	// Build response with metadata for each path
+	response := make(map[string]interface{})
+	for _, pathName := range paths {
+		metadata, err := config.GetMetadata(pathName)
+		if err != nil {
+			continue // Skip paths that fail to load
+		}
+
+		pathInfo := map[string]interface{}{
+			"description":        metadata.Description,
+			"category":           metadata.Category,
+			"tags":               metadata.Tags,
+			"estimated_duration": metadata.EstimatedDuration,
+			"workflow_file":      metadata.WorkflowFile,
+		}
+
+		// Add parameter schemas if available
+		if metadata.Parameters != nil && len(metadata.Parameters) > 0 {
+			pathInfo["parameters"] = metadata.Parameters
+		}
+
+		response[pathName] = pathInfo
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+func (s *Server) handleGetGoldenPath(w http.ResponseWriter, r *http.Request, pathName string) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	config, err := goldenpaths.LoadGoldenPaths()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load golden paths: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	metadata, err := config.GetMetadata(pathName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Golden path '%s' not found", pathName), http.StatusNotFound)
+		return
+	}
+
+	response := map[string]interface{}{
+		"name":               pathName,
+		"description":        metadata.Description,
+		"category":           metadata.Category,
+		"tags":               metadata.Tags,
+		"estimated_duration": metadata.EstimatedDuration,
+		"workflow_file":      metadata.WorkflowFile,
+	}
+
+	// Add parameter schemas if available
+	if metadata.Parameters != nil && len(metadata.Parameters) > 0 {
+		response["parameters"] = metadata.Parameters
+	}
+
+	// Add deprecated fields for backward compatibility
+	if metadata.RequiredParams != nil && len(metadata.RequiredParams) > 0 {
+		response["required_params"] = metadata.RequiredParams
+	}
+	if metadata.OptionalParams != nil && len(metadata.OptionalParams) > 0 {
+		response["optional_params"] = metadata.OptionalParams
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -95,6 +95,11 @@ func (l *Loader) LoadFromDirectory(dirPath string) ([]*sdk.Provider, error) {
 
 // checkCompatibility verifies the provider is compatible with the core version
 func (l *Loader) checkCompatibility(provider *sdk.Provider) error {
+	// Skip compatibility check for development builds
+	if l.coreVersion == "dev" || l.coreVersion == "unknown" {
+		return nil
+	}
+
 	// Parse core version
 	coreVer, err := semver.NewVersion(l.coreVersion)
 	if err != nil {

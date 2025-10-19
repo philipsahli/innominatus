@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: builtin
+  version: 1.0.0
+  category: infrastructure
+  description: Built-in infrastructure provisioners for platform engineering
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+provisioners:
+  - name: postgres-cluster
+    type: database
+    description: PostgreSQL cluster provisioner
+    version: 1.2.0
+    documentation: https://docs.example.com/postgres
+
+  - name: redis-cache
+    type: cache
+    description: Redis cache provisioner
+    version: 1.1.0
+    documentation: https://docs.example.com/redis
+
+goldenpaths:
+  - name: deploy-database
+    description: Deploy a managed database with backups
+    documentation: https://docs.example.com/deploy-database
+
+  - name: deploy-cache
+    description: Deploy a Redis cache cluster
+    documentation: https://docs.example.com/deploy-cache
