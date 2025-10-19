@@ -10,6 +10,8 @@ import (
 	"sort"
 	"time"
 
+	"innominatus/internal/logging"
+
 	_ "github.com/lib/pq"
 )
 
@@ -30,6 +32,8 @@ type Config struct {
 
 // NewDatabase creates a new database connection
 func NewDatabase() (*Database, error) {
+	logger := logging.NewStructuredLogger("database")
+
 	config := Config{
 		Host:     getEnvWithDefault("DB_HOST", "localhost"),
 		Port:     getEnvWithDefault("DB_PORT", "5432"),
@@ -47,7 +51,11 @@ func NewDatabase() (*Database, error) {
 			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
 	}
 
-	fmt.Printf("DEBUG: NewDatabase connecting to: %s (DBName=%s)\n", connStr, config.DBName)
+	logger.DebugWithFields("Initializing database connection", map[string]interface{}{
+		"host":   config.Host,
+		"port":   config.Port,
+		"dbname": config.DBName,
+	})
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -67,14 +75,16 @@ func NewDatabase() (*Database, error) {
 	// Verify which database we actually connected to
 	var actualDB string
 	if err := db.QueryRow("SELECT current_database()").Scan(&actualDB); err != nil {
-		fmt.Printf("WARNING: Failed to verify database connection: %v\n", err)
+		logger.WarnWithFields("Failed to verify database connection", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
-		fmt.Printf("DEBUG: NewDatabase - verified connection to database: %s\n", actualDB)
+		logger.InfoWithFields("Database connection established", map[string]interface{}{
+			"database": actualDB,
+		})
 	}
 
-	result := &Database{db: db}
-	fmt.Printf("DEBUG: NewDatabase - returning Database pointer: %p\n", result)
-	return result, nil
+	return &Database{db: db}, nil
 }
 
 // NewDatabaseWithConfig creates a new database connection with custom config

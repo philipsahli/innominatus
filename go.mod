@@ -3,6 +3,7 @@ module innominatus
 go 1.24.1
 
 require (
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/bxcodec/faker/v3 v3.8.1
 	github.com/chzyer/readline v1.5.1
 	github.com/coreos/go-oidc/v3 v3.16.0
@@ -27,7 +28,6 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
