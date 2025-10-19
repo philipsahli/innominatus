@@ -12,20 +12,36 @@ providers:
     path: ./providers/builtin
     enabled: true
 
-  # Example Git-based service provider (commented out - uncomment to use)
+  # Filesystem provider (storage team demo)
+  - name: storage-team
+    type: filesystem
+    path: ./providers/storage-team
+    enabled: true
+
+  # Git-based provider examples (commented out - uncomment to use)
+  # Storage team provider from Gitea (recommended for production)
+  # - name: storage-team
+  #   type: git
+  #   category: infrastructure
+  #   repository: https://gitea.localtest.me/platform-team/storage-provider
+  #   ref: v1.2.0  # Pin to stable version tag
+  #   enabled: true
+  #
+  # Storage team dev branch (for testing latest changes)
+  # - name: storage-team-dev
+  #   type: git
+  #   category: infrastructure
+  #   repository: https://gitea.localtest.me/platform-team/storage-provider
+  #   ref: main  # Track main branch
+  #   enabled: false
+  #
+  # Example service provider (ecommerce team)
   # - name: ecommerce
   #   type: git
   #   category: service
   #   repository: https://github.com/yourorg/ecommerce-provider
   #   ref: v1.2.3  # Git tag
   #   enabled: true
-  #
-  # - name: ecommerce-dev
-  #   type: git
-  #   category: service
-  #   repository: https://github.com/yourorg/ecommerce-provider
-  #   ref: develop  # Git branch
-  #   enabled: false  # Disabled by default
 
 resourceDefinitions:
   postgres: "managed-postgres-cluster"
