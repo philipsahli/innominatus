@@ -43,10 +43,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Fetch user profile from API
   const fetchUserProfile = async (authToken: string): Promise<boolean> => {
     try {
-      const response = await fetch('http://localhost:8081/api/profile', {
+      // Always use relative URL since we're served from the same origin
+      const response = await fetch('/api/profile', {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
+        credentials: 'include',
       });
 
       if (response.ok) {
@@ -68,28 +70,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Check for existing token on mount
     const storedToken = localStorage.getItem('auth-token');
     if (storedToken) {
-      // Validate token and fetch user profile
+      // Optimistically set as authenticated to prevent flashing
+      setToken(storedToken);
+      setIsAuthenticated(true);
+
+      // Validate token - wait for it to complete before allowing page to render
       fetchUserProfile(storedToken)
         .then((success) => {
-          if (success) {
-            setToken(storedToken);
-            setIsAuthenticated(true);
-          } else {
-            // Token is invalid, remove it
+          if (!success) {
+            // Only clear auth if profile fetch explicitly fails (not network errors)
+            // This prevents logout on transient network issues
+            console.warn('Session validation failed - token may be expired');
             localStorage.removeItem('auth-token');
             setToken(null);
             setUser(null);
             setIsAuthenticated(false);
           }
         })
-        .catch(() => {
-          // Network error or invalid token
-          localStorage.removeItem('auth-token');
-          setToken(null);
-          setUser(null);
-          setIsAuthenticated(false);
+        .catch((error) => {
+          // Network error - keep user logged in, they'll get 401 on next API call
+          console.warn('Failed to validate session (network error):', error);
+          // Don't clear auth on network errors
         })
         .finally(() => {
+          // Always stop loading after validation attempt
           setIsLoading(false);
         });
     } else {
@@ -110,7 +114,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const logout = async () => {
     try {
       // Call backend logout endpoint to clear server-side session
-      await fetch('http://localhost:8081/logout', {
+      await fetch('/logout', {
         method: 'GET',
         credentials: 'include', // Important: Include cookies for session management
       });

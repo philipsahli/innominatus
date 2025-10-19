@@ -279,9 +279,19 @@ class ApiClient {
 
       if (!response.ok) {
         if (response.status === 401) {
-          // Clear invalid token
-          if (typeof window !== 'undefined') {
+          // Check if this is a permission check vs authentication failure
+          // Don't redirect on endpoints that are used for status checks
+          const isStatusCheck =
+            endpoint.includes('/impersonate') ||
+            (endpoint.includes('/admin/') && options.method === 'GET');
+
+          if (!isStatusCheck && typeof window !== 'undefined') {
+            // Session expired - clear token and redirect to login
             localStorage.removeItem('auth-token');
+            // Give user feedback about session expiration
+            console.warn('Session expired - redirecting to login');
+            // Redirect to login page
+            window.location.href = '/login';
           }
         }
         return {
@@ -657,11 +667,11 @@ class ApiClient {
   }
 
   async getProviders(): Promise<ApiResponse<ProviderSummary[]>> {
-    return this.request('/api/providers');
+    return this.request('/providers');
   }
 
   async getProviderStats(): Promise<ApiResponse<ProviderStats>> {
-    return this.request('/api/providers/stats');
+    return this.request('/providers/stats');
   }
 }
 
