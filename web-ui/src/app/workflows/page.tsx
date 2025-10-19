@@ -35,6 +35,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { GraphModal } from '@/components/graph-modal';
 import { WorkflowDetailView } from '@/components/workflow-detail-view';
 import { Pagination } from '@/components/pagination';
+import { RetryWorkflowDialog } from '@/components/retry-workflow-dialog';
 
 function getStatusBadge(status: string) {
   return (
@@ -77,6 +78,11 @@ export default function WorkflowsPage() {
   const [activeTab, setActiveTab] = useState<'executions' | 'templates'>('executions');
   const [graphModalOpen, setGraphModalOpen] = useState(false);
   const [selectedAppForGraph, setSelectedAppForGraph] = useState<string | null>(null);
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false);
+  const [selectedWorkflowForRetry, setSelectedWorkflowForRetry] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const {
     data: workflowsData,
@@ -110,12 +116,15 @@ export default function WorkflowsPage() {
     refetchWorkflows();
   };
 
-  const handleRetry = async (workflowId: string, e: React.MouseEvent) => {
+  const handleRetry = async (workflowId: string, workflowName: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent row click
-    // TODO: Implement retry workflow dialog to get updated workflow spec
-    alert(
-      `Retry workflow ${workflowId}\n\nNote: This requires uploading an updated workflow specification file.`
-    );
+    setSelectedWorkflowForRetry({ id: workflowId, name: workflowName });
+    setRetryDialogOpen(true);
+  };
+
+  const handleRetrySuccess = () => {
+    // Refetch workflows to show updated status
+    refetchWorkflows();
   };
 
   const handleViewGraph = (appName: string, e: React.MouseEvent) => {
@@ -415,7 +424,7 @@ export default function WorkflowsPage() {
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={(e) => handleRetry(workflow.id, e)}
+                                      onClick={(e) => handleRetry(workflow.id, workflow.name, e)}
                                       className="h-8 gap-2 text-orange-600 hover:text-orange-700 border-orange-200 hover:bg-orange-50 dark:text-orange-400 dark:border-orange-800 dark:hover:bg-orange-950"
                                     >
                                       <RotateCcw className="w-3 h-3" />
@@ -599,6 +608,17 @@ export default function WorkflowsPage() {
             appName={selectedAppForGraph}
             isOpen={graphModalOpen}
             onClose={() => setGraphModalOpen(false)}
+          />
+        )}
+
+        {/* Retry Workflow Dialog */}
+        {selectedWorkflowForRetry && (
+          <RetryWorkflowDialog
+            open={retryDialogOpen}
+            onOpenChange={setRetryDialogOpen}
+            workflowId={selectedWorkflowForRetry.id}
+            workflowName={selectedWorkflowForRetry.name}
+            onSuccess={handleRetrySuccess}
           />
         )}
       </div>
