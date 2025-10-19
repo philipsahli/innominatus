@@ -785,8 +785,8 @@ This document tracks user stories, improvements, bug reports, and technical debt
 - **Source**: Code Quality Scanner
 - **Added**: 2025-10-19
 - **Completed**: 2025-10-19
-- **Files**: internal/database/database.go
-- **Implementation**: Replaced fmt.Printf with structured logging using internal/logging package. Connection strings no longer exposed in logs.
+- **Files**: internal/database/database.go, internal/database/sessions.go
+- **Implementation**: Security fix - removed DEBUG print statement from sessions.go:36 that exposed database connection details (database name, memory pointer). Replaced with structured debug logging. Migrated all 7 log.Printf calls in database.go to structured logging using logger.InfoWithFields/ErrorWithFields/DebugWithFields. Removed unused "log" import. All database tests pass.
 ### [P0] Remove debug print statements from production code (ID: BL-MNT-001) ✓
 - **Description**: 300+ fmt.Println and log.Println statements found across production code, violating CLAUDE.md logging standards. These clutter logs and make production debugging harder. Major files affected: cmd/server/main.go (30+ instances), cmd/cli/chat.go (80+ instances), internal/demo/cheatsheet.go (100+ instances), internal/database/database.go (3 instances). Replace all with structured zerolog statements (log.Info, log.Debug, log.Error) for consistent, parseable logging.
 - **Priority**: P0 (Critical)
