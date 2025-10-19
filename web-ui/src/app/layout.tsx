@@ -5,6 +5,8 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { CustomThemeProvider } from '@/contexts/theme-context';
 import { AuthProvider } from '@/contexts/auth-context';
 import { LayoutContent } from '@/components/layout-content';
+import { ToastProvider } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -25,7 +27,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           <CustomThemeProvider>
             <AuthProvider>
-              <LayoutContent>{children}</LayoutContent>
+              <ToastProvider>
+                <LayoutContent>{children}</LayoutContent>
+                <Toaster />
+              </ToastProvider>
             </AuthProvider>
           </CustomThemeProvider>
         </ThemeProvider>

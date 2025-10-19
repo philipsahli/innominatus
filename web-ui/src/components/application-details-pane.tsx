@@ -2,13 +2,36 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { X, Package, Clock, ExternalLink, Database, Activity, FileCode } from 'lucide-react';
+import {
+  X,
+  Package,
+  Clock,
+  ExternalLink,
+  Database,
+  Activity,
+  FileCode,
+  Trash2,
+  Archive
+} from 'lucide-react';
 import type { Application } from '@/lib/api';
 import { api } from '@/lib/api';
+import { useDeprovisionApplication, useDeleteApplication } from '@/hooks/use-api';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
 
 interface ApplicationDetailsPaneProps {
   application: Application | null;
@@ -16,10 +39,17 @@ interface ApplicationDetailsPaneProps {
 }
 
 export function ApplicationDetailsPane({ application, onClose }: ApplicationDetailsPaneProps) {
+  const router = useRouter();
+  const { toast } = useToast();
   const [spec, setSpec] = useState<any>(null);
   const [workflows, setWorkflows] = useState<any[]>([]);
   const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showDeprovisionDialog, setShowDeprovisionDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const { mutate: deprovision, loading: deprovisionLoading } = useDeprovisionApplication();
+  const { mutate: deleteApp, loading: deleteLoading } = useDeleteApplication();
 
   useEffect(() => {
     if (application) {
@@ -73,6 +103,48 @@ export function ApplicationDetailsPane({ application, onClose }: ApplicationDeta
       default:
         return 'outline';
     }
+  };
+
+  const handleDeprovision = async () => {
+    if (!application) return;
+
+    const result = await deprovision(application.name);
+    if (result.success) {
+      toast({
+        title: 'Application Deprovisioned',
+        description: `Infrastructure for ${application.name} has been deprovisioned. Audit trail preserved.`,
+      });
+      onClose();
+      router.refresh();
+    } else {
+      toast({
+        title: 'Deprovision Failed',
+        description: result.error || 'Failed to deprovision application',
+        variant: 'destructive',
+      });
+    }
+    setShowDeprovisionDialog(false);
+  };
+
+  const handleDelete = async () => {
+    if (!application) return;
+
+    const result = await deleteApp(application.name);
+    if (result.success) {
+      toast({
+        title: 'Application Deleted',
+        description: `${application.name} has been completely removed.`,
+      });
+      onClose();
+      router.refresh();
+    } else {
+      toast({
+        title: 'Delete Failed',
+        description: result.error || 'Failed to delete application',
+        variant: 'destructive',
+      });
+    }
+    setShowDeleteDialog(false);
   };
 
   return (
@@ -142,19 +214,41 @@ export function ApplicationDetailsPane({ application, onClose }: ApplicationDeta
                   </div>
                 </div>
 
-                <div className="pt-3 border-t flex gap-2">
-                  <Link href={`/graph/${application.name}`} className="flex-1">
-                    <Button variant="outline" className="w-full">
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      View Graph
+                <div className="pt-3 border-t space-y-2">
+                  <div className="flex gap-2">
+                    <Link href={`/graph/${application.name}`} className="flex-1">
+                      <Button variant="outline" className="w-full">
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        View Graph
+                      </Button>
+                    </Link>
+                    <Link href={`/workflows?app=${application.name}`} className="flex-1">
+                      <Button variant="outline" className="w-full">
+                        <Activity className="w-4 h-4 mr-2" />
+                        View Workflows
+                      </Button>
+                    </Link>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setShowDeprovisionDialog(true)}
+                      disabled={deprovisionLoading}
+                    >
+                      <Archive className="w-4 h-4 mr-2" />
+                      Deprovision
                     </Button>
-                  </Link>
-                  <Link href={`/workflows?app=${application.name}`} className="flex-1">
-                    <Button variant="outline" className="w-full">
-                      <Activity className="w-4 h-4 mr-2" />
-                      View Workflows
+                    <Button
+                      variant="destructive"
+                      className="flex-1"
+                      onClick={() => setShowDeleteDialog(true)}
+                      disabled={deleteLoading}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
                     </Button>
-                  </Link>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -282,6 +376,68 @@ export function ApplicationDetailsPane({ application, onClose }: ApplicationDeta
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Deprovision Confirmation Dialog */}
+      <AlertDialog open={showDeprovisionDialog} onOpenChange={setShowDeprovisionDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deprovision Application</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Are you sure you want to deprovision <strong>{application.name}</strong>?
+              </p>
+              <p>
+                This will remove all provisioned infrastructure (databases, storage, etc.) but will
+                preserve the application record and audit trail for compliance.
+              </p>
+              <p className="text-amber-600 dark:text-amber-400 font-medium">
+                ⚠️ Infrastructure resources will be deleted. Data may be lost unless backed up.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeprovision} disabled={deprovisionLoading}>
+              {deprovisionLoading ? 'Deprovisioning...' : 'Deprovision'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Application</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                Are you sure you want to <strong>permanently delete</strong>{' '}
+                <strong>{application.name}</strong>?
+              </p>
+              <p>
+                This will remove all infrastructure, database records, and audit trail. This action
+                cannot be undone.
+              </p>
+              <p className="text-red-600 dark:text-red-400 font-medium">
+                ⚠️ DANGER: This is a permanent, destructive operation.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Tip: Use &ldquo;Deprovision&rdquo; instead if you want to keep audit records for compliance.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteLoading}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleteLoading ? 'Deleting...' : 'Delete Permanently'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -77,3 +77,12 @@ interface DialogDescriptionProps {
 export function DialogDescription({ children, className = '' }: DialogDescriptionProps) {
   return <p className={`text-sm text-gray-400 mt-2 ${className}`}>{children}</p>;
 }
+
+interface DialogFooterProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function DialogFooter({ children, className = '' }: DialogFooterProps) {
+  return <div className={`mt-6 flex justify-end gap-2 ${className}`}>{children}</div>;
+}
