@@ -14,6 +14,11 @@ func setupTestResourceRepo(t *testing.T) *ResourceRepository {
 		t.Skipf("Database connection failed: %v", err)
 	}
 
+	// Initialize schema (creates tables including hints column)
+	if err := db.InitSchema(); err != nil {
+		t.Skipf("Schema initialization failed: %v", err)
+	}
+
 	repo := NewResourceRepository(db)
 	return repo
 }
@@ -42,6 +47,10 @@ func TestNewResourceRepository(t *testing.T) {
 	db, err := NewDatabase()
 	if err != nil {
 		t.Skipf("Database connection failed: %v", err)
+	}
+
+	if err := db.InitSchema(); err != nil {
+		t.Skipf("Schema initialization failed: %v", err)
 	}
 
 	repo := NewResourceRepository(db)

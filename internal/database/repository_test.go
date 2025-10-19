@@ -13,6 +13,11 @@ func setupTestRepo(t *testing.T) *WorkflowRepository {
 		t.Skipf("Database connection failed: %v", err)
 	}
 
+	// Initialize schema (creates tables)
+	if err := db.InitSchema(); err != nil {
+		t.Skipf("Schema initialization failed: %v", err)
+	}
+
 	repo := NewWorkflowRepository(db)
 	return repo
 }
@@ -21,6 +26,10 @@ func TestNewWorkflowRepository(t *testing.T) {
 	db, err := NewDatabase()
 	if err != nil {
 		t.Skipf("Database connection failed: %v", err)
+	}
+
+	if err := db.InitSchema(); err != nil {
+		t.Skipf("Schema initialization failed: %v", err)
 	}
 
 	repo := NewWorkflowRepository(db)
