@@ -177,6 +177,49 @@ export interface APIKeyFull {
   expires_at: string;
 }
 
+export interface AdminConfig {
+  admin: {
+    defaultCostCenter: string;
+    defaultRuntime: string;
+    splunkIndex: string;
+  };
+  resourceDefinitions: Record<string, string>;
+  policies: {
+    enforceBackups: boolean;
+    allowedEnvironments: string[];
+  };
+  gitea: {
+    url: string;
+    internalURL: string;
+    username: string;
+    password: string; // Will be "****" from backend
+    orgName: string;
+  };
+  argocd: {
+    url: string;
+    username: string;
+    password: string; // Will be "****" from backend
+  };
+  workflowPolicies: {
+    workflowsRoot: string;
+    requiredPlatformWorkflows: string[];
+    allowedProductWorkflows: string[];
+    maxWorkflowDuration: string;
+    maxConcurrentWorkflows: number;
+    maxStepsPerWorkflow: number;
+    allowedStepTypes: string[];
+    workflowOverrides: {
+      platform: boolean;
+      product: boolean;
+    };
+    security: {
+      requireApproval: string[];
+      allowedExecutors: string[];
+      secretsAccess: Record<string, string>;
+    };
+  };
+}
+
 export interface AuthConfig {
   oidc_enabled: boolean;
   oidc_provider_name: string;
@@ -517,6 +560,11 @@ class ApiClient {
     return this.request(`/profile/api-keys/${name}`, {
       method: 'DELETE',
     });
+  }
+
+  // Admin Configuration
+  async getAdminConfig(): Promise<ApiResponse<AdminConfig>> {
+    return this.request<AdminConfig>('/admin/config');
   }
 
   // AI Assistant

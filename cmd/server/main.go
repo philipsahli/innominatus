@@ -212,6 +212,9 @@ func main() {
 	// Admin-only demo routes
 	http.HandleFunc("/api/admin/demo/reset", withTraceCORSAdmin(srv.HandleDemoReset))
 
+	// Admin configuration routes
+	http.HandleFunc("/api/admin/config", withTraceCORSAdmin(srv.HandleAdminConfig))
+
 	// Graph API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/graph", withTraceCORSAuth(srv.HandleGraph))
 	// WebSocket endpoint needs special handling - no response-wrapping middleware

@@ -120,3 +120,95 @@ func (c *AdminConfig) GetResourceDefinition(resourceType string) (string, bool) 
 	definition, exists := c.ResourceDefinitions[resourceType]
 	return definition, exists
 }
+
+// MaskedAdminConfig is a JSON-serializable version with sensitive data masked
+type MaskedAdminConfig struct {
+	Admin struct {
+		DefaultCostCenter string `json:"defaultCostCenter"`
+		DefaultRuntime    string `json:"defaultRuntime"`
+		SplunkIndex       string `json:"splunkIndex"`
+	} `json:"admin"`
+	ResourceDefinitions map[string]string `json:"resourceDefinitions"`
+	Policies            struct {
+		EnforceBackups      bool     `json:"enforceBackups"`
+		AllowedEnvironments []string `json:"allowedEnvironments"`
+	} `json:"policies"`
+	Gitea struct {
+		URL         string `json:"url"`
+		InternalURL string `json:"internalURL"`
+		Username    string `json:"username"`
+		Password    string `json:"password"` // Will be "****"
+		OrgName     string `json:"orgName"`
+	} `json:"gitea"`
+	ArgoCD struct {
+		URL      string `json:"url"`
+		Username string `json:"username"`
+		Password string `json:"password"` // Will be "****"
+	} `json:"argocd"`
+	WorkflowPolicies struct {
+		WorkflowsRoot             string   `json:"workflowsRoot"`
+		RequiredPlatformWorkflows []string `json:"requiredPlatformWorkflows"`
+		AllowedProductWorkflows   []string `json:"allowedProductWorkflows"`
+		MaxWorkflowDuration       string   `json:"maxWorkflowDuration"`
+		MaxConcurrentWorkflows    int      `json:"maxConcurrentWorkflows"`
+		MaxStepsPerWorkflow       int      `json:"maxStepsPerWorkflow"`
+		AllowedStepTypes          []string `json:"allowedStepTypes"`
+		WorkflowOverrides         struct {
+			Platform bool `json:"platform"`
+			Product  bool `json:"product"`
+		} `json:"workflowOverrides"`
+		Security struct {
+			RequireApproval  []string          `json:"requireApproval"`
+			AllowedExecutors []string          `json:"allowedExecutors"`
+			SecretsAccess    map[string]string `json:"secretsAccess"`
+		} `json:"security"`
+	} `json:"workflowPolicies"`
+}
+
+// ToMaskedJSON returns a JSON-serializable version with sensitive data masked
+func (c *AdminConfig) ToMaskedJSON() *MaskedAdminConfig {
+	masked := &MaskedAdminConfig{
+		ResourceDefinitions: c.ResourceDefinitions,
+	}
+
+	// Copy admin settings
+	masked.Admin.DefaultCostCenter = c.Admin.DefaultCostCenter
+	masked.Admin.DefaultRuntime = c.Admin.DefaultRuntime
+	masked.Admin.SplunkIndex = c.Admin.SplunkIndex
+
+	// Copy policies
+	masked.Policies.EnforceBackups = c.Policies.EnforceBackups
+	masked.Policies.AllowedEnvironments = c.Policies.AllowedEnvironments
+
+	// Copy Gitea config with masked password
+	masked.Gitea.URL = c.Gitea.URL
+	masked.Gitea.InternalURL = c.Gitea.InternalURL
+	masked.Gitea.Username = c.Gitea.Username
+	masked.Gitea.Password = "****"
+	masked.Gitea.OrgName = c.Gitea.OrgName
+
+	// Copy ArgoCD config with masked password
+	masked.ArgoCD.URL = c.ArgoCD.URL
+	masked.ArgoCD.Username = c.ArgoCD.Username
+	masked.ArgoCD.Password = "****"
+
+	// Copy workflow policies
+	masked.WorkflowPolicies.WorkflowsRoot = c.WorkflowPolicies.WorkflowsRoot
+	masked.WorkflowPolicies.RequiredPlatformWorkflows = c.WorkflowPolicies.RequiredPlatformWorkflows
+	masked.WorkflowPolicies.AllowedProductWorkflows = c.WorkflowPolicies.AllowedProductWorkflows
+	masked.WorkflowPolicies.MaxWorkflowDuration = c.WorkflowPolicies.MaxWorkflowDuration
+	masked.WorkflowPolicies.MaxConcurrentWorkflows = c.WorkflowPolicies.MaxConcurrentWorkflows
+	masked.WorkflowPolicies.MaxStepsPerWorkflow = c.WorkflowPolicies.MaxStepsPerWorkflow
+	masked.WorkflowPolicies.AllowedStepTypes = c.WorkflowPolicies.AllowedStepTypes
+
+	// Copy workflow overrides
+	masked.WorkflowPolicies.WorkflowOverrides.Platform = c.WorkflowPolicies.WorkflowOverrides.Platform
+	masked.WorkflowPolicies.WorkflowOverrides.Product = c.WorkflowPolicies.WorkflowOverrides.Product
+
+	// Copy security settings
+	masked.WorkflowPolicies.Security.RequireApproval = c.WorkflowPolicies.Security.RequireApproval
+	masked.WorkflowPolicies.Security.AllowedExecutors = c.WorkflowPolicies.Security.AllowedExecutors
+	masked.WorkflowPolicies.Security.SecretsAccess = c.WorkflowPolicies.Security.SecretsAccess
+
+	return masked
+}

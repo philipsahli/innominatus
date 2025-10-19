@@ -1979,6 +1979,30 @@ func (s *Server) HandleDemoReset(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleAdminConfig handles GET /api/admin/config - Returns admin configuration with masked sensitive data
+func (s *Server) HandleAdminConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Load admin configuration
+	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load admin config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to masked JSON (passwords/tokens as ****)
+	maskedConfig := adminConfig.ToMaskedJSON()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(maskedConfig); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // HandleStats handles GET /api/stats - Returns dashboard statistics
 func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
