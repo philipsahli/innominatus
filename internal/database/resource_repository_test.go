@@ -1,7 +1,9 @@
 package database
 
 import (
+	"fmt"
 	"testing"
+	"time"
 )
 
 // ===== ResourceRepository Tests =====
@@ -14,6 +16,26 @@ func setupTestResourceRepo(t *testing.T) *ResourceRepository {
 
 	repo := NewResourceRepository(db)
 	return repo
+}
+
+// uniqueName generates a unique identifier for test data to prevent conflicts
+func uniqueName(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
+// createTestResource creates a resource and registers cleanup to delete it
+func createTestResource(t *testing.T, repo *ResourceRepository, appName, resourceName, resourceType string, config map[string]interface{}) *ResourceInstance {
+	resource, err := repo.CreateResourceInstance(appName, resourceName, resourceType, config)
+	if err != nil {
+		t.Fatalf("Failed to create test resource: %v", err)
+	}
+
+	// Register cleanup to delete the resource after test completes
+	t.Cleanup(func() {
+		_ = repo.DeleteResourceInstance(resource.ID)
+	})
+
+	return resource
 }
 
 func TestNewResourceRepository(t *testing.T) {
@@ -35,26 +57,26 @@ func TestNewResourceRepository(t *testing.T) {
 func TestResourceRepository_CreateResourceInstance(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
+	appName := uniqueName("test-app")
+	resourceName := uniqueName("postgres-db")
+
 	config := map[string]interface{}{
 		"size":   "10Gi",
 		"region": "us-east-1",
 	}
 
-	resource, err := repo.CreateResourceInstance("test-app", "postgres-db", "postgres", config)
-	if err != nil {
-		t.Fatalf("CreateResourceInstance() error = %v", err)
-	}
+	resource := createTestResource(t, repo, appName, resourceName, "postgres", config)
 
 	if resource.ID == 0 {
 		t.Error("CreateResourceInstance() returned resource with ID 0")
 	}
 
-	if resource.ApplicationName != "test-app" {
-		t.Errorf("ApplicationName = %v, want test-app", resource.ApplicationName)
+	if resource.ApplicationName != appName {
+		t.Errorf("ApplicationName = %v, want %v", resource.ApplicationName, appName)
 	}
 
-	if resource.ResourceName != "postgres-db" {
-		t.Errorf("ResourceName = %v, want postgres-db", resource.ResourceName)
+	if resource.ResourceName != resourceName {
+		t.Errorf("ResourceName = %v, want %v", resource.ResourceName, resourceName)
 	}
 
 	if resource.ResourceType != "postgres" {
@@ -77,12 +99,15 @@ func TestResourceRepository_CreateResourceInstance(t *testing.T) {
 func TestResourceRepository_GetResourceInstance(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
+	appName := uniqueName("test-app")
+	resourceName := uniqueName("redis")
+
 	config := map[string]interface{}{
 		"replicas": 3,
 		"version":  "14.5",
 	}
 
-	created, _ := repo.CreateResourceInstance("test-app", "redis", "redis", config)
+	created := createTestResource(t, repo, appName, resourceName, "redis", config)
 
 	// Get resource by ID
 	retrieved, err := repo.GetResourceInstance(created.ID)
@@ -94,8 +119,8 @@ func TestResourceRepository_GetResourceInstance(t *testing.T) {
 		t.Errorf("ID = %v, want %v", retrieved.ID, created.ID)
 	}
 
-	if retrieved.ResourceName != "redis" {
-		t.Errorf("ResourceName = %v, want redis", retrieved.ResourceName)
+	if retrieved.ResourceName != resourceName {
+		t.Errorf("ResourceName = %v, want %v", retrieved.ResourceName, resourceName)
 	}
 
 	// Verify configuration was properly unmarshaled
@@ -116,14 +141,17 @@ func TestResourceRepository_GetResourceInstance_NotFound(t *testing.T) {
 func TestResourceRepository_GetResourceInstanceByName(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
+	appName := uniqueName("test-app")
+	resourceName := uniqueName("storage")
+
 	config := map[string]interface{}{
 		"bucket": "my-bucket",
 	}
 
-	created, _ := repo.CreateResourceInstance("test-app", "storage", "s3", config)
+	created := createTestResource(t, repo, appName, resourceName, "s3", config)
 
 	// Get resource by name
-	retrieved, err := repo.GetResourceInstanceByName("test-app", "storage")
+	retrieved, err := repo.GetResourceInstanceByName(appName, resourceName)
 	if err != nil {
 		t.Fatalf("GetResourceInstanceByName() error = %v", err)
 	}
@@ -149,12 +177,14 @@ func TestResourceRepository_GetResourceInstanceByName_NotFound(t *testing.T) {
 func TestResourceRepository_ListResourceInstances(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	// Create multiple resources for same app
-	_, _ = repo.CreateResourceInstance("list-app", "resource-1", "postgres", map[string]interface{}{})
-	_, _ = repo.CreateResourceInstance("list-app", "resource-2", "redis", map[string]interface{}{})
-	_, _ = repo.CreateResourceInstance("list-app", "resource-3", "s3", map[string]interface{}{})
+	appName := uniqueName("list-app")
 
-	resources, err := repo.ListResourceInstances("list-app")
+	// Create multiple resources for same app
+	createTestResource(t, repo, appName, uniqueName("resource-1"), "postgres", map[string]interface{}{})
+	createTestResource(t, repo, appName, uniqueName("resource-2"), "redis", map[string]interface{}{})
+	createTestResource(t, repo, appName, uniqueName("resource-3"), "s3", map[string]interface{}{})
+
+	resources, err := repo.ListResourceInstances(appName)
 	if err != nil {
 		t.Fatalf("ListResourceInstances() error = %v", err)
 	}
@@ -187,7 +217,7 @@ func TestResourceRepository_ListResourceInstances_EmptyApp(t *testing.T) {
 func TestResourceRepository_UpdateResourceInstanceState(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("db"), "postgres", map[string]interface{}{})
 
 	// Update state to provisioning
 	metadata := map[string]interface{}{
@@ -207,7 +237,11 @@ func TestResourceRepository_UpdateResourceInstanceState(t *testing.T) {
 	}
 
 	// Verify state was updated
-	updated, _ := repo.GetResourceInstance(resource.ID)
+	updated, err := repo.GetResourceInstance(resource.ID)
+	if err != nil {
+		t.Fatalf("GetResourceInstance() error = %v", err)
+	}
+
 	if updated.State != ResourceStateProvisioning {
 		t.Errorf("State = %v, want %v", updated.State, ResourceStateProvisioning)
 	}
@@ -242,7 +276,7 @@ func TestResourceRepository_UpdateResourceInstanceState(t *testing.T) {
 func TestResourceRepository_UpdateResourceInstanceHealth(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("db"), "postgres", map[string]interface{}{})
 
 	// Update health status
 	err := repo.UpdateResourceInstanceHealth(resource.ID, "healthy", nil)
@@ -268,7 +302,7 @@ func TestResourceRepository_UpdateResourceInstanceHealth(t *testing.T) {
 func TestResourceRepository_UpdateResourceInstanceHealth_WithError(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("db"), "postgres", map[string]interface{}{})
 
 	errorMsg := "connection timeout"
 	err := repo.UpdateResourceInstanceHealth(resource.ID, "unhealthy", &errorMsg)
@@ -293,7 +327,7 @@ func TestResourceRepository_UpdateResourceInstanceHealth_WithError(t *testing.T)
 func TestResourceRepository_UpdateResourceHints(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("db"), "postgres", map[string]interface{}{})
 
 	hints := []ResourceHint{
 		{
@@ -337,7 +371,7 @@ func TestResourceRepository_UpdateResourceHints(t *testing.T) {
 func TestResourceRepository_CreateHealthCheck(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "api", "service", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("api"), "service", map[string]interface{}{})
 
 	responseTime := int64(150)
 	metrics := map[string]interface{}{
@@ -356,7 +390,7 @@ func TestResourceRepository_CreateHealthCheck(t *testing.T) {
 func TestResourceRepository_CreateHealthCheck_WithError(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "api", "service", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("api"), "service", map[string]interface{}{})
 
 	errorMsg := "connection refused"
 	err := repo.CreateHealthCheck(resource.ID, "tcp", "unhealthy", nil, &errorMsg, map[string]interface{}{})
@@ -368,7 +402,7 @@ func TestResourceRepository_CreateHealthCheck_WithError(t *testing.T) {
 func TestResourceRepository_GetResourceStateTransitions(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("db"), "postgres", map[string]interface{}{})
 
 	// Create multiple state transitions
 	_ = repo.UpdateResourceInstanceState(resource.ID, ResourceStateProvisioning, "start", "system", nil)
@@ -395,7 +429,7 @@ func TestResourceRepository_GetResourceStateTransitions(t *testing.T) {
 func TestResourceRepository_GetResourceStateTransitions_Limit(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("db"), "postgres", map[string]interface{}{})
 
 	// Create 5 transitions
 	for i := 0; i < 5; i++ {
@@ -420,7 +454,7 @@ func TestResourceRepository_GetResourceStateTransitions_Limit(t *testing.T) {
 func TestResourceRepository_DeleteResourceInstance(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "temp-db", "postgres", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("temp-db"), "postgres", map[string]interface{}{})
 
 	// Delete resource
 	err := repo.DeleteResourceInstance(resource.ID)
@@ -447,7 +481,7 @@ func TestResourceRepository_DeleteResourceInstance_NotFound(t *testing.T) {
 func TestResourceRepository_UpdateExternalResourceState(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
-	resource, _ := repo.CreateResourceInstance("test-app", "external-svc", "service", map[string]interface{}{})
+	resource := createTestResource(t, repo, uniqueName("test-app"), uniqueName("external-svc"), "service", map[string]interface{}{})
 
 	// Update external state
 	err := repo.UpdateExternalResourceState(resource.ID, ExternalStateHealthy, "https://external.example.com/resource/123")
@@ -486,19 +520,21 @@ func TestResourceRepository_UpdateExternalResourceState_NotFound(t *testing.T) {
 func TestResourceRepository_GetDelegatedResources(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
+	appName := uniqueName("delegated-app")
+
 	// Create a mix of resource types
-	native1, _ := repo.CreateResourceInstance("delegated-app", "native-1", "postgres", map[string]interface{}{})
+	native1 := createTestResource(t, repo, appName, uniqueName("native-1"), "postgres", map[string]interface{}{})
 	// Set type to native
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeNative, native1.ID)
 
-	delegated1, _ := repo.CreateResourceInstance("delegated-app", "delegated-1", "argocd", map[string]interface{}{})
+	delegated1 := createTestResource(t, repo, appName, uniqueName("delegated-1"), "argocd", map[string]interface{}{})
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeDelegated, delegated1.ID)
 
-	delegated2, _ := repo.CreateResourceInstance("delegated-app", "delegated-2", "vault", map[string]interface{}{})
+	delegated2 := createTestResource(t, repo, appName, uniqueName("delegated-2"), "vault", map[string]interface{}{})
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeDelegated, delegated2.ID)
 
 	// Get only delegated resources
-	resources, err := repo.GetDelegatedResources("delegated-app")
+	resources, err := repo.GetDelegatedResources(appName)
 	if err != nil {
 		t.Fatalf("GetDelegatedResources() error = %v", err)
 	}
@@ -528,23 +564,25 @@ func TestResourceRepository_GetDelegatedResources(t *testing.T) {
 func TestResourceRepository_FilterResourcesByType_WithApp(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
+	appName := uniqueName("filter-app")
+
 	// Create resources
-	r1, _ := repo.CreateResourceInstance("filter-app", "r1", "postgres", map[string]interface{}{})
+	r1 := createTestResource(t, repo, appName, uniqueName("r1"), "postgres", map[string]interface{}{})
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeNative, r1.ID)
 
-	r2, _ := repo.CreateResourceInstance("filter-app", "r2", "redis", map[string]interface{}{})
+	r2 := createTestResource(t, repo, appName, uniqueName("r2"), "redis", map[string]interface{}{})
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeDelegated, r2.ID)
 
 	// Filter by app and type
-	resources, err := repo.FilterResourcesByType("filter-app", ResourceTypeNative)
+	resources, err := repo.FilterResourcesByType(appName, ResourceTypeNative)
 	if err != nil {
 		t.Fatalf("FilterResourcesByType() error = %v", err)
 	}
 
 	// Verify only native resources returned
 	for _, r := range resources {
-		if r.ApplicationName != "filter-app" {
-			t.Errorf("Resource app = %v, want filter-app", r.ApplicationName)
+		if r.ApplicationName != appName {
+			t.Errorf("Resource app = %v, want %v", r.ApplicationName, appName)
 		}
 		if r.Type != ResourceTypeNative {
 			t.Errorf("Resource type = %v, want %v", r.Type, ResourceTypeNative)
@@ -556,10 +594,10 @@ func TestResourceRepository_FilterResourcesByType_WithoutApp(t *testing.T) {
 	repo := setupTestResourceRepo(t)
 
 	// Create resources in different apps
-	r1, _ := repo.CreateResourceInstance("app1", "r1", "postgres", map[string]interface{}{})
+	r1 := createTestResource(t, repo, uniqueName("app1"), uniqueName("r1"), "postgres", map[string]interface{}{})
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeExternal, r1.ID)
 
-	r2, _ := repo.CreateResourceInstance("app2", "r2", "redis", map[string]interface{}{})
+	r2 := createTestResource(t, repo, uniqueName("app2"), uniqueName("r2"), "redis", map[string]interface{}{})
 	_, _ = repo.db.db.Exec("UPDATE resource_instances SET type = $1 WHERE id = $2", ResourceTypeExternal, r2.ID)
 
 	// Filter by type only (no app filter)
