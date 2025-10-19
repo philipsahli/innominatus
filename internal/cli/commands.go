@@ -618,9 +618,8 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 		formatter.PrintSuccess(fmt.Sprintf("Loaded Score spec for application: %s", spec.Metadata.Name))
 	}
 
-	// Execute the workflow using the existing RunWorkflow function
-	// TODO: Pass finalParams to runWorkflow for parameter substitution in workflow steps
-	err = c.runWorkflow(metadata.WorkflowFile, scoreFile)
+	// Execute the workflow using the existing RunWorkflow function with golden path parameters
+	err = c.runWorkflow(metadata.WorkflowFile, scoreFile, finalParams)
 	if err != nil {
 		return fmt.Errorf("failed to execute golden path workflow: %w", err)
 	}
@@ -630,7 +629,7 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 }
 
 // runWorkflow executes a workflow via the server API with real resource provisioning
-func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
+func (c *Client) runWorkflow(workflowFile string, scoreFile string, parameters map[string]string) error {
 	formatter := NewOutputFormatter()
 
 	// Extract workflow name from file path
@@ -668,6 +667,15 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	// Make API request to server for golden path execution
 	url := fmt.Sprintf("%s/api/workflows/golden-paths/%s/execute", c.baseURL, workflowName)
 
+	// Add golden path parameters as query parameters
+	if len(parameters) > 0 {
+		queryParams := make([]string, 0, len(parameters))
+		for key, value := range parameters {
+			queryParams = append(queryParams, fmt.Sprintf("param.%s=%s", key, value))
+		}
+		url = url + "?" + strings.Join(queryParams, "&")
+	}
+
 	var req *http.Request
 	if scoreData != nil {
 		req, err = http.NewRequest("POST", url, bytes.NewBuffer(scoreData))
@@ -696,15 +704,25 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 			formatter.PrintInfo(fmt.Sprintf("Retrying request (attempt %d/%d) after %v...", attempt+1, maxRetries+1, backoff))
 			time.Sleep(backoff)
 
+			// Recreate URL with parameters for retry
+			retryURL := fmt.Sprintf("%s/api/workflows/golden-paths/%s/execute", c.baseURL, workflowName)
+			if len(parameters) > 0 {
+				queryParams := make([]string, 0, len(parameters))
+				for key, value := range parameters {
+					queryParams = append(queryParams, fmt.Sprintf("param.%s=%s", key, value))
+				}
+				retryURL = retryURL + "?" + strings.Join(queryParams, "&")
+			}
+
 			// Recreate request body for retry
 			if scoreData != nil {
-				req, err = http.NewRequest("POST", url, bytes.NewBuffer(scoreData))
+				req, err = http.NewRequest("POST", retryURL, bytes.NewBuffer(scoreData))
 				if err != nil {
 					return fmt.Errorf("failed to create retry request: %w", err)
 				}
 				req.Header.Set("Content-Type", "application/yaml")
 			} else {
-				req, err = http.NewRequest("POST", url, nil)
+				req, err = http.NewRequest("POST", retryURL, nil)
 				if err != nil {
 					return fmt.Errorf("failed to create retry request: %w", err)
 				}

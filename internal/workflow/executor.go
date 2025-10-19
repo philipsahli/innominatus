@@ -247,7 +247,7 @@ func (e *WorkflowExecutor) ExecuteWorkflow(appName string, workflow types.Workfl
 }
 
 // ExecuteWorkflowWithName executes a named workflow with database persistence
-func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow) error {
+func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow, goldenPathParams ...map[string]string) error {
 	// Ensure logger is initialized (defensive programming)
 	if e.logger == nil {
 		e.logger = logging.NewStructuredLogger("workflow")
@@ -264,7 +264,17 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 	)
 	defer span.End()
 
-	// Initialize workflow variables in execution context
+	// Initialize golden path parameters first (if provided) - they take precedence
+	if len(goldenPathParams) > 0 && len(goldenPathParams[0]) > 0 {
+		e.execContext.SetWorkflowVariables(goldenPathParams[0])
+		e.logger.InfoWithFields("Initialized golden path parameters", map[string]interface{}{
+			"app_name":       appName,
+			"workflow_name":  workflowName,
+			"parameter_count": len(goldenPathParams[0]),
+		})
+	}
+
+	// Initialize workflow variables in execution context (may override golden path params if same keys exist)
 	if len(workflow.Variables) > 0 {
 		e.execContext.SetWorkflowVariables(workflow.Variables)
 		e.logger.InfoWithFields("Initialized workflow variables", map[string]interface{}{

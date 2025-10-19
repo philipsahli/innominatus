@@ -209,6 +209,13 @@ func NewServer() *Server {
 }
 
 func NewServerWithDB(db *database.Database) *Server {
+	// Call with nil admin config for backward compatibility
+	return NewServerWithDBAndAdminConfig(db, nil)
+}
+
+// NewServerWithDBAndAdminConfig creates a new server with database and admin configuration support
+// If adminConfig is provided, enables multi-tier workflow executor with product workflows
+func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{}) *Server {
 	// Initialize OIDC authenticator
 	oidcConfig := auth.LoadOIDCConfig()
 	oidcAuth, err := auth.NewOIDCAuthenticator(oidcConfig)
@@ -223,7 +230,43 @@ func NewServerWithDB(db *database.Database) *Server {
 	workflowRepo := database.NewWorkflowRepository(db)
 	resourceRepo := database.NewResourceRepository(db)
 	resourceManager := resources.NewManager(resourceRepo)
-	workflowExecutor := workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+
+	// Create workflow executor - use multi-tier if admin config available
+	var workflowExecutor *workflow.WorkflowExecutor
+	if adminConfig != nil {
+		// Multi-tier executor with product workflow support
+		if adminCfg, ok := adminConfig.(*admin.AdminConfig); ok && adminCfg != nil {
+			policies := workflow.WorkflowPolicies{
+				RequiredPlatformWorkflows: adminCfg.WorkflowPolicies.RequiredPlatformWorkflows,
+				AllowedProductWorkflows:   adminCfg.WorkflowPolicies.AllowedProductWorkflows,
+				WorkflowOverrides: struct {
+					Platform bool `yaml:"platform"`
+					Product  bool `yaml:"product"`
+				}{
+					Platform: adminCfg.WorkflowPolicies.WorkflowOverrides.Platform,
+					Product:  adminCfg.WorkflowPolicies.WorkflowOverrides.Product,
+				},
+				MaxWorkflowDuration: adminCfg.WorkflowPolicies.MaxWorkflowDuration,
+			}
+
+			workflowsRoot := adminCfg.WorkflowPolicies.WorkflowsRoot
+			if workflowsRoot == "" {
+				workflowsRoot = "./workflows" // Default
+			}
+
+			resolver := workflow.NewWorkflowResolver(workflowsRoot, policies)
+			workflowExecutor = workflow.NewMultiTierWorkflowExecutorWithResourceManager(workflowRepo, resolver, resourceManager)
+			fmt.Println("✅ Multi-tier workflow executor enabled (platform + product + application workflows)")
+		} else {
+			// Fall back to single-tier if admin config type assertion fails
+			fmt.Println("⚠️  Admin config type mismatch, using single-tier executor")
+			workflowExecutor = workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+		}
+	} else {
+		// Single-tier executor (backward compatible)
+		workflowExecutor = workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+		fmt.Println("ℹ️  Single-tier workflow executor (use admin-config.yaml for product workflows)")
+	}
 
 	// Initialize async workflow queue (5 workers)
 	workflowQueue := queue.NewQueue(5, workflowExecutor, db)
@@ -2450,6 +2493,22 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 
 	fmt.Printf("🚀 Executing golden path '%s' for application: %s\n", goldenPathName, spec.Metadata.Name)
 
+	// Extract golden path parameters from query string (param.KEY=value)
+	goldenPathParams := make(map[string]string)
+	for key, values := range r.URL.Query() {
+		if strings.HasPrefix(key, "param.") {
+			paramName := strings.TrimPrefix(key, "param.")
+			if len(values) > 0 {
+				goldenPathParams[paramName] = values[0]
+			}
+		}
+	}
+
+	// Log parameters if any were provided
+	if len(goldenPathParams) > 0 {
+		fmt.Printf("   📋 Golden path parameters: %v\n", goldenPathParams)
+	}
+
 	// Load golden path workflow
 	workflowFile := fmt.Sprintf("./workflows/%s.yaml", goldenPathName)
 
@@ -2501,6 +2560,7 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 			"user":        user.Username,
 			"golden_path": goldenPathName,
 			"source":      "api",
+			"parameters":  goldenPathParams,
 		}
 		taskID, err = s.workflowQueue.Enqueue(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, metadata)
 		if err != nil {
@@ -2508,8 +2568,8 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	} else if s.workflowExecutor != nil {
-		// Fallback: Execute workflow synchronously if queue is not available
-		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow)
+		// Fallback: Execute workflow synchronously if queue is not available with golden path parameters
+		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, goldenPathParams)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
 			return

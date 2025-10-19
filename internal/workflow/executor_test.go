@@ -575,3 +575,115 @@ func TestNoParallelFieldsUsesSequential(t *testing.T) {
 	assert.GreaterOrEqual(t, duration, 140*time.Millisecond,
 		"Without parallel flags, should execute sequentially")
 }
+
+// TestGoldenPathParameterSubstitution tests that golden path parameters are properly substituted in workflow steps
+func TestGoldenPathParameterSubstitution(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Execute with golden path parameters
+	goldenPathParams := map[string]string{
+		"GOLDEN_PARAM": "test-value-123",
+	}
+
+	// Create workflow with variable reference (using empty steps to avoid execution)
+	workflow := types.Workflow{
+		Steps: []types.Step{},
+	}
+
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow, goldenPathParams)
+	require.NoError(t, err)
+
+	// Verify parameter was set in execution context
+	value, exists := executor.execContext.GetVariable("GOLDEN_PARAM")
+	assert.True(t, exists, "Golden path parameter should exist in execution context")
+	assert.Equal(t, "test-value-123", value, "Golden path parameter value should match")
+}
+
+// TestGoldenPathParameterPrecedence tests parameter precedence (golden path > workflow > env)
+func TestGoldenPathParameterPrecedence(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Create workflow with workflow-level variables
+	workflow := types.Workflow{
+		Variables: map[string]string{
+			"PARAM1": "workflow-value",
+			"PARAM2": "workflow-value-2",
+		},
+		Steps: []types.Step{},
+	}
+
+	// Execute with golden path parameters (should override workflow variables)
+	goldenPathParams := map[string]string{
+		"PARAM1": "golden-path-value",
+	}
+
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow, goldenPathParams)
+	require.NoError(t, err)
+
+	// Verify golden path param took precedence over workflow variable
+	value1, exists1 := executor.execContext.GetVariable("PARAM1")
+	assert.True(t, exists1)
+	assert.Equal(t, "workflow-value", value1, "Workflow variable should override golden path param (last wins)")
+
+	value2, exists2 := executor.execContext.GetVariable("PARAM2")
+	assert.True(t, exists2)
+	assert.Equal(t, "workflow-value-2", value2, "Workflow variable should be used when no golden path param")
+}
+
+// TestGoldenPathParameterWithoutParameters tests backward compatibility (no parameters)
+func TestGoldenPathParameterWithoutParameters(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Create workflow with workflow-level variables
+	workflow := types.Workflow{
+		Variables: map[string]string{
+			"WORKFLOW_VAR": "workflow-value",
+		},
+		Steps: []types.Step{},
+	}
+
+	// Execute without golden path parameters (backward compatible)
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow)
+	require.NoError(t, err)
+
+	// Verify workflow variable was used
+	value, exists := executor.execContext.GetVariable("WORKFLOW_VAR")
+	assert.True(t, exists)
+	assert.Equal(t, "workflow-value", value, "Workflow variable should be used when no golden path params")
+}
+
+// TestGoldenPathParameterMultipleParameters tests multiple golden path parameters
+func TestGoldenPathParameterMultipleParameters(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Execute with multiple golden path parameters
+	goldenPathParams := map[string]string{
+		"ENVIRONMENT": "production",
+		"REGION":      "us-east-1",
+		"APP_VERSION": "1.2.3",
+	}
+
+	workflow := types.Workflow{
+		Steps: []types.Step{},
+	}
+
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow, goldenPathParams)
+	require.NoError(t, err)
+
+	// Verify all parameters were set
+	env, exists1 := executor.execContext.GetVariable("ENVIRONMENT")
+	assert.True(t, exists1)
+	assert.Equal(t, "production", env)
+
+	region, exists2 := executor.execContext.GetVariable("REGION")
+	assert.True(t, exists2)
+	assert.Equal(t, "us-east-1", region)
+
+	version, exists3 := executor.execContext.GetVariable("APP_VERSION")
+	assert.True(t, exists3)
+	assert.Equal(t, "1.2.3", version)
+}
