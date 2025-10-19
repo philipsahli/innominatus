@@ -5,8 +5,17 @@ import { Badge } from '@/components/ui/badge';
 import { useEffect, useState } from 'react';
 import { api, AdminConfig } from '@/lib/api';
 import { Loader2, Lock, Settings2, GitBranch, Workflow } from 'lucide-react';
+import { AdminRouteProtection } from '@/components/admin-route-protection';
 
 export default function SettingsPage() {
+  return (
+    <AdminRouteProtection>
+      <SettingsPageContent />
+    </AdminRouteProtection>
+  );
+}
+
+function SettingsPageContent() {
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   XCircle,
 } from 'lucide-react';
+import { AdminRouteProtection } from '@/components/admin-route-protection';
 
 interface Integration {
   name: string;
@@ -32,6 +33,14 @@ interface Integration {
 }
 
 export default function IntegrationsPage() {
+  return (
+    <AdminRouteProtection>
+      <IntegrationsPageContent />
+    </AdminRouteProtection>
+  );
+}
+
+function IntegrationsPageContent() {
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

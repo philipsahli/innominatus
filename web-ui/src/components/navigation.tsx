@@ -217,10 +217,7 @@ const adminNavigationSections: NavSection[] = [
 export function Navigation() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { logout } = useAuth();
-
-  // TODO: Get user role from API/session - for now, assume admin for demo
-  const isAdmin = true;
+  const { logout, isAdmin } = useAuth();
 
   const navigationSections = isAdmin
     ? [...userNavigationSections, ...adminNavigationSections]
