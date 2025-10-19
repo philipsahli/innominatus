@@ -1,0 +1,17 @@
+{
+  "c8a91bc8bb4affa4d8a9782138408b1795ff0953fde93ad9db42c369d65b8014": {
+    "ID": "c8a91bc8bb4affa4d8a9782138408b1795ff0953fde93ad9db42c369d65b8014",
+    "User": {
+      "Username": "testuser",
+      "Password": "",
+      "Team": "",
+      "Role": "",
+      "APIKeys": null
+    },
+    "CreatedAt": "2025-10-19T13:16:39.592823+02:00",
+    "ExpiresAt": "2025-10-19T16:16:39.602999+02:00",
+    "OriginalUser": null,
+    "ImpersonatedUser": null,
+    "IsImpersonating": false
+  }
+}
