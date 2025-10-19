@@ -3,6 +3,30 @@ admin:
   defaultRuntime: "kubernetes"
   splunkIndex: "orchestrator-logs"
 
+# Provider sources (infrastructure and service providers)
+# Providers can be loaded from filesystem or Git repositories
+providers:
+  # Filesystem provider (built-in provisioners)
+  - name: builtin
+    type: filesystem
+    path: ./providers/builtin
+    enabled: true
+
+  # Example Git-based service provider (commented out - uncomment to use)
+  # - name: ecommerce
+  #   type: git
+  #   category: service
+  #   repository: https://github.com/yourorg/ecommerce-provider
+  #   ref: v1.2.3  # Git tag
+  #   enabled: true
+  #
+  # - name: ecommerce-dev
+  #   type: git
+  #   category: service
+  #   repository: https://github.com/yourorg/ecommerce-provider
+  #   ref: develop  # Git branch
+  #   enabled: false  # Disabled by default
+
 resourceDefinitions:
   postgres: "managed-postgres-cluster"
   redis: "redis-cluster"

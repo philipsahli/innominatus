@@ -14,6 +14,7 @@ type AdminConfig struct {
 		DefaultRuntime    string `yaml:"defaultRuntime"`
 		SplunkIndex       string `yaml:"splunkIndex"`
 	} `yaml:"admin"`
+	Providers           []ProviderSource      `yaml:"providers"`
 	ResourceDefinitions map[string]string `yaml:"resourceDefinitions"`
 	Policies            struct {
 		EnforceBackups      bool     `yaml:"enforceBackups"`
@@ -77,6 +78,17 @@ type AdminConfig struct {
 			SecretsAccess    map[string]string `yaml:"secretsAccess"`
 		} `yaml:"security"`
 	} `yaml:"workflowPolicies"`
+}
+
+// ProviderSource defines a source for loading providers
+type ProviderSource struct {
+	Name       string `yaml:"name"`                 // Provider name
+	Type       string `yaml:"type"`                 // "filesystem" or "git"
+	Category   string `yaml:"category,omitempty"`   // "infrastructure" or "service"
+	Path       string `yaml:"path,omitempty"`       // Filesystem path
+	Repository string `yaml:"repository,omitempty"` // Git repository URL
+	Ref        string `yaml:"ref,omitempty"`        // Git tag or branch
+	Enabled    bool   `yaml:"enabled"`              // Whether this provider is enabled
 }
 
 func LoadAdminConfig(configPath string) (*AdminConfig, error) {
