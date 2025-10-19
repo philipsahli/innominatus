@@ -575,13 +575,15 @@ This document tracks user stories, improvements, bug reports, and technical debt
 
 ## Maintenance
 
-### [P3] Update metrics pusher logging (ID: BL-MNT-030)
+### [P3] Update metrics pusher logging (ID: BL-MNT-030) ✓
 - **Description**: internal/metrics/pusher.go line 77 uses log.Println instead of structured logging. For consistency with logging standards, replace with zerolog structured logging using appropriate log level (log.Info or log.Debug).
 - **Priority**: P3 (Low)
 - **Effort**: S (Small, <2h)
 - **Source**: Code Quality Scanner
 - **Added**: 2025-10-19
+- **Completed**: 2025-10-19
 - **Files**: internal/metrics/pusher.go
+- **Implementation**: Replaced all log.Println/Printf with structured logging using internal/logging package. Added structured fields for better observability.
 ### [P3] Refactor admin config display (ID: BL-MNT-029)
 - **Description**: internal/admin/config.go contains 10 fmt.Println statements for config display. Should return formatted string instead for better testability and reusability. Add String() method to Config struct, return formatted string instead of printing directly.
 - **Priority**: P3 (Low)
@@ -812,6 +814,11 @@ This document tracks user stories, improvements, bug reports, and technical debt
 ---
 
 ## Completed Items (Archive)
+
+### BL-MNT-030: Update Metrics Pusher Logging ✓
+- **Completed:** 2025-10-19
+- **Implementation:** `internal/metrics/pusher.go`
+- **Notes:** Replaced all log.Println/Printf with structured logging using internal/logging package. Added structured fields (pushgateway_url, interval) for better observability. Used appropriate log levels (Info for status, Error for failures).
 
 ### BL-MNT-002: Remove DEBUG Print Statements from database.go ✓
 - **Completed:** 2025-10-19
