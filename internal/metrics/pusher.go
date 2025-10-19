@@ -2,9 +2,10 @@ package metrics
 
 import (
 	"fmt"
-	"log"
 	"runtime"
 	"time"
+
+	"innominatus/internal/logging"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -68,13 +69,18 @@ func NewMetricsPusher(pushgatewayURL string, pushInterval time.Duration, version
 // StartPushing starts pushing metrics to the Pushgateway in a background goroutine
 func (p *MetricsPusher) StartPushing() {
 	go p.pushLoop()
-	log.Printf("📊 Started pushing metrics to %s every %v", p.pushgatewayURL, p.pushInterval)
+	logger := logging.NewLogger("metrics")
+	logger.InfoWithFields("Started pushing metrics", map[string]interface{}{
+		"pushgateway_url": p.pushgatewayURL,
+		"interval":        p.pushInterval.String(),
+	})
 }
 
 // Stop stops pushing metrics
 func (p *MetricsPusher) Stop() {
 	close(p.stopChan)
-	log.Println("📊 Stopped pushing metrics")
+	logger := logging.NewLogger("metrics")
+	logger.Info("Stopped pushing metrics")
 }
 
 // pushLoop continuously pushes metrics at the configured interval
@@ -82,16 +88,18 @@ func (p *MetricsPusher) pushLoop() {
 	ticker := time.NewTicker(p.pushInterval)
 	defer ticker.Stop()
 
+	logger := logging.NewLogger("metrics")
+
 	// Push immediately on start
 	if err := p.pushMetrics(); err != nil {
-		log.Printf("Failed to push metrics: %v", err)
+		logger.ErrorWithError("Failed to push metrics", err)
 	}
 
 	for {
 		select {
 		case <-ticker.C:
 			if err := p.pushMetrics(); err != nil {
-				log.Printf("Failed to push metrics: %v", err)
+				logger.ErrorWithError("Failed to push metrics", err)
 			}
 		case <-p.stopChan:
 			return
