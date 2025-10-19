@@ -74,10 +74,18 @@ func ErrInvalidResource(message string, args ...interface{}) *SDKError {
 	}
 }
 
-// ErrInvalidPlatform creates an invalid platform error
+// ErrInvalidPlatform creates an invalid platform error (legacy, use ErrInvalidProvider)
 func ErrInvalidPlatform(message string, args ...interface{}) *SDKError {
 	return &SDKError{
 		Code:    ErrCodeInvalidPlatformErr,
+		Message: fmt.Sprintf(message, args...),
+	}
+}
+
+// ErrInvalidProvider creates an invalid provider error
+func ErrInvalidProvider(message string, args ...interface{}) *SDKError {
+	return &SDKError{
+		Code:    ErrCodeInvalidPlatformErr, // Same code for backward compatibility
 		Message: fmt.Sprintf(message, args...),
 	}
 }

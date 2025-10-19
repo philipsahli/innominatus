@@ -1,4 +1,4 @@
-package platform
+package providers
 
 import (
 	"fmt"
@@ -6,32 +6,32 @@ import (
 	"sync"
 )
 
-// Registry manages loaded platforms and their provisioners
+// Registry manages loaded providers and their provisioners
 type Registry struct {
 	mu           sync.RWMutex
-	platforms    map[string]*sdk.Platform // name -> platform
+	providers    map[string]*sdk.Provider   // name -> provider
 	provisioners map[string]sdk.Provisioner // type -> provisioner
 }
 
-// NewRegistry creates a new platform registry
+// NewRegistry creates a new provider registry
 func NewRegistry() *Registry {
 	return &Registry{
-		platforms:    make(map[string]*sdk.Platform),
+		providers:    make(map[string]*sdk.Provider),
 		provisioners: make(map[string]sdk.Provisioner),
 	}
 }
 
-// RegisterPlatform registers a platform in the registry
-func (r *Registry) RegisterPlatform(platform *sdk.Platform) error {
+// RegisterProvider registers a provider in the registry
+func (r *Registry) RegisterProvider(provider *sdk.Provider) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Check for duplicate platform name
-	if _, exists := r.platforms[platform.Metadata.Name]; exists {
-		return fmt.Errorf("platform %s is already registered", platform.Metadata.Name)
+	// Check for duplicate provider name
+	if _, exists := r.providers[provider.Metadata.Name]; exists {
+		return fmt.Errorf("provider %s is already registered", provider.Metadata.Name)
 	}
 
-	r.platforms[platform.Metadata.Name] = platform
+	r.providers[provider.Metadata.Name] = provider
 	return nil
 }
 
@@ -69,30 +69,30 @@ func (r *Registry) GetProvisioner(provisionerType string) (sdk.Provisioner, erro
 	return provisioner, nil
 }
 
-// GetPlatform returns a platform by name
-func (r *Registry) GetPlatform(name string) (*sdk.Platform, error) {
+// GetProvider returns a provider by name
+func (r *Registry) GetProvider(name string) (*sdk.Provider, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	platform, exists := r.platforms[name]
+	provider, exists := r.providers[name]
 	if !exists {
-		return nil, fmt.Errorf("platform %s not found", name)
+		return nil, fmt.Errorf("provider %s not found", name)
 	}
 
-	return platform, nil
+	return provider, nil
 }
 
-// ListPlatforms returns all registered platforms
-func (r *Registry) ListPlatforms() []*sdk.Platform {
+// ListProviders returns all registered providers
+func (r *Registry) ListProviders() []*sdk.Provider {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	platforms := make([]*sdk.Platform, 0, len(r.platforms))
-	for _, platform := range r.platforms {
-		platforms = append(platforms, platform)
+	providers := make([]*sdk.Provider, 0, len(r.providers))
+	for _, provider := range r.providers {
+		providers = append(providers, provider)
 	}
 
-	return platforms
+	return providers
 }
 
 // ListProvisioners returns all registered provisioners
@@ -130,19 +130,19 @@ func (r *Registry) HasProvisioner(provisionerType string) bool {
 	return exists
 }
 
-// Count returns the number of registered platforms and provisioners
-func (r *Registry) Count() (platforms int, provisioners int) {
+// Count returns the number of registered providers and provisioners
+func (r *Registry) Count() (providers int, provisioners int) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	return len(r.platforms), len(r.provisioners)
+	return len(r.providers), len(r.provisioners)
 }
 
-// Clear removes all platforms and provisioners (useful for testing)
+// Clear removes all providers and provisioners (useful for testing)
 func (r *Registry) Clear() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.platforms = make(map[string]*sdk.Platform)
+	r.providers = make(map[string]*sdk.Provider)
 	r.provisioners = make(map[string]sdk.Provisioner)
 }

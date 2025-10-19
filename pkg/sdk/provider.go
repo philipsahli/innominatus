@@ -1,47 +1,52 @@
 package sdk
 
-// Platform represents a platform implementation with its metadata and capabilities
-// Platforms are defined via platform.yaml manifests
-type Platform struct {
+// Provider represents a provider implementation with its metadata and capabilities
+// Providers are defined via provider.yaml manifests (or legacy platform.yaml)
+type Provider struct {
 	// APIVersion is the schema version (e.g., "innominatus.io/v1")
 	APIVersion string `yaml:"apiVersion" json:"apiVersion"`
 
-	// Kind must be "Platform"
+	// Kind must be "Provider" (or legacy "Platform")
 	Kind string `yaml:"kind" json:"kind"`
 
-	// Metadata contains platform identification and versioning
-	Metadata PlatformMetadata `yaml:"metadata" json:"metadata"`
+	// Metadata contains provider identification and versioning
+	Metadata ProviderMetadata `yaml:"metadata" json:"metadata"`
 
 	// Compatibility defines core version requirements
-	Compatibility PlatformCompatibility `yaml:"compatibility" json:"compatibility"`
+	Compatibility ProviderCompatibility `yaml:"compatibility" json:"compatibility"`
 
-	// Provisioners lists the resource provisioners provided by this platform
+	// Provisioners lists the resource provisioners provided by this provider
 	Provisioners []ProvisionerMetadata `yaml:"provisioners" json:"provisioners"`
 
-	// GoldenPaths lists the workflow templates provided by this platform
+	// GoldenPaths lists the workflow templates provided by this provider
 	GoldenPaths []GoldenPathMetadata `yaml:"goldenpaths,omitempty" json:"goldenpaths,omitempty"`
 
-	// Configuration contains platform-specific configuration
+	// Configuration contains provider-specific configuration
 	Configuration map[string]interface{} `yaml:"configuration,omitempty" json:"configuration,omitempty"`
 }
 
-// PlatformMetadata contains identification and versioning information
-type PlatformMetadata struct {
-	// Name is the unique identifier for this platform
-	// Example: "aws", "azure", "acme-internal"
+// ProviderMetadata contains identification and versioning information
+type ProviderMetadata struct {
+	// Name is the unique identifier for this provider
+	// Example: "aws", "azure", "ecommerce", "analytics"
 	Name string `yaml:"name" json:"name"`
 
-	// Version is the semantic version of this platform
+	// Version is the semantic version of this provider
 	// Example: "1.2.3", "2.0.0-beta.1"
 	Version string `yaml:"version" json:"version"`
+
+	// Category indicates provider type: "infrastructure" or "service"
+	// infrastructure: AWS, Azure, GCP (platform teams)
+	// service: ecommerce, analytics, ML (product teams)
+	Category string `yaml:"category,omitempty" json:"category,omitempty"`
 
 	// Description provides a human-readable description
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 
-	// Author identifies the platform maintainer
+	// Author identifies the provider maintainer
 	Author string `yaml:"author,omitempty" json:"author,omitempty"`
 
-	// Homepage is the URL to the platform documentation
+	// Homepage is the URL to the provider documentation
 	Homepage string `yaml:"homepage,omitempty" json:"homepage,omitempty"`
 
 	// Repository is the source code repository URL
@@ -54,8 +59,8 @@ type PlatformMetadata struct {
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
-// PlatformCompatibility defines version constraints for core compatibility
-type PlatformCompatibility struct {
+// ProviderCompatibility defines version constraints for core compatibility
+type ProviderCompatibility struct {
 	// MinCoreVersion is the minimum compatible core version
 	// Example: "1.0.0"
 	MinCoreVersion string `yaml:"minCoreVersion" json:"minCoreVersion"`
@@ -65,7 +70,7 @@ type PlatformCompatibility struct {
 	MaxCoreVersion string `yaml:"maxCoreVersion" json:"maxCoreVersion"`
 }
 
-// GoldenPathMetadata describes a workflow template provided by the platform
+// GoldenPathMetadata describes a workflow template provided by the provider
 type GoldenPathMetadata struct {
 	// Name is the unique identifier for this golden path
 	Name string `yaml:"name" json:"name"`
@@ -86,37 +91,38 @@ type GoldenPathMetadata struct {
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
-// Validate checks if the platform manifest is valid
-func (p *Platform) Validate() error {
+// Validate checks if the provider manifest is valid
+func (p *Provider) Validate() error {
 	if p.APIVersion == "" {
-		return ErrInvalidPlatform("apiVersion is required")
+		return ErrInvalidProvider("apiVersion is required")
 	}
-	if p.Kind != "Platform" {
-		return ErrInvalidPlatform("kind must be 'Platform'")
+	// Accept both "Provider" and legacy "Platform" for backward compatibility
+	if p.Kind != "Provider" && p.Kind != "Platform" {
+		return ErrInvalidProvider("kind must be 'Provider' (or legacy 'Platform')")
 	}
 	if p.Metadata.Name == "" {
-		return ErrInvalidPlatform("metadata.name is required")
+		return ErrInvalidProvider("metadata.name is required")
 	}
 	if p.Metadata.Version == "" {
-		return ErrInvalidPlatform("metadata.version is required")
+		return ErrInvalidProvider("metadata.version is required")
 	}
 	if p.Compatibility.MinCoreVersion == "" {
-		return ErrInvalidPlatform("compatibility.minCoreVersion is required")
+		return ErrInvalidProvider("compatibility.minCoreVersion is required")
 	}
 	if len(p.Provisioners) == 0 {
-		return ErrInvalidPlatform("at least one provisioner is required")
+		return ErrInvalidProvider("at least one provisioner is required")
 	}
 
 	// Validate provisioners
 	for i, prov := range p.Provisioners {
 		if prov.Name == "" {
-			return ErrInvalidPlatform("provisioners[%d].name is required", i)
+			return ErrInvalidProvider("provisioners[%d].name is required", i)
 		}
 		if prov.Type == "" {
-			return ErrInvalidPlatform("provisioners[%d].type is required", i)
+			return ErrInvalidProvider("provisioners[%d].type is required", i)
 		}
 		if prov.Version == "" {
-			return ErrInvalidPlatform("provisioners[%d].version is required", i)
+			return ErrInvalidProvider("provisioners[%d].version is required", i)
 		}
 	}
 
@@ -124,7 +130,7 @@ func (p *Platform) Validate() error {
 }
 
 // GetProvisionerByType finds a provisioner by its type
-func (p *Platform) GetProvisionerByType(resourceType string) *ProvisionerMetadata {
+func (p *Provider) GetProvisionerByType(resourceType string) *ProvisionerMetadata {
 	for i := range p.Provisioners {
 		if p.Provisioners[i].Type == resourceType {
 			return &p.Provisioners[i]
@@ -134,7 +140,7 @@ func (p *Platform) GetProvisionerByType(resourceType string) *ProvisionerMetadat
 }
 
 // GetProvisionerByName finds a provisioner by its name
-func (p *Platform) GetProvisionerByName(name string) *ProvisionerMetadata {
+func (p *Provider) GetProvisionerByName(name string) *ProvisionerMetadata {
 	for i := range p.Provisioners {
 		if p.Provisioners[i].Name == name {
 			return &p.Provisioners[i]
@@ -142,3 +148,8 @@ func (p *Platform) GetProvisionerByName(name string) *ProvisionerMetadata {
 	}
 	return nil
 }
+
+// Legacy type aliases for backward compatibility
+type Platform = Provider
+type PlatformMetadata = ProviderMetadata
+type PlatformCompatibility = ProviderCompatibility

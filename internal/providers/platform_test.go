@@ -1,11 +1,11 @@
-package platform_test
+package providers_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"innominatus/internal/platform"
+	"innominatus/internal/providers"
 	"innominatus/pkg/sdk"
 )
 
@@ -34,24 +34,24 @@ provisioners:
 		t.Fatalf("Failed to write test platform.yaml: %v", err)
 	}
 
-	// Load platform
-	loader := platform.NewLoader("1.5.0")
-	platform, err := loader.LoadFromFile(platformPath)
+	// Load provider
+	loader := providers.NewLoader("1.5.0")
+	provider, err := loader.LoadFromFile(platformPath)
 	if err != nil {
 		t.Fatalf("Failed to load platform: %v", err)
 	}
 
-	// Verify platform
-	if platform.Metadata.Name != "test-platform" {
-		t.Errorf("Expected name='test-platform', got '%s'", platform.Metadata.Name)
+	// Verify provider
+	if provider.Metadata.Name != "test-platform" {
+		t.Errorf("Expected name='test-platform', got '%s'", provider.Metadata.Name)
 	}
 
-	if len(platform.Provisioners) != 1 {
-		t.Errorf("Expected 1 provisioner, got %d", len(platform.Provisioners))
+	if len(provider.Provisioners) != 1 {
+		t.Errorf("Expected 1 provisioner, got %d", len(provider.Provisioners))
 	}
 
-	if platform.Provisioners[0].Type != "postgres" {
-		t.Errorf("Expected provisioner type='postgres', got '%s'", platform.Provisioners[0].Type)
+	if provider.Provisioners[0].Type != "postgres" {
+		t.Errorf("Expected provisioner type='postgres', got '%s'", provider.Provisioners[0].Type)
 	}
 }
 
@@ -79,21 +79,21 @@ provisioners:
 	}
 
 	// Test with core version 1.5.0 (too old)
-	loader := platform.NewLoader("1.5.0")
+	loader := providers.NewLoader("1.5.0")
 	_, err := loader.LoadFromFile(platformPath)
 	if err == nil {
 		t.Error("Expected error for incompatible core version, got nil")
 	}
 
 	// Test with core version 2.5.0 (compatible)
-	loader = platform.NewLoader("2.5.0")
+	loader = providers.NewLoader("2.5.0")
 	_, err = loader.LoadFromFile(platformPath)
 	if err != nil {
 		t.Errorf("Expected successful load for compatible version, got error: %v", err)
 	}
 
 	// Test with core version 4.0.0 (too new)
-	loader = platform.NewLoader("4.0.0")
+	loader = providers.NewLoader("4.0.0")
 	_, err = loader.LoadFromFile(platformPath)
 	if err == nil {
 		t.Error("Expected error for incompatible core version (too new), got nil")
@@ -149,20 +149,20 @@ provisioners:
 		t.Fatalf("Failed to write platform2.yaml: %v", err)
 	}
 
-	// Load all platforms
-	loader := platform.NewLoader("1.5.0")
-	platforms, err := loader.LoadFromDirectory(tmpDir)
+	// Load all providers
+	loader := providers.NewLoader("1.5.0")
+	loadedProviders, err := loader.LoadFromDirectory(tmpDir)
 	if err != nil {
-		t.Fatalf("Failed to load platforms from directory: %v", err)
+		t.Fatalf("Failed to load providers from directory: %v", err)
 	}
 
-	if len(platforms) != 2 {
-		t.Errorf("Expected 2 platforms, got %d", len(platforms))
+	if len(loadedProviders) != 2 {
+		t.Errorf("Expected 2 providers, got %d", len(loadedProviders))
 	}
 
-	// Verify platform names
+	// Verify provider names
 	names := make(map[string]bool)
-	for _, p := range platforms {
+	for _, p := range loadedProviders {
 		names[p.Metadata.Name] = true
 	}
 
@@ -174,17 +174,17 @@ provisioners:
 	}
 }
 
-func TestRegistryRegisterPlatform(t *testing.T) {
-	registry := platform.NewRegistry()
+func TestRegistryRegisterProvider(t *testing.T) {
+	registry := providers.NewRegistry()
 
-	platform := &sdk.Platform{
+	provider := &sdk.Provider{
 		APIVersion: "innominatus.io/v1",
-		Kind:       "Platform",
-		Metadata: sdk.PlatformMetadata{
-			Name:    "test-platform",
+		Kind:       "Provider",
+		Metadata: sdk.ProviderMetadata{
+			Name:    "test-provider",
 			Version: "1.0.0",
 		},
-		Compatibility: sdk.PlatformCompatibility{
+		Compatibility: sdk.ProviderCompatibility{
 			MinCoreVersion: "1.0.0",
 			MaxCoreVersion: "2.0.0",
 		},
@@ -193,38 +193,38 @@ func TestRegistryRegisterPlatform(t *testing.T) {
 		},
 	}
 
-	// Register platform
-	if err := registry.RegisterPlatform(platform); err != nil {
-		t.Fatalf("Failed to register platform: %v", err)
+	// Register provider
+	if err := registry.RegisterProvider(provider); err != nil {
+		t.Fatalf("Failed to register provider: %v", err)
 	}
 
 	// Verify registration
-	retrieved, err := registry.GetPlatform("test-platform")
+	retrieved, err := registry.GetProvider("test-provider")
 	if err != nil {
-		t.Fatalf("Failed to get platform: %v", err)
+		t.Fatalf("Failed to get provider: %v", err)
 	}
 
-	if retrieved.Metadata.Name != "test-platform" {
-		t.Errorf("Expected name='test-platform', got '%s'", retrieved.Metadata.Name)
+	if retrieved.Metadata.Name != "test-provider" {
+		t.Errorf("Expected name='test-provider', got '%s'", retrieved.Metadata.Name)
 	}
 
 	// Try to register duplicate
-	err = registry.RegisterPlatform(platform)
+	err = registry.RegisterProvider(provider)
 	if err == nil {
-		t.Error("Expected error when registering duplicate platform, got nil")
+		t.Error("Expected error when registering duplicate provider, got nil")
 	}
 }
 
-func TestRegistryListPlatforms(t *testing.T) {
-	registry := platform.NewRegistry()
+func TestRegistryListProviders(t *testing.T) {
+	registry := providers.NewRegistry()
 
-	// Register multiple platforms
-	platforms := []*sdk.Platform{
+	// Register multiple providers
+	testProviders := []*sdk.Provider{
 		{
 			APIVersion: "innominatus.io/v1",
-			Kind:       "Platform",
-			Metadata:   sdk.PlatformMetadata{Name: "platform1", Version: "1.0.0"},
-			Compatibility: sdk.PlatformCompatibility{
+			Kind:       "Provider",
+			Metadata:   sdk.ProviderMetadata{Name: "provider1", Version: "1.0.0"},
+			Compatibility: sdk.ProviderCompatibility{
 				MinCoreVersion: "1.0.0",
 				MaxCoreVersion: "2.0.0",
 			},
@@ -232,9 +232,9 @@ func TestRegistryListPlatforms(t *testing.T) {
 		},
 		{
 			APIVersion: "innominatus.io/v1",
-			Kind:       "Platform",
-			Metadata:   sdk.PlatformMetadata{Name: "platform2", Version: "1.0.0"},
-			Compatibility: sdk.PlatformCompatibility{
+			Kind:       "Provider",
+			Metadata:   sdk.ProviderMetadata{Name: "provider2", Version: "1.0.0"},
+			Compatibility: sdk.ProviderCompatibility{
 				MinCoreVersion: "1.0.0",
 				MaxCoreVersion: "2.0.0",
 			},
@@ -242,22 +242,22 @@ func TestRegistryListPlatforms(t *testing.T) {
 		},
 	}
 
-	for _, p := range platforms {
-		if err := registry.RegisterPlatform(p); err != nil {
-			t.Fatalf("Failed to register platform: %v", err)
+	for _, p := range testProviders {
+		if err := registry.RegisterProvider(p); err != nil {
+			t.Fatalf("Failed to register provider: %v", err)
 		}
 	}
 
-	// List platforms
-	listed := registry.ListPlatforms()
+	// List providers
+	listed := registry.ListProviders()
 	if len(listed) != 2 {
-		t.Errorf("Expected 2 platforms, got %d", len(listed))
+		t.Errorf("Expected 2 providers, got %d", len(listed))
 	}
 
 	// Verify count
-	platformCount, provCount := registry.Count()
-	if platformCount != 2 {
-		t.Errorf("Expected platform count=2, got %d", platformCount)
+	providerCount, provCount := registry.Count()
+	if providerCount != 2 {
+		t.Errorf("Expected provider count=2, got %d", providerCount)
 	}
 	if provCount != 0 {
 		t.Errorf("Expected provisioner count=0, got %d", provCount)
@@ -265,7 +265,7 @@ func TestRegistryListPlatforms(t *testing.T) {
 }
 
 func TestRegistryGetProvisionerTypes(t *testing.T) {
-	registry := platform.NewRegistry()
+	registry := providers.NewRegistry()
 
 	// Initially empty
 	types := registry.GetProvisionerTypes()
