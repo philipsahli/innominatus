@@ -31,6 +31,34 @@ type AdminConfig struct {
 		Username string `yaml:"username"`
 		Password string `yaml:"password"`
 	} `yaml:"argocd"`
+	Vault struct {
+		URL       string `yaml:"url"`
+		Token     string `yaml:"token"`
+		Namespace string `yaml:"namespace"`
+	} `yaml:"vault"`
+	Keycloak struct {
+		URL          string `yaml:"url"`
+		AdminUser    string `yaml:"adminUser"`
+		AdminPassword string `yaml:"adminPassword"`
+		Realm        string `yaml:"realm"`
+	} `yaml:"keycloak"`
+	Minio struct {
+		URL             string `yaml:"url"`
+		ConsoleURL      string `yaml:"consoleURL"`
+		AccessKey       string `yaml:"accessKey"`
+		SecretKey       string `yaml:"secretKey"`
+	} `yaml:"minio"`
+	Prometheus struct {
+		URL string `yaml:"url"`
+	} `yaml:"prometheus"`
+	Grafana struct {
+		URL      string `yaml:"url"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	} `yaml:"grafana"`
+	KubernetesDashboard struct {
+		URL string `yaml:"url"`
+	} `yaml:"kubernetesDashboard"`
 	WorkflowPolicies struct {
 		WorkflowsRoot             string   `yaml:"workflowsRoot"`
 		RequiredPlatformWorkflows []string `yaml:"requiredPlatformWorkflows"`
@@ -145,6 +173,34 @@ type MaskedAdminConfig struct {
 		Username string `json:"username"`
 		Password string `json:"password"` // Will be "****"
 	} `json:"argocd"`
+	Vault struct {
+		URL       string `json:"url"`
+		Token     string `json:"token"` // Will be "****"
+		Namespace string `json:"namespace"`
+	} `json:"vault"`
+	Keycloak struct {
+		URL          string `json:"url"`
+		AdminUser    string `json:"adminUser"`
+		AdminPassword string `json:"adminPassword"` // Will be "****"
+		Realm        string `json:"realm"`
+	} `json:"keycloak"`
+	Minio struct {
+		URL             string `json:"url"`
+		ConsoleURL      string `json:"consoleURL"`
+		AccessKey       string `json:"accessKey"`
+		SecretKey       string `json:"secretKey"` // Will be "****"
+	} `json:"minio"`
+	Prometheus struct {
+		URL string `json:"url"`
+	} `json:"prometheus"`
+	Grafana struct {
+		URL      string `json:"url"`
+		Username string `json:"username"`
+		Password string `json:"password"` // Will be "****"
+	} `json:"grafana"`
+	KubernetesDashboard struct {
+		URL string `json:"url"`
+	} `json:"kubernetesDashboard"`
 	WorkflowPolicies struct {
 		WorkflowsRoot             string   `json:"workflowsRoot"`
 		RequiredPlatformWorkflows []string `json:"requiredPlatformWorkflows"`
@@ -191,6 +247,34 @@ func (c *AdminConfig) ToMaskedJSON() *MaskedAdminConfig {
 	masked.ArgoCD.URL = c.ArgoCD.URL
 	masked.ArgoCD.Username = c.ArgoCD.Username
 	masked.ArgoCD.Password = "****"
+
+	// Copy Vault config with masked token
+	masked.Vault.URL = c.Vault.URL
+	masked.Vault.Token = "****"
+	masked.Vault.Namespace = c.Vault.Namespace
+
+	// Copy Keycloak config with masked password
+	masked.Keycloak.URL = c.Keycloak.URL
+	masked.Keycloak.AdminUser = c.Keycloak.AdminUser
+	masked.Keycloak.AdminPassword = "****"
+	masked.Keycloak.Realm = c.Keycloak.Realm
+
+	// Copy Minio config with masked secret key
+	masked.Minio.URL = c.Minio.URL
+	masked.Minio.ConsoleURL = c.Minio.ConsoleURL
+	masked.Minio.AccessKey = c.Minio.AccessKey
+	masked.Minio.SecretKey = "****"
+
+	// Copy Prometheus config
+	masked.Prometheus.URL = c.Prometheus.URL
+
+	// Copy Grafana config with masked password
+	masked.Grafana.URL = c.Grafana.URL
+	masked.Grafana.Username = c.Grafana.Username
+	masked.Grafana.Password = "****"
+
+	// Copy Kubernetes Dashboard config
+	masked.KubernetesDashboard.URL = c.KubernetesDashboard.URL
 
 	// Copy workflow policies
 	masked.WorkflowPolicies.WorkflowsRoot = c.WorkflowPolicies.WorkflowsRoot

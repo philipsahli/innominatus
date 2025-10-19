@@ -200,6 +200,34 @@ export interface AdminConfig {
     username: string;
     password: string; // Will be "****" from backend
   };
+  vault: {
+    url: string;
+    token: string; // Will be "****" from backend
+    namespace: string;
+  };
+  keycloak: {
+    url: string;
+    adminUser: string;
+    adminPassword: string; // Will be "****" from backend
+    realm: string;
+  };
+  minio: {
+    url: string;
+    consoleURL: string;
+    accessKey: string;
+    secretKey: string; // Will be "****" from backend
+  };
+  prometheus: {
+    url: string;
+  };
+  grafana: {
+    url: string;
+    username: string;
+    password: string; // Will be "****" from backend
+  };
+  kubernetesDashboard: {
+    url: string;
+  };
   workflowPolicies: {
     workflowsRoot: string;
     requiredPlatformWorkflows: string[];
