@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+// NOTE: This file contains numerous fmt.Println/Printf statements that are INTENTIONAL
+// user-facing CLI output. These are NOT debug logging and should NOT be converted to
+// structured logging. They provide the interactive UX for the CLI commands and are
+// designed for human-readable terminal output.
+
 func main() {
 	var serverURL = flag.String("server", "http://localhost:8081", "Score orchestrator server URL")
 	var details = flag.Bool("details", false, "Show detailed information including URLs and workflow links")

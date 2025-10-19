@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/ai"
 	"innominatus/internal/database"
@@ -61,10 +60,9 @@ func main() {
 	// Initialize OpenTelemetry tracing
 	tp, err := tracing.InitTracer(version, commit)
 	if err != nil {
-		logger.WarnWithFields("Failed to initialize tracer", map[string]interface{}{
+		logger.WarnWithFields("Failed to initialize tracer, continuing without distributed tracing", map[string]interface{}{
 			"error": err.Error(),
 		})
-		fmt.Println("Continuing without distributed tracing...")
 	} else if tp.IsEnabled() {
 		logger.Info("OpenTelemetry tracing initialized")
 		defer func() {
@@ -81,12 +79,13 @@ func main() {
 	// Load admin configuration
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		fmt.Printf("Warning: Failed to load admin config: %v\n", err)
-		fmt.Println("Continuing without admin configuration...")
+		logger.WarnWithFields("Failed to load admin config, continuing without admin configuration", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
-		fmt.Println("Admin configuration loaded:")
-		adminConfig.PrintConfig()
-		fmt.Println()
+		logger.InfoWithFields("Admin configuration loaded", map[string]interface{}{
+			"config": adminConfig.String(),
+		})
 	}
 
 	var srv *server.Server
@@ -95,24 +94,23 @@ func main() {
 		// Try to initialize database
 		db, err := database.NewDatabase()
 		if err != nil {
-			logger.WarnWithFields("Failed to connect to database", map[string]interface{}{
+			logger.WarnWithFields("Failed to connect to database, starting without database features", map[string]interface{}{
 				"error": err.Error(),
 			})
-			fmt.Println("Starting server without database features...")
 			srv = server.NewServer()
 		} else {
 			// Initialize schema
 			err = db.InitSchema()
 			if err != nil {
-				logger.WarnWithFields("Failed to initialize database schema", map[string]interface{}{
+				logger.WarnWithFields("Failed to initialize database schema, starting without database features", map[string]interface{}{
 					"error": err.Error(),
 				})
-				fmt.Println("Starting server without database features...")
 				_ = db.Close()
 				srv = server.NewServer()
 			} else {
 				logger.Info("Database connected successfully")
-				srv = server.NewServerWithDB(db)
+				// Pass admin config to enable multi-tier workflows
+				srv = server.NewServerWithDBAndAdminConfig(db, adminConfig)
 			}
 		}
 	} else {
@@ -308,40 +306,19 @@ func main() {
 		"tracing_enabled":  tp.IsEnabled(),
 	})
 
-	fmt.Printf("Starting Score Orchestrator server on http://localhost%s\n", addr)
-	fmt.Println("API endpoints:")
-	fmt.Println("  POST /api/specs          - Deploy Score spec with embedded workflows (simple deployments)")
-	fmt.Println("  POST /api/workflows/golden-paths/deploy-app/execute - Deploy via golden path (recommended)")
-	fmt.Println("  GET  /api/specs          - List all deployed specs")
-	fmt.Println("  GET  /api/specs/{name}   - Get specific spec details")
-	fmt.Println("  DELETE /api/specs/{name} - Delete deployed spec")
-	fmt.Println("  GET  /api/environments   - List active environments")
-	fmt.Println("  GET  /api/workflows      - List workflow executions")
-	fmt.Println("  GET  /api/workflows/{id} - Get workflow execution details")
-	fmt.Println("  GET  /api/stats          - Get dashboard statistics")
-	fmt.Println("  GET  /api/teams          - List teams")
-	fmt.Println("  POST /api/teams          - Create new team")
-	fmt.Println("  GET  /api/teams/{id}     - Get team details")
-	fmt.Println("  DELETE /api/applications/{name} - Delete application and all resources")
-	fmt.Println("  POST /api/applications/{name}/deprovision - Deprovision infrastructure")
-	fmt.Println("  DELETE /api/teams/{id}   - Delete team")
-	fmt.Println("")
-	fmt.Println("Web interface:")
-	fmt.Printf("  Dashboard: http://localhost%s/\n", addr)
-	fmt.Printf("  API Docs:  http://localhost%s/swagger\n", addr)
-	fmt.Println("")
-	fmt.Println("Health & Monitoring:")
-	fmt.Printf("  Health:    http://localhost%s/health\n", addr)
-	fmt.Printf("  Readiness: http://localhost%s/ready\n", addr)
-	fmt.Printf("  Metrics:   http://localhost%s/metrics\n", addr)
-	fmt.Println("")
-	fmt.Println("Database configuration (set via environment variables):")
-	fmt.Println("  DB_HOST (default: localhost)")
-	fmt.Println("  DB_PORT (default: 5432)")
-	fmt.Println("  DB_USER (default: postgres)")
-	fmt.Println("  DB_PASSWORD")
-	fmt.Println("  DB_NAME (default: idp_orchestrator)")
-	fmt.Println("  DB_SSLMODE (default: disable)")
+	logger.InfoWithFields("Server startup information", map[string]interface{}{
+		"address":   "http://localhost" + addr,
+		"dashboard": "http://localhost" + addr + "/",
+		"api_docs":  "http://localhost" + addr + "/swagger",
+		"health":    "http://localhost" + addr + "/health",
+		"readiness": "http://localhost" + addr + "/ready",
+		"metrics":   "http://localhost" + addr + "/metrics",
+		"key_endpoints": []string{
+			"POST /api/specs - Deploy Score spec",
+			"POST /api/workflows/golden-paths/deploy-app/execute - Deploy via golden path",
+			"GET  /api/workflows - List workflow executions",
+		},
+	})
 
 	// Create HTTP server with proper timeouts to prevent resource exhaustion
 	httpServer := &http.Server{

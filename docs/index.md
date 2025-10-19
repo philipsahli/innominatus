@@ -10,7 +10,7 @@
 
 <table>
 <tr>
-<td width="50%" valign="top">
+<td width="33%" valign="top">
 
 ### 🧑‍💻 I'm a Developer
 
@@ -32,7 +32,31 @@ Your Platform Team has set up innominatus for you!
 - [Node.js + PostgreSQL](user-guide/recipes/nodejs-postgres.md) - Production API
 
 </td>
-<td width="50%" valign="top">
+<td width="33%" valign="top">
+
+### 🛠️ I'm a Product Team
+
+**I build internal services (payments, analytics, ML) consumed by developers**
+
+You want your infrastructure to automatically provision when apps deploy.
+
+**What you need:**
+- ✅ Access to innominatus codebase
+- ✅ Product workflows (YAML files)
+- ✅ Platform team approval
+
+**Get started:**
+→ **[Product Team Guide](product-team-guide/README.md)** - Automate your product integration
+
+**Quick Links:**
+- [Product Workflows](product-team-guide/product-workflows.md) - Create deployment automation
+- [Activation Guide](product-team-guide/activation-guide.md) - For platform teams
+- [Gap Analysis](PRODUCT_WORKFLOW_GAPS.md) - Technical details
+
+**Status:** ✅ Feature Active (US-005)
+
+</td>
+<td width="33%" valign="top">
 
 ### ⚙️ I'm a Platform Engineer
 
@@ -116,6 +140,16 @@ Trigger workflows from Git repositories and integrate with ArgoCD.
 | [CLI Reference](user-guide/cli-reference.md) | Complete command documentation |
 | [Troubleshooting](user-guide/troubleshooting.md) | Fix common issues |
 
+### For Product Teams
+
+| Guide | Description |
+|-------|-------------|
+| [Product Team Guide](product-team-guide/README.md) | Overview and getting started |
+| [Product Workflows](product-team-guide/product-workflows.md) | Create and manage workflows |
+| [Activation Guide](product-team-guide/activation-guide.md) | For platform teams to enable feature |
+| [Gap Analysis](PRODUCT_WORKFLOW_GAPS.md) | Technical implementation status |
+| [US-005 Summary](US-005_IMPLEMENTATION_SUMMARY.md) | Multi-tier executor implementation |
+
 ### For Platform Teams
 
 | Guide | Description |
@@ -125,6 +159,7 @@ Trigger workflows from Git repositories and integrate with ArgoCD.
 | [Configuration](platform-team-guide/configuration.md) | OIDC, RBAC, secrets management |
 | [Monitoring](platform-team-guide/monitoring.md) | Prometheus, Grafana, health checks |
 | [Operations](platform-team-guide/operations.md) | Scaling, backup, troubleshooting |
+| [Product Workflow Activation](product-team-guide/activation-guide.md) | Enable multi-tier workflows |
 
 ### For Workflow Developers
 

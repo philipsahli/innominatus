@@ -189,9 +189,7 @@ function IntegrationsPageContent() {
       icon: Activity,
       configured: !!config.prometheus.url,
       url: config.prometheus.url,
-      details: config.prometheus.url
-        ? [{ label: 'URL', value: config.prometheus.url }]
-        : undefined,
+      details: config.prometheus.url ? [{ label: 'URL', value: config.prometheus.url }] : undefined,
     },
     {
       name: 'Grafana',
@@ -350,7 +348,8 @@ function IntegrationsPageContent() {
                     {!integration.configured && (
                       <CardContent>
                         <p className="text-sm text-muted-foreground">
-                          Configure this integration in <code className="text-xs">admin-config.yaml</code>
+                          Configure this integration in{' '}
+                          <code className="text-xs">admin-config.yaml</code>
                         </p>
                       </CardContent>
                     )}

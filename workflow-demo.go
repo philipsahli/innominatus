@@ -7,6 +7,8 @@ import (
 )
 
 // Demonstration of the new three-tier workflow architecture
+// Note: This is a demo/example file, not production code.
+// The fmt.Println statements are intentional for user-facing demo output.
 func main() {
 	fmt.Println("🏗️  Three-Tier Workflow Architecture Demo")
 	fmt.Println("========================================")

@@ -8,6 +8,11 @@ import (
 	"unicode"
 )
 
+// NOTE: This file contains numerous fmt.Println/Printf statements that are INTENTIONAL
+// user-facing output for displaying demo environment credentials and status. These are
+// NOT debug logging and should NOT be converted to structured logging. They provide
+// formatted terminal output for the demo cheat sheet display.
+
 // CheatSheet handles the display of demo environment status and credentials
 type CheatSheet struct {
 	environment *DemoEnvironment

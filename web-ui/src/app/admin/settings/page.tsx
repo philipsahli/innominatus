@@ -176,7 +176,9 @@ function SettingsPageContent() {
             <div className="text-sm font-medium text-muted-foreground">Password</div>
             <div className="flex items-center gap-2">
               <Lock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-mono text-muted-foreground">{config.gitea.password}</span>
+              <span className="text-sm font-mono text-muted-foreground">
+                {config.gitea.password}
+              </span>
             </div>
 
             <div className="text-sm font-medium text-muted-foreground">Organization</div>
@@ -212,7 +214,9 @@ function SettingsPageContent() {
             <div className="text-sm font-medium text-muted-foreground">Password</div>
             <div className="flex items-center gap-2">
               <Lock className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-mono text-muted-foreground">{config.argocd.password}</span>
+              <span className="text-sm font-mono text-muted-foreground">
+                {config.argocd.password}
+              </span>
             </div>
           </div>
         </CardContent>
@@ -233,7 +237,9 @@ function SettingsPageContent() {
             <div className="text-sm font-mono">{config.workflowPolicies.maxWorkflowDuration}</div>
 
             <div className="text-sm font-medium text-muted-foreground">Max Concurrent</div>
-            <div className="text-sm font-mono">{config.workflowPolicies.maxConcurrentWorkflows}</div>
+            <div className="text-sm font-mono">
+              {config.workflowPolicies.maxConcurrentWorkflows}
+            </div>
 
             <div className="text-sm font-medium text-muted-foreground">Max Steps</div>
             <div className="text-sm font-mono">{config.workflowPolicies.maxStepsPerWorkflow}</div>

@@ -37,16 +37,16 @@ type AdminConfig struct {
 		Namespace string `yaml:"namespace"`
 	} `yaml:"vault"`
 	Keycloak struct {
-		URL          string `yaml:"url"`
-		AdminUser    string `yaml:"adminUser"`
+		URL           string `yaml:"url"`
+		AdminUser     string `yaml:"adminUser"`
 		AdminPassword string `yaml:"adminPassword"`
-		Realm        string `yaml:"realm"`
+		Realm         string `yaml:"realm"`
 	} `yaml:"keycloak"`
 	Minio struct {
-		URL             string `yaml:"url"`
-		ConsoleURL      string `yaml:"consoleURL"`
-		AccessKey       string `yaml:"accessKey"`
-		SecretKey       string `yaml:"secretKey"`
+		URL        string `yaml:"url"`
+		ConsoleURL string `yaml:"consoleURL"`
+		AccessKey  string `yaml:"accessKey"`
+		SecretKey  string `yaml:"secretKey"`
 	} `yaml:"minio"`
 	Prometheus struct {
 		URL string `yaml:"url"`
@@ -108,40 +108,50 @@ func LoadAdminConfig(configPath string) (*AdminConfig, error) {
 	return &config, nil
 }
 
-func (c *AdminConfig) PrintConfig() {
-	fmt.Println("Admin Configuration:")
-	fmt.Printf("  Default Cost Center: %s\n", c.Admin.DefaultCostCenter)
-	fmt.Printf("  Default Runtime: %s\n", c.Admin.DefaultRuntime)
-	fmt.Printf("  Splunk Index: %s\n", c.Admin.SplunkIndex)
+// String returns a formatted string representation of the admin configuration
+func (c *AdminConfig) String() string {
+	var result string
+	result += "Admin Configuration:\n"
+	result += fmt.Sprintf("  Default Cost Center: %s\n", c.Admin.DefaultCostCenter)
+	result += fmt.Sprintf("  Default Runtime: %s\n", c.Admin.DefaultRuntime)
+	result += fmt.Sprintf("  Splunk Index: %s\n", c.Admin.SplunkIndex)
 
-	fmt.Println("Resource Definitions:")
+	result += "Resource Definitions:\n"
 	for name, definition := range c.ResourceDefinitions {
-		fmt.Printf("  %s: %s\n", name, definition)
+		result += fmt.Sprintf("  %s: %s\n", name, definition)
 	}
 
-	fmt.Println("Policies:")
-	fmt.Printf("  Enforce Backups: %t\n", c.Policies.EnforceBackups)
-	fmt.Printf("  Allowed Environments: %v\n", c.Policies.AllowedEnvironments)
+	result += "Policies:\n"
+	result += fmt.Sprintf("  Enforce Backups: %t\n", c.Policies.EnforceBackups)
+	result += fmt.Sprintf("  Allowed Environments: %v\n", c.Policies.AllowedEnvironments)
 
-	fmt.Println("Gitea Configuration:")
-	fmt.Printf("  URL: %s\n", c.Gitea.URL)
-	fmt.Printf("  Username: %s\n", c.Gitea.Username)
-	fmt.Printf("  Password: %s\n", "***")
-	fmt.Printf("  Organization: %s\n", c.Gitea.OrgName)
+	result += "Gitea Configuration:\n"
+	result += fmt.Sprintf("  URL: %s\n", c.Gitea.URL)
+	result += fmt.Sprintf("  Username: %s\n", c.Gitea.Username)
+	result += fmt.Sprintf("  Password: %s\n", "***")
+	result += fmt.Sprintf("  Organization: %s\n", c.Gitea.OrgName)
 
-	fmt.Println("ArgoCD Configuration:")
-	fmt.Printf("  URL: %s\n", c.ArgoCD.URL)
-	fmt.Printf("  Username: %s\n", c.ArgoCD.Username)
-	fmt.Printf("  Password: %s\n", "***")
+	result += "ArgoCD Configuration:\n"
+	result += fmt.Sprintf("  URL: %s\n", c.ArgoCD.URL)
+	result += fmt.Sprintf("  Username: %s\n", c.ArgoCD.Username)
+	result += fmt.Sprintf("  Password: %s\n", "***")
 
-	fmt.Println("Workflow Policies:")
-	fmt.Printf("  Workflows Root: %s\n", c.WorkflowPolicies.WorkflowsRoot)
-	fmt.Printf("  Required Platform Workflows: %v\n", c.WorkflowPolicies.RequiredPlatformWorkflows)
-	fmt.Printf("  Allowed Product Workflows: %v\n", c.WorkflowPolicies.AllowedProductWorkflows)
-	fmt.Printf("  Max Workflow Duration: %s\n", c.WorkflowPolicies.MaxWorkflowDuration)
-	fmt.Printf("  Max Concurrent Workflows: %d\n", c.WorkflowPolicies.MaxConcurrentWorkflows)
-	fmt.Printf("  Max Steps Per Workflow: %d\n", c.WorkflowPolicies.MaxStepsPerWorkflow)
-	fmt.Printf("  Allowed Step Types: %v\n", c.WorkflowPolicies.AllowedStepTypes)
+	result += "Workflow Policies:\n"
+	result += fmt.Sprintf("  Workflows Root: %s\n", c.WorkflowPolicies.WorkflowsRoot)
+	result += fmt.Sprintf("  Required Platform Workflows: %v\n", c.WorkflowPolicies.RequiredPlatformWorkflows)
+	result += fmt.Sprintf("  Allowed Product Workflows: %v\n", c.WorkflowPolicies.AllowedProductWorkflows)
+	result += fmt.Sprintf("  Max Workflow Duration: %s\n", c.WorkflowPolicies.MaxWorkflowDuration)
+	result += fmt.Sprintf("  Max Concurrent Workflows: %d\n", c.WorkflowPolicies.MaxConcurrentWorkflows)
+	result += fmt.Sprintf("  Max Steps Per Workflow: %d\n", c.WorkflowPolicies.MaxStepsPerWorkflow)
+	result += fmt.Sprintf("  Allowed Step Types: %v\n", c.WorkflowPolicies.AllowedStepTypes)
+
+	return result
+}
+
+// PrintConfig prints the configuration to stdout (deprecated: use String() method)
+// Kept for backward compatibility
+func (c *AdminConfig) PrintConfig() {
+	fmt.Print(c.String())
 }
 
 func (c *AdminConfig) GetResourceDefinition(resourceType string) (string, bool) {
@@ -179,16 +189,16 @@ type MaskedAdminConfig struct {
 		Namespace string `json:"namespace"`
 	} `json:"vault"`
 	Keycloak struct {
-		URL          string `json:"url"`
-		AdminUser    string `json:"adminUser"`
+		URL           string `json:"url"`
+		AdminUser     string `json:"adminUser"`
 		AdminPassword string `json:"adminPassword"` // Will be "****"
-		Realm        string `json:"realm"`
+		Realm         string `json:"realm"`
 	} `json:"keycloak"`
 	Minio struct {
-		URL             string `json:"url"`
-		ConsoleURL      string `json:"consoleURL"`
-		AccessKey       string `json:"accessKey"`
-		SecretKey       string `json:"secretKey"` // Will be "****"
+		URL        string `json:"url"`
+		ConsoleURL string `json:"consoleURL"`
+		AccessKey  string `json:"accessKey"`
+		SecretKey  string `json:"secretKey"` // Will be "****"
 	} `json:"minio"`
 	Prometheus struct {
 		URL string `json:"url"`

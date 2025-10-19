@@ -13,6 +13,9 @@ import (
 	"innominatus/internal/workflow"
 )
 
+// Note: This is a standalone integration test program, not a unit test.
+// The fmt.Println statements are intentional for user-facing test output.
+
 func main() {
 	// Connect to database
 	db, err := database.NewDatabase()

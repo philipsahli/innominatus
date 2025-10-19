@@ -38,7 +38,9 @@ export function AdminRouteProtection({ children }: AdminRouteProtectionProps) {
       <div className="p-6">
         <div className="rounded-md bg-destructive/15 p-4 text-destructive">
           <h3 className="font-semibold">Access Denied</h3>
-          <p className="text-sm mt-1">You do not have permission to access this page. Redirecting...</p>
+          <p className="text-sm mt-1">
+            You do not have permission to access this page. Redirecting...
+          </p>
         </div>
       </div>
     );

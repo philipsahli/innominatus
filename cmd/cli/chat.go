@@ -11,6 +11,11 @@ import (
 	"github.com/chzyer/readline"
 )
 
+// NOTE: This file contains numerous fmt.Println/Printf statements that are INTENTIONAL
+// user-facing CLI output for the interactive chat interface. These are NOT debug logging
+// and should NOT be converted to structured logging. They provide the interactive UX
+// for the chat command and are designed for human-readable terminal output.
+
 // ChatCommand implements interactive chat with the AI assistant
 func ChatCommand() error {
 	fmt.Println("================================================================================")

@@ -114,7 +114,8 @@ export function RetryWorkflowDialog({
         <DialogHeader>
           <DialogTitle>Retry Workflow</DialogTitle>
           <DialogDescription>
-            Retry the failed workflow <span className="font-semibold text-white">{workflowName}</span>
+            Retry the failed workflow{' '}
+            <span className="font-semibold text-white">{workflowName}</span>
           </DialogDescription>
         </DialogHeader>
 
@@ -122,9 +123,7 @@ export function RetryWorkflowDialog({
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-4 bg-green-900/20 border border-green-700 rounded-lg">
               <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
-              <div className="text-sm text-green-200">
-                Workflow retry initiated successfully!
-              </div>
+              <div className="text-sm text-green-200">Workflow retry initiated successfully!</div>
             </div>
           </div>
         ) : (
@@ -166,12 +165,13 @@ export function RetryWorkflowDialog({
             <div className="text-sm text-gray-400 bg-gray-800/50 p-3 rounded-lg">
               {mode === 'auto' ? (
                 <p>
-                  Retry the workflow from the first failed step using the original workflow specification.
+                  Retry the workflow from the first failed step using the original workflow
+                  specification.
                 </p>
               ) : (
                 <p>
-                  Upload an updated workflow specification file (JSON format) to retry with modified steps
-                  or configuration.
+                  Upload an updated workflow specification file (JSON format) to retry with modified
+                  steps or configuration.
                 </p>
               )}
             </div>
