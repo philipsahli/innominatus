@@ -3,7 +3,6 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -333,6 +332,8 @@ ALTER TABLE resource_dependencies ADD CONSTRAINT chk_dependency_type
 
 // RunMigrations executes SQL migration files from the migrations/ directory
 func (d *Database) RunMigrations() error {
+	logger := logging.NewStructuredLogger("database.migrations")
+
 	if d == nil || d.db == nil {
 		return fmt.Errorf("database connection is nil")
 	}
@@ -351,7 +352,10 @@ func (d *Database) RunMigrations() error {
 
 	// Execute each migration file
 	for _, file := range files {
-		log.Printf("Running migration: %s", filepath.Base(file))
+		logger.InfoWithFields("Running migration", map[string]interface{}{
+			"migration_file": filepath.Base(file),
+			"full_path":      file,
+		})
 
 		// Execute migration using psql directly for proper multi-statement support
 		// This avoids issues with comment parsing and complex SQL statements
@@ -372,18 +376,27 @@ func (d *Database) RunMigrations() error {
 		// Execute using shell
 		output, err := exec.Command("sh", "-c", cmd).CombinedOutput() // #nosec G204 - Database migration with controlled SQL files
 		if err != nil {
-			log.Printf("Migration output: %s", string(output))
-			log.Printf("Full error: %v", err)
+			logger.ErrorWithFields("Migration execution failed", map[string]interface{}{
+				"migration_file": filepath.Base(file),
+				"output":         string(output),
+				"error":          err.Error(),
+			})
 			return fmt.Errorf("failed to execute migration %s: %w", file, err)
 		}
 
-		log.Printf("Successfully executed migration: %s", filepath.Base(file))
+		logger.InfoWithFields("Successfully executed migration", map[string]interface{}{
+			"migration_file": filepath.Base(file),
+		})
 	}
 
 	if len(files) == 0 {
-		log.Printf("No migration files found in %s", migrationsDir)
+		logger.InfoWithFields("No migration files found", map[string]interface{}{
+			"migrations_dir": migrationsDir,
+		})
 	} else {
-		log.Printf("Successfully executed %d migration(s)", len(files))
+		logger.InfoWithFields("Completed migrations", map[string]interface{}{
+			"total_migrations": len(files),
+		})
 	}
 
 	return nil
@@ -578,6 +591,8 @@ func (d *Database) TruncateAllTables() (int, error) {
 	}
 	defer tx.Rollback()
 
+	logger := logging.NewStructuredLogger("database.truncate")
+
 	// Disable foreign key checks temporarily and truncate all tables
 	// Using RESTART IDENTITY to reset serial counters and CASCADE for dependencies
 	for _, table := range tables {
@@ -585,7 +600,9 @@ func (d *Database) TruncateAllTables() (int, error) {
 		if _, err := tx.Exec(truncateSQL); err != nil {
 			return 0, fmt.Errorf("failed to truncate table %s: %w", table, err)
 		}
-		log.Printf("Truncated table: %s", table)
+		logger.DebugWithFields("Truncated table", map[string]interface{}{
+			"table": table,
+		})
 	}
 
 	// Commit transaction
