@@ -32,7 +32,6 @@ cookies.txt
 
 # Database files
 data/
-database/
 *.db
 *.sqlite
 *.sqlite3

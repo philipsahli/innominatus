@@ -15,8 +15,8 @@ test.describe('Resources', () => {
     await page.waitForLoadState('networkidle');
 
     // Check for resources or empty state
-    const hasResources = await page.getByText(/postgres|redis|route|resource/i).count() > 0;
-    const hasEmptyState = await page.getByText(/no resources/i).count() > 0;
+    const hasResources = (await page.getByText(/postgres|redis|route|resource/i).count()) > 0;
+    const hasEmptyState = (await page.getByText(/no resources/i).count()) > 0;
 
     expect(hasResources || hasEmptyState).toBeTruthy();
   });
@@ -26,8 +26,8 @@ test.describe('Resources', () => {
     const filterButton = page.getByRole('button', { name: /filter|type/i });
     const filterSelect = page.getByLabel(/type|filter/i);
 
-    const hasFilterButton = await filterButton.count() > 0;
-    const hasFilterSelect = await filterSelect.count() > 0;
+    const hasFilterButton = (await filterButton.count()) > 0;
+    const hasFilterSelect = (await filterSelect.count()) > 0;
 
     if (hasFilterButton || hasFilterSelect) {
       expect(hasFilterButton || hasFilterSelect).toBeTruthy();
@@ -41,14 +41,14 @@ test.describe('Resources', () => {
     // Find first resource link
     const firstResource = page.getByRole('link', { name: /view|details/i }).first();
 
-    if (await firstResource.count() > 0) {
+    if ((await firstResource.count()) > 0) {
       await firstResource.click();
 
       // Wait for details page
       await page.waitForLoadState('networkidle');
 
       // Verify resource information is displayed
-      const hasDetails = await page.getByText(/status|config|parameter|connection/i).count() > 0;
+      const hasDetails = (await page.getByText(/status|config|parameter|connection/i).count()) > 0;
       expect(hasDetails).toBeTruthy();
     } else {
       test.skip();
@@ -59,7 +59,7 @@ test.describe('Resources', () => {
     // Look for health indicators
     const healthStatus = page.getByText(/healthy|unhealthy|unknown|pending|active/i);
 
-    if (await healthStatus.count() > 0) {
+    if ((await healthStatus.count()) > 0) {
       await expect(healthStatus.first()).toBeVisible();
     } else {
       test.skip();
@@ -74,15 +74,15 @@ test.describe('Resource Graphs', () => {
     // Find an application with resources
     const appLink = page.getByRole('link').first();
 
-    if (await appLink.count() > 0) {
+    if ((await appLink.count()) > 0) {
       await appLink.click();
 
       // Look for graph or visualization
       const graphView = page.getByRole('img', { name: /graph|diagram/i });
       const graphCanvas = page.locator('canvas, svg').first();
 
-      const hasGraph = await graphView.count() > 0;
-      const hasCanvas = await graphCanvas.count() > 0;
+      const hasGraph = (await graphView.count()) > 0;
+      const hasCanvas = (await graphCanvas.count()) > 0;
 
       if (hasGraph || hasCanvas) {
         expect(hasGraph || hasCanvas).toBeTruthy();
@@ -100,7 +100,7 @@ test.describe('Resource Graphs', () => {
     // Find export button
     const exportButton = page.getByRole('button', { name: /export|download|save/i });
 
-    if (await exportButton.count() > 0) {
+    if ((await exportButton.count()) > 0) {
       // Just verify the button exists (actual download would be harder to test)
       await expect(exportButton.first()).toBeVisible();
     } else {
@@ -117,8 +117,8 @@ test.describe('Providers', () => {
     await page.waitForLoadState('networkidle');
 
     // Check for providers or empty state
-    const hasProviders = await page.getByText(/kubernetes|cloud|provider/i).count() > 0;
-    const hasEmptyState = await page.getByText(/no providers/i).count() > 0;
+    const hasProviders = (await page.getByText(/kubernetes|cloud|provider/i).count()) > 0;
+    const hasEmptyState = (await page.getByText(/no providers/i).count()) > 0;
 
     expect(hasProviders || hasEmptyState).toBeTruthy();
   });
@@ -129,7 +129,7 @@ test.describe('Providers', () => {
     // Look for statistics
     const stats = page.getByText(/total|active|healthy|resource/i);
 
-    if (await stats.count() > 0) {
+    if ((await stats.count()) > 0) {
       await expect(stats.first()).toBeVisible();
     }
   });
@@ -140,7 +140,7 @@ test.describe('Providers', () => {
     // Look for add button (if this feature exists)
     const addButton = page.getByRole('button', { name: /add|new provider/i });
 
-    if (await addButton.count() > 0) {
+    if ((await addButton.count()) > 0) {
       await expect(addButton).toBeVisible();
     } else {
       test.skip();

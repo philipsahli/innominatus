@@ -15,7 +15,7 @@ test.describe('Application Deployment', () => {
     // Look for deploy button or link
     const deployButton = page.getByRole('link', { name: /deploy|new application/i });
 
-    if (await deployButton.count() > 0) {
+    if ((await deployButton.count()) > 0) {
       await deployButton.first().click();
 
       // Verify navigation
@@ -29,8 +29,8 @@ test.describe('Application Deployment', () => {
     await page.goto('/deploy');
 
     // Check for either direct deployment form or golden paths selection
-    const hasUploadForm = await page.getByText(/upload|score spec/i).count() > 0;
-    const hasGoldenPaths = await page.getByText(/golden path/i).count() > 0;
+    const hasUploadForm = (await page.getByText(/upload|score spec/i).count()) > 0;
+    const hasGoldenPaths = (await page.getByText(/golden path/i).count()) > 0;
 
     expect(hasUploadForm || hasGoldenPaths).toBeTruthy();
   });
@@ -41,7 +41,7 @@ test.describe('Application Deployment', () => {
     // Look for file input
     const fileInput = page.locator('input[type="file"]');
 
-    if (await fileInput.count() > 0) {
+    if ((await fileInput.count()) > 0) {
       // Test with invalid file (if validation exists)
       // This would require creating test fixtures
 
@@ -59,8 +59,8 @@ test.describe('Golden Paths', () => {
     await page.waitForLoadState('networkidle');
 
     // Check for golden paths list or empty state
-    const hasGoldenPaths = await page.getByText(/deploy|ephemeral|path/i).count() > 0;
-    const hasEmptyState = await page.getByText(/no golden paths/i).count() > 0;
+    const hasGoldenPaths = (await page.getByText(/deploy|ephemeral|path/i).count()) > 0;
+    const hasEmptyState = (await page.getByText(/no golden paths/i).count()) > 0;
 
     expect(hasGoldenPaths || hasEmptyState).toBeTruthy();
   });
@@ -71,14 +71,14 @@ test.describe('Golden Paths', () => {
     // Find first golden path link
     const firstPath = page.getByRole('link').first();
 
-    if (await firstPath.count() > 0) {
+    if ((await firstPath.count()) > 0) {
       await firstPath.click();
 
       // Wait for details to load
       await page.waitForLoadState('networkidle');
 
       // Check for details like parameters, description, etc.
-      const hasDetails = await page.getByText(/parameter|description|step/i).count() > 0;
+      const hasDetails = (await page.getByText(/parameter|description|step/i).count()) > 0;
       expect(hasDetails).toBeTruthy();
     }
   });
@@ -91,14 +91,14 @@ test.describe('Application Management', () => {
     // Find first application
     const firstApp = page.getByRole('link', { name: /test-app|view|details/i }).first();
 
-    if (await firstApp.count() > 0) {
+    if ((await firstApp.count()) > 0) {
       await firstApp.click();
 
       // Verify we're on application details page
       await page.waitForURL(/\/applications\/.+/);
 
       // Check for application information
-      const hasDetails = await page.getByText(/container|resource|workflow/i).count() > 0;
+      const hasDetails = (await page.getByText(/container|resource|workflow/i).count()) > 0;
       expect(hasDetails).toBeTruthy();
     } else {
       test.skip();
@@ -112,8 +112,8 @@ test.describe('Application Management', () => {
     await page.waitForLoadState('networkidle');
 
     // Check for workflows list or empty state
-    const hasWorkflows = await page.getByText(/workflow|execution|deploy/i).count() > 0;
-    const hasEmptyState = await page.getByText(/no workflows/i).count() > 0;
+    const hasWorkflows = (await page.getByText(/workflow|execution|deploy/i).count()) > 0;
+    const hasEmptyState = (await page.getByText(/no workflows/i).count()) > 0;
 
     expect(hasWorkflows || hasEmptyState).toBeTruthy();
   });
@@ -124,14 +124,14 @@ test.describe('Application Management', () => {
     // Find first workflow
     const firstWorkflow = page.getByRole('link', { name: /view|details/i }).first();
 
-    if (await firstWorkflow.count() > 0) {
+    if ((await firstWorkflow.count()) > 0) {
       await firstWorkflow.click();
 
       // Wait for logs to load
       await page.waitForLoadState('networkidle');
 
       // Check for log content
-      const hasLogs = await page.getByText(/step|log|output|running|completed/i).count() > 0;
+      const hasLogs = (await page.getByText(/step|log|output|running|completed/i).count()) > 0;
       expect(hasLogs).toBeTruthy();
     } else {
       test.skip();
@@ -146,21 +146,21 @@ test.describe('Application Deletion', () => {
     // Find delete button
     const deleteButton = page.getByRole('button', { name: /delete|remove/i }).first();
 
-    if (await deleteButton.count() > 0) {
+    if ((await deleteButton.count()) > 0) {
       await deleteButton.click();
 
       // Look for confirmation dialog
       const confirmDialog = page.getByRole('dialog');
       const confirmText = page.getByText(/are you sure|confirm|delete/i);
 
-      const hasDialog = await confirmDialog.count() > 0;
-      const hasConfirmText = await confirmText.count() > 0;
+      const hasDialog = (await confirmDialog.count()) > 0;
+      const hasConfirmText = (await confirmText.count()) > 0;
 
       expect(hasDialog || hasConfirmText).toBeTruthy();
 
       // Cancel the deletion
       const cancelButton = page.getByRole('button', { name: /cancel|no/i });
-      if (await cancelButton.count() > 0) {
+      if ((await cancelButton.count()) > 0) {
         await cancelButton.first().click();
       }
     } else {

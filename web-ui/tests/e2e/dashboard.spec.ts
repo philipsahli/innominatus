@@ -22,12 +22,7 @@ test.describe('Dashboard', () => {
 
   test('should display navigation menu', async ({ page }) => {
     // Check for key navigation items
-    const navItems = [
-      'Applications',
-      'Golden Paths',
-      'Resources',
-      'Workflows',
-    ];
+    const navItems = ['Applications', 'Golden Paths', 'Resources', 'Workflows'];
 
     for (const item of navItems) {
       // Use more flexible locator that works with various navigation structures
@@ -40,7 +35,10 @@ test.describe('Dashboard', () => {
 
   test('should navigate to applications page', async ({ page }) => {
     // Click on Applications link
-    await page.getByRole('link', { name: /applications/i }).first().click();
+    await page
+      .getByRole('link', { name: /applications/i })
+      .first()
+      .click();
 
     // Wait for navigation
     await page.waitForURL(/\/applications/);
@@ -57,7 +55,7 @@ test.describe('Dashboard', () => {
     const mobileMenuButton = page.getByRole('button', { name: /menu/i });
 
     // Mobile menu might exist or navigation might be adapted
-    const hasMobileMenu = await mobileMenuButton.count() > 0;
+    const hasMobileMenu = (await mobileMenuButton.count()) > 0;
     const hasVisibleNav = await page.locator('nav').first().isVisible();
 
     expect(hasMobileMenu || hasVisibleNav).toBeTruthy();
@@ -74,8 +72,8 @@ test.describe('Dashboard - Applications List', () => {
     await page.waitForLoadState('networkidle');
 
     // Check for either applications list or empty state
-    const hasApplications = await page.getByText(/test-app|application/i).count() > 0;
-    const hasEmptyState = await page.getByText(/no applications/i).count() > 0;
+    const hasApplications = (await page.getByText(/test-app|application/i).count()) > 0;
+    const hasEmptyState = (await page.getByText(/no applications/i).count()) > 0;
 
     expect(hasApplications || hasEmptyState).toBeTruthy();
   });
@@ -85,8 +83,8 @@ test.describe('Dashboard - Applications List', () => {
     const searchInput = page.getByPlaceholder(/search/i);
     const filterButton = page.getByRole('button', { name: /filter/i });
 
-    const hasSearch = await searchInput.count() > 0;
-    const hasFilter = await filterButton.count() > 0;
+    const hasSearch = (await searchInput.count()) > 0;
+    const hasFilter = (await filterButton.count()) > 0;
 
     // At least one should exist (or neither if not implemented yet)
     // This is more of a documentation test
@@ -103,7 +101,7 @@ test.describe('Dashboard - Theme Toggle', () => {
     // Look for theme toggle button
     const themeToggle = page.getByRole('button', { name: /theme|dark|light/i });
 
-    if (await themeToggle.count() > 0) {
+    if ((await themeToggle.count()) > 0) {
       // Get initial theme
       const html = page.locator('html');
       const initialClass = await html.getAttribute('class');

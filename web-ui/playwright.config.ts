@@ -21,11 +21,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
 
   // Reporter configuration
-  reporter: [
-    ['html'],
-    ['list'],
-    process.env.CI ? ['github'] : ['line']
-  ],
+  reporter: [['html'], ['list'], process.env.CI ? ['github'] : ['line']],
 
   // Shared settings for all projects
   use: {
@@ -71,10 +67,12 @@ export default defineConfig({
   ],
 
   // Run web server before tests (optional)
-  webServer: process.env.CI ? undefined : {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000,
-  },
+  webServer: process.env.CI
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: 'http://localhost:3000',
+        reuseExistingServer: !process.env.CI,
+        timeout: 120 * 1000,
+      },
 });
