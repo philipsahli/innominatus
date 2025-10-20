@@ -38,7 +38,7 @@ func (c *CheatSheet) PrintInstallationComplete() {
 	fmt.Println()
 	fmt.Println("🎉 Demo Environment Installation Complete!")
 	fmt.Println()
-	fmt.Println("Your OpenAlps demo environment is now ready with:")
+	fmt.Println("Your Innominatus demo environment is now ready with:")
 	fmt.Println("• GitOps workflow with ArgoCD")
 	fmt.Println("• Git repository with Gitea")
 	fmt.Println("• Secret management with Vault")
