@@ -93,3 +93,8 @@ innominatus-old
 
 # Temp docs
 docs/TODO's
+
+# Embed copies (copied for Go embed - originals in root)
+cmd/server/migrations/
+cmd/server/swagger-*.yaml
+cmd/server/web-ui-out/

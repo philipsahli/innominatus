@@ -133,6 +133,11 @@ func (d *Database) DB() *sql.DB {
 	return d.db
 }
 
+// SetMigrationsFS sets the embedded migrations filesystem
+func (d *Database) SetMigrationsFS(fsys fs.FS) {
+	d.migrationsFS = fsys
+}
+
 // Ping tests the database connection
 func (d *Database) Ping() error {
 	if d == nil || d.db == nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"embed"
 	"flag"
 	"innominatus/internal/admin"
 	"innominatus/internal/ai"
@@ -13,12 +14,22 @@ import (
 	"innominatus/internal/tracing"
 	"innominatus/internal/validation"
 	"innominatus/pkg/sdk"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
+
+//go:embed swagger-admin.yaml swagger-user.yaml
+var swaggerFilesFS embed.FS
+
+//go:embed web-ui-out
+var webUIFS embed.FS
 
 // Build information - set via ldflags during release builds
 var (
@@ -193,6 +204,18 @@ func main() {
 				srv = server.NewServer()
 			} else {
 				logger.Info("Database connected successfully")
+
+				// Set embedded migrations filesystem
+				migrationsSubFS, err := fs.Sub(migrationsFS, "migrations")
+				if err != nil {
+					logger.WarnWithFields("Failed to create migrations sub-filesystem", map[string]interface{}{
+						"error": err.Error(),
+					})
+				} else {
+					db.SetMigrationsFS(migrationsSubFS)
+					logger.Info("Embedded migrations filesystem configured")
+				}
+
 				// Pass admin config to enable multi-tier workflows
 				srv = server.NewServerWithDBAndAdminConfig(db, adminConfig)
 			}
@@ -219,6 +242,21 @@ func main() {
 		logger.Info("AI assistant service initialized successfully")
 	} else {
 		logger.Info("AI assistant service disabled (missing API keys)")
+	}
+
+	// Set embedded swagger files filesystem
+	srv.SetSwaggerFS(swaggerFilesFS)
+	logger.Info("Embedded swagger files filesystem configured")
+
+	// Set embedded web-ui files filesystem
+	webUISubFS, err := fs.Sub(webUIFS, "web-ui-out")
+	if err != nil {
+		logger.WarnWithFields("Failed to create web-ui sub-filesystem", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		srv.SetWebUIFS(webUISubFS)
+		logger.Info("Embedded web-ui filesystem configured")
 	}
 
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
@@ -378,22 +416,51 @@ func main() {
 	http.HandleFunc("/api/auth/config", srv.TracingMiddleware(srv.TraceIDMiddleware(srv.HandleAuthConfig)))
 
 	// Web UI (static files) - no authentication needed for static assets
-	fs := http.FileServer(http.Dir("./web-ui/out/"))
+	// Use embedded FS if available (production), otherwise use filesystem (development)
+	var staticFS http.Handler
+	var webUIBasePath string
+	webUIEmbedFS := srv.GetWebUIFS()
+
+	if webUIEmbedFS != nil {
+		// Production: use embedded filesystem
+		staticFS = http.FileServer(http.FS(webUIEmbedFS))
+		webUIBasePath = "" // embedded FS is already at the right root
+		logger.Info("Using embedded web-ui files")
+	} else {
+		// Development: use filesystem
+		staticFS = http.FileServer(http.Dir("./web-ui/out/"))
+		webUIBasePath = "./web-ui/out"
+		logger.Info("Using filesystem web-ui files")
+	}
+
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// For SPA routing, serve appropriate index.html for non-existent routes that aren't static assets
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			r.URL.Path = "/"
-		} else if !fileExists("./web-ui/out"+r.URL.Path) && !isStaticAsset(r.URL.Path) {
-			// For /graph/* routes, serve /graph/index.html
-			if strings.HasPrefix(r.URL.Path, "/graph/") {
-				r.URL.Path = "/graph/"
-			} else if strings.HasPrefix(r.URL.Path, "/goldenpaths/") {
-				r.URL.Path = "/goldenpaths/"
+		} else {
+			// Check if file exists (different logic for embedded vs filesystem)
+			fileExistsInUI := false
+			if webUIEmbedFS != nil {
+				// Check in embedded FS
+				_, err := fs.Stat(webUIEmbedFS, strings.TrimPrefix(r.URL.Path, "/"))
+				fileExistsInUI = err == nil
 			} else {
-				r.URL.Path = "/"
+				// Check in filesystem
+				fileExistsInUI = fileExists(webUIBasePath + r.URL.Path)
+			}
+
+			if !fileExistsInUI && !isStaticAsset(r.URL.Path) {
+				// For /graph/* routes, serve /graph/index.html
+				if strings.HasPrefix(r.URL.Path, "/graph/") {
+					r.URL.Path = "/graph/"
+				} else if strings.HasPrefix(r.URL.Path, "/goldenpaths/") {
+					r.URL.Path = "/goldenpaths/"
+				} else {
+					r.URL.Path = "/"
+				}
 			}
 		}
-		fs.ServeHTTP(w, r)
+		staticFS.ServeHTTP(w, r)
 	}))
 
 	// Initialize metrics pusher if PUSHGATEWAY_URL is set

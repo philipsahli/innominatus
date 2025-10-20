@@ -164,6 +164,21 @@ func (s *Server) SetProviderRegistry(registry ProviderRegistry) {
 	s.providerRegistry = registry
 }
 
+// SetSwaggerFS sets the embedded swagger files filesystem
+func (s *Server) SetSwaggerFS(fsys fs.FS) {
+	s.swaggerFS = fsys
+}
+
+// SetWebUIFS sets the embedded web-ui files filesystem
+func (s *Server) SetWebUIFS(fsys fs.FS) {
+	s.webUIFS = fsys
+}
+
+// GetWebUIFS returns the embedded web-ui files filesystem
+func (s *Server) GetWebUIFS() fs.FS {
+	return s.webUIFS
+}
+
 // MemoryWorkflowExecution represents a workflow execution stored in memory
 type MemoryWorkflowExecution struct {
 	ID           int64                 `json:"id"`
