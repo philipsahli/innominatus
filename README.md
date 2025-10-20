@@ -94,6 +94,7 @@ innominatus-ctl deploy my-app.yaml
 - ✅ **Golden Paths** - Pre-defined workflows for common use cases (deploy, ephemeral environments, database lifecycle)
 - ✅ **Self-Service** - Deploy without waiting for Platform Team approval
 - ✅ **Visibility** - Real-time status, logs, and workflow history via Web UI or CLI
+- ✅ **Modern CLI** - Powered by Cobra with shell completion, hierarchical subcommands, and comprehensive help
 
 ### For Platform Teams
 
@@ -133,9 +134,13 @@ Your Platform Team has already set up innominatus. To get started:
 
 ```bash
 # 1. Get credentials from your Platform Team
-export INNOMINATUS_API_KEY="your-api-key"
+export IDP_API_KEY="your-api-key"
 
-# 2. Create a Score specification
+# 2. (Optional) Enable shell completion
+innominatus-ctl completion bash > /etc/bash_completion.d/innominatus-ctl
+source /etc/bash_completion.d/innominatus-ctl
+
+# 3. Create a Score specification
 cat <<EOF > my-app.yaml
 apiVersion: score.dev/v1b1
 metadata:
@@ -150,8 +155,12 @@ resources:
       host: my-app.yourcompany.com
 EOF
 
-# 3. Deploy
-innominatus-ctl deploy my-app.yaml
+# 4. Deploy using golden path
+innominatus-ctl run deploy-app my-app.yaml
+
+# 5. Check status
+innominatus-ctl status my-app
+innominatus-ctl list-workflows my-app
 ```
 
 **Next:** [User Guide](docs/user-guide/README.md)
@@ -215,8 +224,15 @@ go build -o innominatus-ctl cmd/cli/main.go
 
 **Self-Service Resources:**
 - [User Troubleshooting Guide](docs/user-guide/troubleshooting.md)
+- [CLI Reference](docs/user-guide/cli-reference.md) - Complete command documentation
+- Built-in help (powered by Cobra framework):
+  ```bash
+  innominatus-ctl --help                  # All commands
+  innominatus-ctl run --help              # Specific command help
+  innominatus-ctl workflow logs --help    # Subcommand help
+  ```
+- Tab completion - Enable with `innominatus-ctl completion bash`
 - Platform documentation portal (ask your Platform Team)
-- `innominatus-ctl --help`
 
 ### Platform Teams
 

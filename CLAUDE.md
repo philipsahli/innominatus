@@ -42,6 +42,31 @@ curl -X POST http://localhost:8081/api/specs \
 ./innominatus-ctl list-goldenpaths
 ```
 
+### CLI (Cobra Framework)
+
+**Built with:** `github.com/spf13/cobra` (same framework as kubectl, docker, helm)
+
+**Key Features:**
+- **31 commands** organized hierarchically (e.g., `workflow detail`, `workflow logs`)
+- **Shell completion** for bash, zsh, fish, powershell
+- **Auto-generated help** with `--help` flag for all commands
+- **Global flags**: `--server`, `--details`, `--skip-validation`
+
+**Setup shell completion:**
+```bash
+innominatus-ctl completion bash > /etc/bash_completion.d/innominatus-ctl
+source /etc/bash_completion.d/innominatus-ctl
+```
+
+**Examples:**
+```bash
+innominatus-ctl --help                           # All commands
+innominatus-ctl workflow logs <id> --step init   # Hierarchical subcommand
+innominatus-ctl list-resources --type postgres   # Filtered listing
+```
+
+**Authentication:** Auto-authenticates for server commands, skips for local commands (validate, analyze, demo-*).
+
 ### Workflow Capabilities
 
 - **Terraform**: Infrastructure provisioning (init, plan, apply, destroy)
