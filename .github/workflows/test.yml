@@ -38,6 +38,9 @@ jobs:
     - name: Verify dependencies
       run: go mod verify
 
+    - name: Prepare static files for embedding
+      run: ./scripts/prepare-embed.sh
+
     - name: Run tests
       run: go test -v -race -coverprofile=coverage ./...
 
@@ -61,6 +64,9 @@ jobs:
       with:
         go-version: '1.24'
 
+    - name: Prepare static files for embedding
+      run: ./scripts/prepare-embed.sh
+
     - name: golangci-lint
       uses: golangci/golangci-lint-action@v8
       with:
@@ -78,6 +84,9 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: '1.24'
+
+    - name: Prepare static files for embedding
+      run: ./scripts/prepare-embed.sh
 
     - name: Build server
       run: go build -o innominatus cmd/server/main.go

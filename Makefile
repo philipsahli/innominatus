@@ -45,8 +45,12 @@ install: ## Install all dependencies (Go + npm)
 .PHONY: build
 build: build-server build-cli build-ui ## Build all components (server, CLI, web UI)
 
+.PHONY: prepare-embed
+prepare-embed: ## Prepare static files for Go embed (internal target)
+	@./scripts/prepare-embed.sh
+
 .PHONY: build-server
-build-server: ## Build the server binary
+build-server: prepare-embed ## Build the server binary
 	@echo "$(GREEN)Building server...$(NC)"
 	@$(GO_CMD) build -o $(SERVER_BINARY) cmd/server/main.go
 	@echo "$(GREEN)✓ Server built: ./$(SERVER_BINARY)$(NC)"
@@ -98,7 +102,7 @@ test: ## Run all local tests (unit + e2e, no Kubernetes)
 	@$(MAKE) test-ui
 
 .PHONY: test-unit
-test-unit: ## Run Go unit tests with race detection
+test-unit: prepare-embed ## Run Go unit tests with race detection
 	@echo "$(GREEN)Running Go unit tests...$(NC)"
 	@$(GO_CMD) test ./... -v -race -coverprofile=$(COVERAGE_FILE) -short
 
