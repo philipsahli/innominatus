@@ -36,7 +36,7 @@ func TestDeploymentWorkflow(t *testing.T) {
 
 	testAppName := fmt.Sprintf("test-app-%d", time.Now().Unix())
 	specFile := createTestScoreSpec(t, testAppName)
-	defer os.Remove(specFile)
+	defer func() { _ = os.Remove(specFile) }()
 
 	// Test 1: Deploy Application
 	t.Run("DeployApp_ViaGoldenPath", func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestDeploymentWorkflow(t *testing.T) {
 
 		// Create updated spec
 		updatedSpecFile := createTestScoreSpec(t, testAppName+"_updated")
-		defer os.Remove(updatedSpecFile)
+		defer func() { _ = os.Remove(updatedSpecFile) }()
 
 		// Try to update
 		specContent, err := os.ReadFile(updatedSpecFile)

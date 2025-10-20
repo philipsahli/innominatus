@@ -111,9 +111,10 @@ func calculatePerformanceMetrics(appName string, executions []*database.Workflow
 		}
 
 		// Track success/failure
-		if exec.Status == "succeeded" || exec.Status == "completed" {
+		switch exec.Status {
+		case "succeeded", "completed":
 			successCount++
-		} else if exec.Status == "failed" {
+		case "failed":
 			failureCount++
 		}
 
@@ -133,9 +134,10 @@ func calculatePerformanceMetrics(appName string, executions []*database.Workflow
 			}
 			stepMetric := stepMetricsMap[exec.WorkflowName]
 			stepMetric.ExecutionCount++
-			if exec.Status == "succeeded" || exec.Status == "completed" {
+			switch exec.Status {
+			case "succeeded", "completed":
 				stepMetric.SuccessCount++
-			} else if exec.Status == "failed" {
+			case "failed":
 				stepMetric.FailureCount++
 			}
 			if duration > stepMetric.MaxDuration {

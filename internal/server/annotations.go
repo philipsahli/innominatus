@@ -69,7 +69,7 @@ func (s *Server) handleListAnnotations(w http.ResponseWriter, r *http.Request, a
 		http.Error(w, fmt.Sprintf("Failed to query annotations: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	annotations := []GraphAnnotation{}
 	for rows.Next() {

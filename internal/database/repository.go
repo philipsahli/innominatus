@@ -470,7 +470,7 @@ func (r *WorkflowRepository) ReconstructWorkflowFromExecution(executionID int64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query workflow steps: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var steps []map[string]interface{}
 

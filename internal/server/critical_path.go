@@ -154,12 +154,9 @@ func (s *Server) calculateCriticalPath(graph interface{}) []CriticalPathNode {
 		tempInDegree[k] = v
 	}
 
-	processed := []string{}
-
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		processed = append(processed, current)
 
 		for _, neighbor := range adjacencyList[current] {
 			// Update longest path to neighbor

@@ -76,7 +76,7 @@ func (h *GraphWebSocketHub) Run() {
 			if clients, ok := h.clients[registration.AppName]; ok {
 				if _, ok := clients[registration.Conn]; ok {
 					delete(clients, registration.Conn)
-					registration.Conn.Close()
+					_ = registration.Conn.Close()
 				}
 				// Clean up empty app maps
 				if len(clients) == 0 {
@@ -98,8 +98,7 @@ func (h *GraphWebSocketHub) Run() {
 
 			// Send to all clients watching this app
 			for conn := range clients {
-				err := conn.WriteMessage(websocket.TextMessage, message)
-				if err != nil {
+				if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 					// Client disconnected, unregister it
 					h.unregister <- ClientRegistration{
 						AppName: update.AppName,
@@ -149,7 +148,7 @@ func (s *Server) handleGraphWebSocket(w http.ResponseWriter, r *http.Request, ap
 			graphJSON := convertSDKGraphToFrontend(graph)
 			message, err := json.Marshal(graphJSON)
 			if err == nil {
-				conn.WriteMessage(websocket.TextMessage, message)
+				_ = conn.WriteMessage(websocket.TextMessage, message)
 			}
 		}
 	}
@@ -164,9 +163,9 @@ func (s *Server) handleGraphWebSocket(w http.ResponseWriter, r *http.Request, ap
 		}()
 
 		// Set up ping/pong handlers for connection health
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		conn.SetPongHandler(func(string) error {
-			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 			return nil
 		})
 
@@ -183,12 +182,9 @@ func (s *Server) handleGraphWebSocket(w http.ResponseWriter, r *http.Request, ap
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
+	for range ticker.C {
+		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			return
 		}
 	}
 }

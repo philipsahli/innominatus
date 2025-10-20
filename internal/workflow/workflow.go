@@ -1023,13 +1023,13 @@ func runPolicyStepWithSpinner(step types.Step, appName string, envType string, s
 	if err != nil {
 		return fmt.Errorf("failed to create temp script file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	// Write script to file
 	if _, err := tmpFile.WriteString(script); err != nil {
 		return fmt.Errorf("failed to write script: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Make script executable
 	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {

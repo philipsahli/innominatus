@@ -87,7 +87,7 @@ func TestDemoEnvironmentLifecycle(t *testing.T) {
 		require.NoError(t, err, "demo-status command should succeed")
 
 		// Restore stdout
-		w.Close()
+		_ = w.Close()
 		os.Stdout = oldStdout
 
 		var buf []byte

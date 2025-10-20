@@ -2566,7 +2566,7 @@ func (s *Server) handleListGoldenPaths(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Add parameter schemas if available
-		if metadata.Parameters != nil && len(metadata.Parameters) > 0 {
+		if len(metadata.Parameters) > 0 {
 			pathInfo["parameters"] = metadata.Parameters
 		}
 
@@ -2607,15 +2607,15 @@ func (s *Server) handleGetGoldenPath(w http.ResponseWriter, r *http.Request, pat
 	}
 
 	// Add parameter schemas if available
-	if metadata.Parameters != nil && len(metadata.Parameters) > 0 {
+	if len(metadata.Parameters) > 0 {
 		response["parameters"] = metadata.Parameters
 	}
 
 	// Add deprecated fields for backward compatibility
-	if metadata.RequiredParams != nil && len(metadata.RequiredParams) > 0 {
+	if len(metadata.RequiredParams) > 0 {
 		response["required_params"] = metadata.RequiredParams
 	}
-	if metadata.OptionalParams != nil && len(metadata.OptionalParams) > 0 {
+	if len(metadata.OptionalParams) > 0 {
 		response["optional_params"] = metadata.OptionalParams
 	}
 

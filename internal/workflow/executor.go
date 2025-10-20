@@ -268,8 +268,8 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 	if len(goldenPathParams) > 0 && len(goldenPathParams[0]) > 0 {
 		e.execContext.SetWorkflowVariables(goldenPathParams[0])
 		e.logger.InfoWithFields("Initialized golden path parameters", map[string]interface{}{
-			"app_name":       appName,
-			"workflow_name":  workflowName,
+			"app_name":        appName,
+			"workflow_name":   workflowName,
 			"parameter_count": len(goldenPathParams[0]),
 		})
 	}
@@ -1156,13 +1156,13 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 		if err != nil {
 			return fmt.Errorf("failed to create temp script file: %w", err)
 		}
-		defer os.Remove(tmpFile.Name())
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 		// Write script to file
 		if _, err := tmpFile.WriteString(script); err != nil {
 			return fmt.Errorf("failed to write script: %w", err)
 		}
-		tmpFile.Close()
+		_ = tmpFile.Close()
 
 		// Make script executable
 		if err := os.Chmod(tmpFile.Name(), 0755); err != nil {

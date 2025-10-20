@@ -2,7 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 )
 
 // HandleListProviders returns a list of all loaded providers
@@ -39,7 +41,9 @@ func (s *Server) HandleListProviders(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // HandleProviderStats returns statistics about loaded providers
@@ -59,5 +63,7 @@ func (s *Server) HandleProviderStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }

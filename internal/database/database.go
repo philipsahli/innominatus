@@ -475,14 +475,14 @@ func (d *Database) runEmbeddedMigrations(logger *logging.ZerologAdapter) error {
 			return fmt.Errorf("failed to create temp file for migration %s: %w", filename, err)
 		}
 		tmpPath := tmpFile.Name()
-		defer os.Remove(tmpPath) // Clean up temp file
+		defer func() { _ = os.Remove(tmpPath) }() // Clean up temp file
 
 		// Write content to temp file
 		if _, err := tmpFile.Write(content); err != nil {
-			tmpFile.Close()
+			_ = tmpFile.Close()
 			return fmt.Errorf("failed to write temp migration file %s: %w", filename, err)
 		}
-		tmpFile.Close()
+		_ = tmpFile.Close()
 
 		// Execute migration using existing runFilesystemMigration logic
 		logger.InfoWithFields("Running embedded migration", map[string]interface{}{
@@ -665,7 +665,7 @@ func (d *Database) TruncateAllTables() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to query table names: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tables []string
 	for rows.Next() {
@@ -689,7 +689,7 @@ func (d *Database) TruncateAllTables() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	logger := logging.NewStructuredLogger("database.truncate")
 
