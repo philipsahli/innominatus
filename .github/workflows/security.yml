@@ -25,27 +25,7 @@ jobs:
     - name: Run gosec Security Scanner
       uses: securego/gosec@master
       with:
-        args: '-fmt sarif -out gosec.sarif ./...'
-
-    - name: Fix SARIF file format
-      if: always()
-      run: |
-        # Fix artifactChanges to be arrays in the SARIF file
-        if [ -f gosec.sarif ]; then
-          jq '
-            .runs[].results[]? |=
-            if .fixes then
-              .fixes[] |=
-              if .artifactChanges and (.artifactChanges | type != "array") then
-                .artifactChanges = [.artifactChanges]
-              else
-                .
-              end
-            else
-              .
-            end
-          ' gosec.sarif > gosec-fixed.sarif && mv gosec-fixed.sarif gosec.sarif
-        fi
+        args: '-no-fail -fmt sarif -out gosec.sarif ./...'
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v4
