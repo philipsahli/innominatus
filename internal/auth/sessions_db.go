@@ -97,6 +97,8 @@ func (sm *DBSessionManager) ExtendSession(sessionID string) {
 	// Get current session data
 	sessionData, err := sm.db.GetSession(sessionID)
 	if err != nil {
+		// Log warning if session retrieval fails (might be expired or DB issue)
+		fmt.Printf("Warning: Failed to extend session %s: %v\n", sessionID[:8]+"...", err)
 		return // Session doesn't exist or expired
 	}
 
@@ -111,8 +113,11 @@ func (sm *DBSessionManager) ExtendSession(sessionID string) {
 	// Extend expiry
 	newExpiresAt := time.Now().Add(3 * time.Hour)
 
-	_ = sm.db.UpdateSession(sessionID, userData, newExpiresAt)
-	// Ignore error - best effort
+	err = sm.db.UpdateSession(sessionID, userData, newExpiresAt)
+	if err != nil {
+		// Log warning if session update fails (DB issue)
+		fmt.Printf("Warning: Failed to update session %s expiry: %v\n", sessionID[:8]+"...", err)
+	}
 }
 
 // SetSessionCookie sets the session cookie in the response

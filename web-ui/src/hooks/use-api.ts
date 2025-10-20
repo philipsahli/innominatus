@@ -138,6 +138,10 @@ export function useDeleteApplication() {
   return useApiMutation((name: string) => api.deleteApplication(name));
 }
 
+export function useDeprovisionApplication() {
+  return useApiMutation((name: string) => api.deprovisionApplication(name));
+}
+
 // Demo environment hooks
 export function useDemoStatus() {
   return useApi(() => api.getDemoStatus());

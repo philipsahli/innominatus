@@ -16,7 +16,7 @@ import {
   Activity,
   FileCode,
   Trash2,
-  Archive
+  Archive,
 } from 'lucide-react';
 import type { Application } from '@/lib/api';
 import { api } from '@/lib/api';
@@ -422,7 +422,8 @@ export function ApplicationDetailsPane({ application, onClose }: ApplicationDeta
                 ⚠️ DANGER: This is a permanent, destructive operation.
               </p>
               <p className="text-sm text-muted-foreground">
-                Tip: Use &ldquo;Deprovision&rdquo; instead if you want to keep audit records for compliance.
+                Tip: Use &ldquo;Deprovision&rdquo; instead if you want to keep audit records for
+                compliance.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>

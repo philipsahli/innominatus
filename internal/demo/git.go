@@ -128,7 +128,7 @@ func (g *GitManager) createRepository() error {
 	}
 
 	// Commit
-	if err := g.runGitCommand(g.workDir, "commit", "-m", "Initial commit: OpenAlps demo environment"); err != nil {
+	if err := g.runGitCommand(g.workDir, "commit", "-m", "Initial commit: Innominatus demo environment"); err != nil {
 		return err
 	}
 
@@ -195,7 +195,7 @@ func (g *GitManager) updateRepository() error {
 	}
 
 	// Commit changes
-	if err := g.runGitCommand(g.workDir, "commit", "-m", "Update OpenAlps demo environment"); err != nil {
+	if err := g.runGitCommand(g.workDir, "commit", "-m", "Update Innominatus demo environment"); err != nil {
 		return err
 	}
 

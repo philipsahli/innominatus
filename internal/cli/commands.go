@@ -1930,11 +1930,47 @@ func (c *Client) LogoutCommand() error {
 	return nil
 }
 
-// ListResourcesCommand lists all resource instances with optional filtering by application
-func (c *Client) ListResourcesCommand(appName string) error {
+// filterResources applies client-side filtering to resource instances
+func (c *Client) filterResources(resources map[string][]*ResourceInstance, resourceType, state string) map[string][]*ResourceInstance {
+	filtered := make(map[string][]*ResourceInstance)
+
+	for appName, resourceList := range resources {
+		filteredList := []*ResourceInstance{}
+
+		for _, resource := range resourceList {
+			// Check type filter
+			if resourceType != "" && !strings.EqualFold(resource.ResourceType, resourceType) {
+				continue
+			}
+
+			// Check state filter
+			if state != "" && !strings.EqualFold(resource.State, state) {
+				continue
+			}
+
+			// Resource matches all filters
+			filteredList = append(filteredList, resource)
+		}
+
+		// Only include app if it has matching resources
+		if len(filteredList) > 0 {
+			filtered[appName] = filteredList
+		}
+	}
+
+	return filtered
+}
+
+// ListResourcesCommand lists all resource instances with optional filtering by application, type, and state
+func (c *Client) ListResourcesCommand(appName, resourceType, state string) error {
 	resources, err := c.ListResources(appName)
 	if err != nil {
 		return err
+	}
+
+	// Apply client-side filtering
+	if resourceType != "" || state != "" {
+		resources = c.filterResources(resources, resourceType, state)
 	}
 
 	if len(resources) == 0 {
@@ -1949,6 +1985,18 @@ func (c *Client) ListResourcesCommand(appName string) error {
 	title := "All Resource Instances"
 	if appName != "" {
 		title = fmt.Sprintf("Resource Instances for '%s'", appName)
+	}
+
+	// Add filter info to title
+	if resourceType != "" || state != "" {
+		filterParts := []string{}
+		if resourceType != "" {
+			filterParts = append(filterParts, fmt.Sprintf("type=%s", resourceType))
+		}
+		if state != "" {
+			filterParts = append(filterParts, fmt.Sprintf("state=%s", state))
+		}
+		title += fmt.Sprintf(" [filtered: %s]", strings.Join(filterParts, ", "))
 	}
 
 	totalCount := 0
@@ -2667,6 +2715,130 @@ func (c *Client) ProviderStatsCommand() error {
 	formatter.PrintKeyValue(0, "Total Providers", fmt.Sprintf("%d", stats.Providers))
 	formatter.PrintKeyValue(0, "Total Provisioners", fmt.Sprintf("%d", stats.Provisioners))
 	formatter.PrintEmpty()
+
+	return nil
+}
+
+// StatsCommand displays platform statistics (applications, workflows, resources, users)
+func (c *Client) StatsCommand() error {
+	formatter := NewOutputFormatter()
+
+	stats, err := c.GetStats()
+	if err != nil {
+		return fmt.Errorf("failed to get statistics: %w", err)
+	}
+
+	formatter.PrintHeader("📊 Platform Statistics")
+	formatter.PrintEmpty()
+	formatter.PrintSection(0, "📦", fmt.Sprintf("Applications: %d", stats.Applications))
+	formatter.PrintSection(0, "⚙️", fmt.Sprintf("Active Workflows: %d", stats.Workflows))
+	formatter.PrintSection(0, "🔧", fmt.Sprintf("Resources: %d", stats.Resources))
+	formatter.PrintSection(0, "👤", fmt.Sprintf("Users: %d", stats.Users))
+	formatter.PrintEmpty()
+
+	return nil
+}
+
+// WorkflowDetailCommand displays comprehensive metadata about a workflow execution
+func (c *Client) WorkflowDetailCommand(workflowID string) error {
+	formatter := NewOutputFormatter()
+
+	// Get workflow details
+	workflow, err := c.GetWorkflowDetail(workflowID)
+	if err != nil {
+		return fmt.Errorf("failed to get workflow details: %w", err)
+	}
+
+	// Header
+	formatter.PrintHeader(fmt.Sprintf("Workflow Details: %s", workflow.WorkflowName))
+	formatter.PrintEmpty()
+
+	// Basic information
+	formatter.PrintKeyValue(0, "Workflow ID", workflow.ID)
+	formatter.PrintKeyValue(0, "Workflow Name", workflow.WorkflowName)
+	formatter.PrintKeyValue(0, "Application", workflow.ApplicationName)
+
+	// Status with visual indicator
+	statusDisplay := formatter.PrintStatusBadge(workflow.Status)
+	formatter.PrintKeyValue(0, "Status", statusDisplay)
+
+	// Timestamps
+	formatter.PrintKeyValue(0, "Started At", workflow.StartedAt.Format(time.RFC3339))
+	if workflow.CompletedAt != nil {
+		formatter.PrintKeyValue(0, "Completed At", workflow.CompletedAt.Format(time.RFC3339))
+
+		// Calculate duration from timestamps
+		duration := workflow.CompletedAt.Sub(workflow.StartedAt)
+		formatter.PrintKeyValue(0, "Duration", formatter.FormatDuration(duration))
+	}
+
+	// Error message if failed
+	if workflow.ErrorMessage != nil && *workflow.ErrorMessage != "" {
+		formatter.PrintEmpty()
+		formatter.PrintError(fmt.Sprintf("Error: %s", *workflow.ErrorMessage))
+	}
+
+	formatter.PrintEmpty()
+
+	// Step summary
+	completedSteps := 0
+	for _, step := range workflow.Steps {
+		if step.Status == "completed" || step.Status == "succeeded" {
+			completedSteps++
+		}
+	}
+	formatter.PrintSection(0, "⚙️", fmt.Sprintf("Steps: %d/%d completed", completedSteps, workflow.TotalSteps))
+	formatter.PrintEmpty()
+
+	// Step breakdown table
+	if len(workflow.Steps) > 0 {
+		columns := []TableColumn{
+			{Header: "#", Width: 3},
+			{Header: "Step Name", Width: 30},
+			{Header: "Type", Width: 15},
+			{Header: "Status", Width: 12},
+			{Header: "Duration", Width: 10},
+		}
+
+		formatter.PrintTableHeader(columns)
+
+		for _, step := range workflow.Steps {
+			statusIcon := ""
+			switch step.Status {
+			case "completed", "succeeded":
+				statusIcon = "✓"
+			case "running":
+				statusIcon = "⏳"
+			case "failed":
+				statusIcon = "✗"
+			default:
+				statusIcon = "○"
+			}
+
+			stepNum := fmt.Sprintf("%d", step.StepNumber)
+			stepName := step.StepName
+			if len(stepName) > 28 {
+				stepName = stepName[:25] + "..."
+			}
+			stepType := step.StepType
+
+			durationStr := "-"
+			if step.DurationMs != nil && *step.DurationMs > 0 {
+				duration := time.Duration(*step.DurationMs) * time.Millisecond
+				durationStr = formatter.FormatDuration(duration)
+			}
+
+			formatter.PrintTableRow(columns, []string{
+				stepNum,
+				stepName,
+				stepType,
+				fmt.Sprintf("%s %s", statusIcon, step.Status),
+				durationStr,
+			})
+		}
+
+		formatter.PrintEmpty()
+	}
 
 	return nil
 }

@@ -38,6 +38,8 @@ const (
 	SymbolSearch    = "🔍"
 	SymbolRunning   = "⏳"
 	SymbolComplete  = "✅"
+	SymbolTeam      = "👥"
+	SymbolUser      = "👤"
 )
 
 // Separators for consistent formatting

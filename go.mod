@@ -7,6 +7,7 @@ require (
 	github.com/bxcodec/faker/v3 v3.8.1
 	github.com/chzyer/readline v1.5.1
 	github.com/coreos/go-oidc/v3 v3.16.0
+	github.com/go-git/go-git/v5 v5.11.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.10.9
 	github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251007053528-20f88711dd07
@@ -43,7 +44,6 @@ require (
 	github.com/fogleman/gg v1.3.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.5.0 // indirect
-	github.com/go-git/go-git/v5 v5.11.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

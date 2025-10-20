@@ -48,11 +48,7 @@ export function Toast({ id, title, description, variant = 'default', onClose }: 
     >
       <div className="flex-1">
         <div className="font-semibold text-white">{title}</div>
-        {description && (
-          <div className="mt-1 text-sm text-gray-100 opacity-90">
-            {description}
-          </div>
-        )}
+        {description && <div className="mt-1 text-sm text-gray-100 opacity-90">{description}</div>}
       </div>
       <button
         onClick={handleClose}

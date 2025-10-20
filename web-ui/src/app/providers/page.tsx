@@ -122,21 +122,15 @@ export default function ProvidersPage() {
             <CardTitle className="flex items-center gap-2">
               <Package className="w-5 h-5" />
               Loaded Providers
-              <span className="text-sm font-normal text-gray-500">
-                ({providers.length})
-              </span>
+              <span className="text-sm font-normal text-gray-500">({providers.length})</span>
             </CardTitle>
-            <CardDescription>
-              Providers loaded from filesystem and Git repositories
-            </CardDescription>
+            <CardDescription>Providers loaded from filesystem and Git repositories</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
-                <span className="ml-2 text-gray-600 dark:text-gray-400">
-                  Loading providers...
-                </span>
+                <span className="ml-2 text-gray-600 dark:text-gray-400">Loading providers...</span>
               </div>
             ) : error ? (
               <div className="text-center py-8">
@@ -169,7 +163,10 @@ export default function ProvidersPage() {
                   </TableHeader>
                   <TableBody>
                     {providers.map((provider) => (
-                      <TableRow key={provider.name} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                      <TableRow
+                        key={provider.name}
+                        className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                      >
                         <TableCell>
                           <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
                             <Package className="w-4 h-4 text-purple-500" />
@@ -222,15 +219,16 @@ export default function ProvidersPage() {
           </CardHeader>
           <CardContent className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
             <p>
-              <strong>Providers</strong> enable extensibility by allowing infrastructure and product teams
-              to define custom provisioners and golden paths. Providers can be loaded from:
+              <strong>Providers</strong> enable extensibility by allowing infrastructure and product
+              teams to define custom provisioners and golden paths. Providers can be loaded from:
             </p>
             <ul className="list-disc list-inside space-y-1 ml-2">
               <li>
                 <strong>Filesystem:</strong> Local provider manifests in the providers/ directory
               </li>
               <li>
-                <strong>Git Repositories:</strong> Remote providers with version pinning (tags/branches)
+                <strong>Git Repositories:</strong> Remote providers with version pinning
+                (tags/branches)
               </li>
             </ul>
             <p className="pt-2">
@@ -241,12 +239,14 @@ export default function ProvidersPage() {
                 <strong>Infrastructure:</strong> Platform team providers (AWS, Azure, GCP, Storage)
               </li>
               <li>
-                <strong>Service:</strong> Product team providers (ecommerce, analytics, ML pipelines)
+                <strong>Service:</strong> Product team providers (ecommerce, analytics, ML
+                pipelines)
               </li>
             </ul>
             <p className="pt-2">
-              Providers are configured in <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">admin-config.yaml</code> and
-              loaded automatically on server startup.
+              Providers are configured in{' '}
+              <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">admin-config.yaml</code>{' '}
+              and loaded automatically on server startup.
             </p>
           </CardContent>
         </Card>

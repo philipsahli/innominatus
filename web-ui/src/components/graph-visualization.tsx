@@ -16,10 +16,17 @@ import {
   TrendingUp,
   Activity,
   List,
+  ChevronDown,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { GraphDiff } from '@/components/graph-diff';
 import { GraphAnnotations } from '@/components/graph-annotations';
 import PerformanceMetrics from '@/components/performance-metrics';
@@ -263,24 +270,55 @@ export function GraphVisualization({ app }: { app: string }) {
     setPreviousNodeStates(newNodeStates);
   }, [graph.nodes]);
 
-  const exportGraph = () => {
-    const exportData = {
-      app: app,
-      graph: graph,
-      timestamp: new Date().toISOString(),
-    };
+  const exportGraph = async (format: 'json' | 'svg' | 'png' | 'dot' | 'mermaid') => {
+    if (format === 'json') {
+      // Client-side JSON export
+      const exportData = {
+        app: app,
+        graph: graph,
+        timestamp: new Date().toISOString(),
+      };
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${app}-graph-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${app}-graph-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      // Server-side export for SVG, PNG, DOT, Mermaid
+      try {
+        const response = await fetch(`/api/graph/${app}/export?format=${format}`, {
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          throw new Error(`Export failed: ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+
+        // Set appropriate file extension
+        const extension = format === 'mermaid' ? 'mmd' : format;
+        a.download = `${app}-graph-${Date.now()}.${extension}`;
+
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Export failed:', error);
+        alert(`Failed to export graph as ${format.toUpperCase()}: ${error}`);
+      }
+    }
   };
 
   const clearFilters = () => {
@@ -477,16 +515,37 @@ export function GraphVisualization({ app }: { app: string }) {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={exportGraph}
-              disabled={graph.nodes.length === 0}
-              className="gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Export
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={graph.nodes.length === 0}
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Export
+                  <ChevronDown className="w-3 h-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => exportGraph('json')}>
+                  Export as JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportGraph('svg')}>
+                  Export as SVG
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportGraph('png')}>
+                  Export as PNG
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportGraph('dot')}>
+                  Export as DOT (Graphviz)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportGraph('mermaid')}>
+                  Export as Mermaid
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 

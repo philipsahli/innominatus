@@ -28,7 +28,7 @@ func NewCheatSheet(env *DemoEnvironment) *CheatSheet {
 // PrintWelcome prints the welcome message
 func (c *CheatSheet) PrintWelcome() {
 	fmt.Println()
-	fmt.Println("🚀 OpenAlps Demo Environment")
+	fmt.Println("Innominatus Demo Application")
 	fmt.Println("===============================")
 	fmt.Println()
 }

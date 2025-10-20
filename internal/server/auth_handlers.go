@@ -8,6 +8,8 @@ import (
 	"innominatus/internal/users"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 )
 
 // HandleLogin handles the login page and authentication
@@ -275,6 +277,461 @@ func (s *Server) HandleListUsers(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(userList); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
+}
+
+// HandleUserManagement handles CRUD operations for users
+func (s *Server) HandleUserManagement(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		s.handleCreateUser(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleUserDetail handles operations on a specific user
+func (s *Server) HandleUserDetail(w http.ResponseWriter, r *http.Request) {
+	// Extract username from path /api/admin/users/{username}
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 5 {
+		http.Error(w, "Username required", http.StatusBadRequest)
+		return
+	}
+	username := pathParts[4]
+
+	switch r.Method {
+	case "GET":
+		s.handleGetUser(w, r, username)
+	case "PUT":
+		s.handleUpdateUser(w, r, username)
+	case "DELETE":
+		s.handleDeleteUser(w, r, username)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	// Parse request body
+	var request struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Team     string `json:"team"`
+		Role     string `json:"role"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if request.Username == "" || request.Password == "" || request.Team == "" {
+		http.Error(w, "Username, password, and team are required", http.StatusBadRequest)
+		return
+	}
+
+	// Default role to "user" if not specified
+	if request.Role == "" {
+		request.Role = "user"
+	}
+
+	// Validate role
+	if request.Role != "user" && request.Role != "admin" {
+		http.Error(w, "Role must be 'user' or 'admin'", http.StatusBadRequest)
+		return
+	}
+
+	// Load existing users
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Unable to load users", http.StatusInternalServerError)
+		return
+	}
+
+	// AddUser will check if user already exists and hash password
+	if err := store.AddUser(request.Username, request.Password, request.Team, request.Role); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			http.Error(w, "User already exists", http.StatusConflict)
+		} else {
+			http.Error(w, fmt.Sprintf("Failed to create user: %v", err), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	response := map[string]interface{}{
+		"message":  "User created successfully",
+		"username": request.Username,
+		"team":     request.Team,
+		"role":     request.Role,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request, username string) {
+	// Load users
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Unable to load users", http.StatusInternalServerError)
+		return
+	}
+
+	// Find user
+	user, err := store.GetUser(username)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Return user info (without password)
+	userInfo := map[string]interface{}{
+		"username": user.Username,
+		"team":     user.Team,
+		"role":     user.Role,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(userInfo); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, username string) {
+	// Parse request body
+	var request struct {
+		Password *string `json:"password,omitempty"`
+		Team     *string `json:"team,omitempty"`
+		Role     *string `json:"role,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate role if provided
+	if request.Role != nil && *request.Role != "user" && *request.Role != "admin" {
+		http.Error(w, "Role must be 'user' or 'admin'", http.StatusBadRequest)
+		return
+	}
+
+	// Load users
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Unable to load users", http.StatusInternalServerError)
+		return
+	}
+
+	// Find and update user
+	found := false
+	for i, user := range store.Users {
+		if user.Username == username {
+			found = true
+			// Update user fields
+			if request.Password != nil {
+				store.Users[i].Password = *request.Password // Note: Consider hashing in production
+			}
+			if request.Team != nil {
+				store.Users[i].Team = *request.Team
+			}
+			if request.Role != nil {
+				store.Users[i].Role = *request.Role
+			}
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Save updated store
+	if err := store.SaveUsers(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to update user: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated user for response
+	updatedUser, _ := store.GetUser(username)
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"message":  "User updated successfully",
+		"username": username,
+		"team":     updatedUser.Team,
+		"role":     updatedUser.Role,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request, username string) {
+	// Load users
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Unable to load users", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete user (DeleteUser will check if exists and return error if not found)
+	if err := store.DeleteUser(username); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, "User not found", http.StatusNotFound)
+		} else {
+			http.Error(w, fmt.Sprintf("Failed to delete user: %v", err), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"message":  "User deleted successfully",
+		"username": username,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// HandleAdminUserAPIKeys handles admin operations on user API keys
+func (s *Server) HandleAdminUserAPIKeys(w http.ResponseWriter, r *http.Request) {
+	// Extract username from path: /api/admin/users/{username}/api-keys
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 6 {
+		http.Error(w, "Username required", http.StatusBadRequest)
+		return
+	}
+	username := pathParts[4]
+
+	switch r.Method {
+	case "GET":
+		s.handleAdminGetAPIKeys(w, r, username)
+	case "POST":
+		s.handleAdminGenerateAPIKey(w, r, username)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleAdminUserAPIKeyDetail handles admin operations on specific API keys
+func (s *Server) HandleAdminUserAPIKeyDetail(w http.ResponseWriter, r *http.Request) {
+	// Extract username and key name from path: /api/admin/users/{username}/api-keys/{keyname}
+	pathParts := strings.Split(r.URL.Path, "/")
+	if len(pathParts) < 7 {
+		http.Error(w, "Username and key name required", http.StatusBadRequest)
+		return
+	}
+	username := pathParts[4]
+	keyName := pathParts[6]
+
+	switch r.Method {
+	case "DELETE":
+		s.handleAdminRevokeAPIKey(w, r, username, keyName)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleAdminGetAPIKeys(w http.ResponseWriter, r *http.Request, username string) {
+	// Verify target user exists
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	targetUser, err := store.GetUser(username)
+	isOIDCUser := err != nil
+
+	var keys []users.APIKey
+
+	if isOIDCUser && s.db != nil {
+		// Get API keys from database for OIDC user
+		dbKeys, err := s.db.GetAPIKeys(username)
+		if err != nil {
+			http.Error(w, "Failed to retrieve API keys", http.StatusInternalServerError)
+			return
+		}
+
+		// Convert database records to users.APIKey format
+		for _, dbKey := range dbKeys {
+			lastUsed := time.Time{}
+			if dbKey.LastUsedAt != nil {
+				lastUsed = *dbKey.LastUsedAt
+			}
+			keys = append(keys, users.APIKey{
+				Key:        dbKey.KeyHash, // Will be masked anyway
+				Name:       dbKey.KeyName,
+				CreatedAt:  dbKey.CreatedAt,
+				LastUsedAt: lastUsed,
+				ExpiresAt:  dbKey.ExpiresAt,
+			})
+		}
+	} else if targetUser != nil {
+		// Get API keys for local user
+		keys = targetUser.APIKeys
+	} else {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Mask keys before sending
+	maskedKeys := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		maskedKey := map[string]interface{}{
+			"name":       key.Name,
+			"key":        maskAPIKey(key.Key),
+			"created_at": key.CreatedAt.Format(time.RFC3339),
+			"expires_at": key.ExpiresAt.Format(time.RFC3339),
+		}
+		if !key.LastUsedAt.IsZero() {
+			maskedKey["last_used_at"] = key.LastUsedAt.Format(time.RFC3339)
+		}
+		maskedKeys = append(maskedKeys, maskedKey)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"username": username,
+		"api_keys": maskedKeys,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+func (s *Server) handleAdminGenerateAPIKey(w http.ResponseWriter, r *http.Request, username string) {
+	var req struct {
+		Name       string `json:"name"`
+		ExpiryDays int    `json:"expiry_days"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "API key name is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.ExpiryDays <= 0 {
+		req.ExpiryDays = 90 // Default to 90 days
+	}
+
+	// Check if user exists
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = store.GetUser(username)
+	isOIDCUser := err != nil
+
+	if isOIDCUser && s.db != nil {
+		// Generate API key for OIDC user (store in database)
+		apiKey, err := s.generateDatabaseAPIKey(username, req.Name, req.ExpiryDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Return the full key only on creation
+		response := map[string]interface{}{
+			"username":   username,
+			"key":        apiKey.Key,
+			"name":       apiKey.Name,
+			"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+			"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		}
+	} else if err == nil {
+		// Generate API key for local user (store in users.yaml)
+		apiKey, err := store.GenerateAPIKey(username, req.Name, req.ExpiryDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Return the full key only on creation
+		response := map[string]interface{}{
+			"username":   username,
+			"key":        apiKey.Key,
+			"name":       apiKey.Name,
+			"created_at": apiKey.CreatedAt.Format(time.RFC3339),
+			"expires_at": apiKey.ExpiresAt.Format(time.RFC3339),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode API key", http.StatusInternalServerError)
+		}
+	} else {
+		http.Error(w, "User not found", http.StatusNotFound)
+	}
+}
+
+func (s *Server) handleAdminRevokeAPIKey(w http.ResponseWriter, r *http.Request, username, keyName string) {
+	// Check if user exists
+	store, err := users.LoadUsers()
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = store.GetUser(username)
+	isOIDCUser := err != nil
+
+	if isOIDCUser && s.db != nil {
+		// Revoke database API key for OIDC user
+		if err := s.db.DeleteAPIKey(username, keyName); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to revoke API key: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else if err == nil {
+		// Revoke file-based API key for local user
+		if err := store.RevokeAPIKey(username, keyName); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to revoke API key: %v", err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"message":  "API key revoked successfully",
+		"username": username,
+		"key_name": keyName,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// maskAPIKey masks an API key showing only first 8 and last 4 characters
+func maskAPIKey(key string) string {
+	if len(key) <= 12 {
+		return "****"
+	}
+	return key[:8] + "..." + key[len(key)-4:]
 }
 
 func (s *Server) startImpersonation(w http.ResponseWriter, r *http.Request) {

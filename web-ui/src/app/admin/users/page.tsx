@@ -372,7 +372,9 @@ function UsersPageContent() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Standard Users</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Standard Users
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
@@ -485,7 +487,10 @@ function UsersPageContent() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="role">Role</Label>
-              <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
+              <Select
+                value={newUser.role}
+                onValueChange={(value) => setNewUser({ ...newUser, role: value })}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -511,7 +516,8 @@ function UsersPageContent() {
           <DialogHeader>
             <DialogTitle>Delete User</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete user '{selectedUser?.username}'? This action cannot be undone.
+              Are you sure you want to delete user &apos;{selectedUser?.username}&apos;? This action
+              cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

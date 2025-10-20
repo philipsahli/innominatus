@@ -100,14 +100,17 @@ export function AdminImpersonation() {
               <option value="">-- Select a user --</option>
               {users.map((user) => (
                 <option key={user.username} value={user.username}>
-                  {user.username} ({user.team} - {user.role})
-                  {user.is_admin ? ' - ADMIN' : ''}
+                  {user.username} ({user.team} - {user.role}){user.is_admin ? ' - ADMIN' : ''}
                 </option>
               ))}
             </select>
           </div>
 
-          <Button onClick={handleImpersonate} disabled={!selectedUser || loading} className="w-full">
+          <Button
+            onClick={handleImpersonate}
+            disabled={!selectedUser || loading}
+            className="w-full"
+          >
             {loading ? 'Starting Impersonation...' : 'Start Impersonation'}
           </Button>
 

@@ -130,6 +130,9 @@ func main() {
 		}
 		err = client.AnalyzeCommand(flag.Args()[1])
 
+	case "stats":
+		err = client.StatsCommand()
+
 	case "environments":
 		err = client.EnvironmentsCommand()
 
@@ -254,11 +257,30 @@ func main() {
 		err = client.ListWorkflowsCommand(appName)
 
 	case "list-resources":
+		// Parse list-resources-specific flags
+		resourcesFlags := flag.NewFlagSet("list-resources", flag.ExitOnError)
+		resourceType := resourcesFlags.String("type", "", "Filter by resource type (e.g., postgres, redis)")
+		state := resourcesFlags.String("state", "", "Filter by state (e.g., active, provisioning, failed)")
+
+		// Parse remaining arguments
 		appName := ""
-		if len(flag.Args()) >= 2 {
-			appName = flag.Args()[1]
+		resourcesArgs := flag.Args()[1:]
+
+		// First non-flag argument is app name
+		if len(resourcesArgs) > 0 && !strings.HasPrefix(resourcesArgs[0], "-") {
+			appName = resourcesArgs[0]
+			resourcesArgs = resourcesArgs[1:]
 		}
-		err = client.ListResourcesCommand(appName)
+
+		// Parse flags
+		if len(resourcesArgs) > 0 {
+			if err := resourcesFlags.Parse(resourcesArgs); err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing list-resources flags: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		err = client.ListResourcesCommand(appName, *resourceType, *state)
 
 	case "resource":
 		if len(flag.Args()) < 2 {
@@ -268,7 +290,64 @@ func main() {
 		}
 		err = client.ResourceCommand(flag.Args()[1:])
 
+	case "workflow":
+		if len(flag.Args()) < 2 {
+			fmt.Fprintf(os.Stderr, "Error: workflow command requires a subcommand\n")
+			fmt.Fprintf(os.Stderr, "Usage: %s workflow <detail|logs> <workflow-id> [options]\n", os.Args[0])
+			os.Exit(1)
+		}
+
+		subcommand := flag.Args()[1]
+		switch subcommand {
+		case "detail":
+			if len(flag.Args()) < 3 {
+				fmt.Fprintf(os.Stderr, "Error: workflow detail requires a workflow ID\n")
+				fmt.Fprintf(os.Stderr, "Usage: %s workflow detail <workflow-id>\n", os.Args[0])
+				os.Exit(1)
+			}
+			err = client.WorkflowDetailCommand(flag.Args()[2])
+
+		case "logs":
+			if len(flag.Args()) < 3 {
+				fmt.Fprintf(os.Stderr, "Error: workflow logs requires a workflow ID\n")
+				fmt.Fprintf(os.Stderr, "Usage: %s workflow logs <workflow-id> [options]\n", os.Args[0])
+				os.Exit(1)
+			}
+			workflowID := flag.Args()[2]
+
+			// Parse logs-specific flags
+			logsFlags := flag.NewFlagSet("logs", flag.ExitOnError)
+			stepFlag := logsFlags.String("step", "", "Show logs for specific step name")
+			stepOnlyFlag := logsFlags.Bool("step-only", false, "Only show step logs, skip workflow header")
+			tailFlag := logsFlags.Int("tail", 0, "Number of lines to show from end of logs (0 = all)")
+			verboseFlag := logsFlags.Bool("verbose", false, "Show additional metadata")
+
+			// Parse remaining arguments for logs command
+			logsArgs := flag.Args()[3:]
+			if len(logsArgs) > 0 {
+				if err := logsFlags.Parse(logsArgs); err != nil {
+					fmt.Fprintf(os.Stderr, "Error parsing logs flags: %v\n", err)
+					os.Exit(1)
+				}
+			}
+
+			options := cli.LogsOptions{
+				Step:     *stepFlag,
+				StepOnly: *stepOnlyFlag,
+				Tail:     *tailFlag,
+				Verbose:  *verboseFlag,
+			}
+
+			err = client.LogsCommand(workflowID, options)
+
+		default:
+			fmt.Fprintf(os.Stderr, "Error: unknown workflow subcommand '%s'\n", subcommand)
+			fmt.Fprintf(os.Stderr, "Usage: %s workflow <detail|logs> <workflow-id> [options]\n", os.Args[0])
+			os.Exit(1)
+		}
+
 	case "logs":
+		// Backward compatibility: logs <id> redirects to workflow logs <id>
 		if len(flag.Args()) < 2 {
 			fmt.Fprintf(os.Stderr, "Error: logs command requires a workflow ID\n")
 			fmt.Fprintf(os.Stderr, "Usage: %s logs <workflow-id> [options]\n", os.Args[0])
@@ -377,18 +456,23 @@ func printUsage() {
 	fmt.Printf("  status <name>         Show application status and resources\n")
 	fmt.Printf("  validate <file>       Validate Score spec locally\n")
 	fmt.Printf("  analyze <file>        Analyze Score spec workflow dependencies\n")
+	fmt.Printf("  stats                 Show platform statistics (apps, workflows, resources, users)\n")
 	fmt.Printf("  environments          List active environments\n")
 	fmt.Printf("  delete <name>         Delete application and all resources completely\n")
 	fmt.Printf("  deprovision <name>    Deprovision infrastructure (keep audit trail)\n")
 	fmt.Printf("  list-workflows [app]  List workflow executions (optionally filtered by app)\n")
-	fmt.Printf("  list-resources [app]  List resource instances (optionally filtered by app)\n")
+	fmt.Printf("  list-resources [app] [--type TYPE] [--state STATE]\n")
+	fmt.Printf("                        List resource instances with optional filters\n")
 	fmt.Printf("  resource <command>    Manage resource instances\n")
 	fmt.Printf("    get <id>            Get resource details\n")
 	fmt.Printf("    delete <id>         Delete resource\n")
 	fmt.Printf("    update <id> <json>  Update resource configuration\n")
 	fmt.Printf("    transition <id> <state>  Transition resource state\n")
 	fmt.Printf("    health <id> [--check]    Get/check resource health\n")
-	fmt.Printf("  logs <workflow-id>    Show workflow execution logs with step details\n")
+	fmt.Printf("  workflow <command>    Workflow operations\n")
+	fmt.Printf("    detail <id>         Show detailed workflow metadata and step breakdown\n")
+	fmt.Printf("    logs <id>           Show workflow execution logs with step details\n")
+	fmt.Printf("  logs <workflow-id>    Show workflow execution logs (shortcut for workflow logs)\n")
 	fmt.Printf("  retry <id> <spec>     Retry failed workflow from first failed step\n")
 	fmt.Printf("  graph-export <app>    Export workflow graph visualization\n")
 	fmt.Printf("  graph-status <app>    Show workflow graph status and statistics\n")
@@ -431,13 +515,19 @@ func printUsage() {
 	fmt.Printf("  %s status product-service\n", os.Args[0])
 	fmt.Printf("  %s validate score-spec.yaml\n", os.Args[0])
 	fmt.Printf("  %s analyze score-spec.yaml\n", os.Args[0])
+	fmt.Printf("  %s stats\n", os.Args[0])
 	fmt.Printf("  %s list-workflows\n", os.Args[0])
 	fmt.Printf("  %s list-workflows my-app\n", os.Args[0])
 	fmt.Printf("  %s list-resources\n", os.Args[0])
 	fmt.Printf("  %s list-resources my-app\n", os.Args[0])
+	fmt.Printf("  %s list-resources --type postgres\n", os.Args[0])
+	fmt.Printf("  %s list-resources --state active\n", os.Args[0])
+	fmt.Printf("  %s list-resources my-app --type redis --state failed\n", os.Args[0])
 	fmt.Printf("  %s resource get 42\n", os.Args[0])
 	fmt.Printf("  %s resource health 42 --check\n", os.Args[0])
 	fmt.Printf("  %s resource transition 42 deprovisioning\n", os.Args[0])
+	fmt.Printf("  %s workflow detail 1234\n", os.Args[0])
+	fmt.Printf("  %s workflow logs 1234 --step deploy-application\n", os.Args[0])
 	fmt.Printf("  %s logs 1234\n", os.Args[0])
 	fmt.Printf("  %s logs 1234 --step deploy-application --verbose\n", os.Args[0])
 	fmt.Printf("  %s logs 1234 --tail 50 --step-only\n", os.Args[0])

@@ -932,6 +932,291 @@ paths:
               schema:
                 type: string
 
+  /api/stats:
+    get:
+      summary: Get platform statistics
+      description: Returns dashboard statistics including application count, workflow count, resource count, and user count
+      operationId: getStats
+      tags:
+        - Statistics
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applications:
+                    type: integer
+                    description: Total number of deployed applications
+                    example: 15
+                  workflows:
+                    type: integer
+                    description: Number of active (running) workflows
+                    example: 3
+                  resources:
+                    type: integer
+                    description: Total number of provisioned resources
+                    example: 42
+                  users:
+                    type: integer
+                    description: Total number of users
+                    example: 8
+
+  /api/teams:
+    get:
+      summary: List all teams
+      description: Returns list of all teams (admin only)
+      operationId: listTeams
+      tags:
+        - Teams
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      example: "platform-team"
+                    name:
+                      type: string
+                      example: "Platform Team"
+                    description:
+                      type: string
+                      example: "Platform engineering team"
+                    members:
+                      type: array
+                      items:
+                        type: string
+                      example: ["alice", "bob"]
+        '403':
+          description: Admin access required
+    post:
+      summary: Create new team
+      description: Creates a new team (admin only)
+      operationId: createTeam
+      tags:
+        - Teams
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: "dev-team"
+                description:
+                  type: string
+                  example: "Development team"
+      responses:
+        '201':
+          description: Team created successfully
+        '403':
+          description: Admin access required
+
+  /api/teams/{id}:
+    get:
+      summary: Get team details
+      description: Returns details of a specific team (admin only)
+      operationId: getTeam
+      tags:
+        - Teams
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  members:
+                    type: array
+                    items:
+                      type: string
+        '404':
+          description: Team not found
+        '403':
+          description: Admin access required
+    delete:
+      summary: Delete team
+      description: Deletes a team (admin only)
+      operationId: deleteTeam
+      tags:
+        - Teams
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team deleted successfully
+        '404':
+          description: Team not found
+        '403':
+          description: Admin access required
+
+  /api/providers:
+    get:
+      summary: List all providers
+      description: Returns list of loaded providers (infrastructure and service providers)
+      operationId: listProviders
+      tags:
+        - Providers
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: "aws"
+                    version:
+                      type: string
+                      example: "1.0.0"
+                    category:
+                      type: string
+                      enum: [infrastructure, service]
+                      example: "infrastructure"
+                    description:
+                      type: string
+                      example: "AWS infrastructure provider"
+                    provisioners:
+                      type: integer
+                      description: Number of provisioners in this provider
+                      example: 15
+                    golden_paths:
+                      type: integer
+                      description: Number of golden paths in this provider
+                      example: 5
+
+  /api/providers/stats:
+    get:
+      summary: Get provider statistics
+      description: Returns aggregated statistics about loaded providers
+      operationId: getProviderStats
+      tags:
+        - Providers
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: Provider statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: integer
+                    description: Total number of loaded providers
+                    example: 3
+                  provisioners:
+                    type: integer
+                    description: Total number of provisioners across all providers
+                    example: 45
+
+  /api/golden-paths:
+    get:
+      summary: List available golden paths
+      description: Returns list of all available golden paths with metadata
+      operationId: listGoldenPaths
+      tags:
+        - Golden Paths
+      security:
+        - sessionAuth: []
+        - apiKeyAuth: []
+      responses:
+        '200':
+          description: List of golden paths
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: "deploy-app"
+                    description:
+                      type: string
+                      example: "Deploy application with full GitOps pipeline"
+                    category:
+                      type: string
+                      example: "deployment"
+                    tags:
+                      type: array
+                      items:
+                        type: string
+                      example: ["deployment", "gitops", "production"]
+                    estimated_duration:
+                      type: string
+                      example: "5-10 minutes"
+                    parameters:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        properties:
+                          type:
+                            type: string
+                            enum: [string, int, bool, duration, enum]
+                          default:
+                            type: string
+                          description:
+                            type: string
+                          required:
+                            type: boolean
+
 components:
   schemas:
     SpecResponse:

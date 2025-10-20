@@ -114,6 +114,14 @@ type ProviderStats struct {
 	Provisioners int `json:"provisioners"`
 }
 
+// Stats represents platform statistics from the dashboard
+type Stats struct {
+	Applications int `json:"applications"`
+	Workflows    int `json:"workflows"`
+	Resources    int `json:"resources"`
+	Users        int `json:"users"`
+}
+
 // Login authenticates with the server and stores the token
 func (c *Client) Login(username, password string) error {
 	loginData := map[string]string{
@@ -552,6 +560,15 @@ func (c *Client) ListProviders() ([]ProviderSummary, error) {
 func (c *Client) GetProviderStats() (*ProviderStats, error) {
 	var stats ProviderStats
 	if err := c.http.GET("/api/providers/stats", &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+// GetStats retrieves platform statistics (applications, workflows, resources, users)
+func (c *Client) GetStats() (*Stats, error) {
+	var stats Stats
+	if err := c.http.GET("/api/stats", &stats); err != nil {
 		return nil, err
 	}
 	return &stats, nil

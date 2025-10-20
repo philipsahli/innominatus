@@ -1384,15 +1384,15 @@ data:
     </head>
     <body>
         <div class="container">
-            <h1>🚀 OpenAlps Demo Environment</h1>
+            <h1>Innominatus Demo Environment</h1>
             <p>Welcome to your demo platform! This application was deployed from a Score specification.</p>
             <div class="links">
-                <a href="http://gitea.localtest.me" class="link">📚 Gitea</a>
-                <a href="http://argocd.localtest.me" class="link">🔄 ArgoCD</a>
-                <a href="http://vault.localtest.me" class="link">🔒 Vault</a>
-                <a href="http://grafana.localtest.me" class="link">📊 Grafana</a>
-                <a href="http://backstage.localtest.me" class="link">🚪 Backstage</a>
-                <a href="http://k8s.localtest.me" class="link">🎛️ Dashboard</a>
+                <a href="http://gitea.localtest.me" class="link">Gitea</a>
+                <a href="http://argocd.localtest.me" class="link">ArgoCD</a>
+                <a href="http://vault.localtest.me" class="link">Vault</a>
+                <a href="http://grafana.localtest.me" class="link">Grafana</a>
+                <a href="http://backstage.localtest.me" class="link">Backstage</a>
+                <a href="http://k8s.localtest.me" class="link">Dashboard</a>
             </div>
         </div>
     </body>
