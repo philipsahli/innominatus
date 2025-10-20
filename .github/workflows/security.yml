@@ -10,22 +10,17 @@ on:
     - cron: '0 2 * * *'
 
 jobs:
-  gosec:
-    name: Security Scan (gosec)
+  tests:
     runs-on: ubuntu-latest
+    env:
+      GO111MODULE: on
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.24'
-
-    - name: Run gosec Security Scanner
-      uses: securego/gosec@master
-      with:
-        args: '-fmt sarif -out gosec.sarif ./...'
+      - name: Checkout Source
+        uses: actions/checkout@v3
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: ./...
 
   govulncheck:
     name: Vulnerability Check
