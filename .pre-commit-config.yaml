@@ -29,6 +29,30 @@ repos:
   # Security and local hooks
   - repo: local
     hooks:
+      # Go module verification
+      - id: go-mod-verify
+        name: go mod verify
+        entry: go mod verify
+        language: system
+        files: go\.(mod|sum)$
+        pass_filenames: false
+
+      # Go build verification
+      - id: go-build
+        name: go build (verify compilation)
+        entry: bash -c 'go build -o /tmp/innominatus cmd/server/main.go && go build -o /tmp/innominatus-ctl cmd/cli/main.go'
+        language: system
+        files: \.go$
+        pass_filenames: false
+
+      # Go short tests
+      - id: go-test-short
+        name: go test (short tests only)
+        entry: go test -short ./...
+        language: system
+        files: \.go$
+        pass_filenames: false
+
       # Go security scan
       - id: gosec
         name: gosec (Go security scanner)
@@ -37,6 +61,16 @@ repos:
         language: system
         files: \.go$
         pass_filenames: false
+
+      # Go vulnerability check (manual only - can be slow)
+      - id: govulncheck
+        name: govulncheck (vulnerability scan)
+        entry: govulncheck
+        args: ['./...']
+        language: system
+        files: go\.(mod|sum)$
+        pass_filenames: false
+        stages: [manual]
 
       # NPM lint for web-ui
       - id: npm-lint
@@ -52,4 +86,12 @@ repos:
         entry: bash -c 'cd web-ui && npm run format:check'
         language: system
         files: ^web-ui/.*\.(js|jsx|ts|tsx|json|css)$
+        pass_filenames: false
+
+      # TypeScript type check for web-ui
+      - id: typescript-check
+        name: typescript type check (web-ui)
+        entry: bash -c 'cd web-ui && npx tsc --noEmit'
+        language: system
+        files: ^web-ui/.*\.(ts|tsx)$
         pass_filenames: false
