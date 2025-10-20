@@ -28,6 +28,7 @@ func (r *DemoReset) CheckDemoInstalled() (bool, error) {
 		"minio-system",
 	}
 
+	// #nosec G204 -- kubectl command with controlled arguments
 	cmd := exec.Command("kubectl", "--context", r.kubeContext, "get", "namespaces", "-o", "json")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

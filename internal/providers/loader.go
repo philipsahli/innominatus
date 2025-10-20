@@ -25,6 +25,7 @@ func NewLoader(coreVersion string) *Loader {
 // LoadFromFile loads a provider manifest from a YAML file
 func (l *Loader) LoadFromFile(path string) (*sdk.Provider, error) {
 	// Read file
+	// #nosec G304 -- path is user-provided config file path, validated by caller
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read provider file %s: %w", path, err)

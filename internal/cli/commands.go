@@ -2447,6 +2447,7 @@ func (c *Client) RetryWorkflowCommand(workflowID, workflowSpecFile string) error
 	formatter := NewOutputFormatter()
 
 	// Read and parse the workflow specification file
+	// #nosec G304 -- workflowSpecFile is user-provided CLI argument
 	workflowData, err := os.ReadFile(workflowSpecFile)
 	if err != nil {
 		return fmt.Errorf("failed to read workflow spec file: %w", err)

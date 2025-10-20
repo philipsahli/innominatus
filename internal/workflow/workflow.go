@@ -1031,12 +1031,14 @@ func runPolicyStepWithSpinner(step types.Step, appName string, envType string, s
 	}
 	_ = tmpFile.Close()
 
-	// Make script executable
-	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+	// Make script executable (0700 = owner only, needs execute bit for bash)
+	// #nosec G302 -- Script needs execute permissions to run
+	if err := os.Chmod(tmpFile.Name(), 0700); err != nil {
 		return fmt.Errorf("failed to make script executable: %w", err)
 	}
 
 	// Execute script
+	// #nosec G204 -- tmpFile.Name() is a controlled temporary file path
 	cmd := exec.Command("/bin/bash", tmpFile.Name())
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

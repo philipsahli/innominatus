@@ -165,6 +165,7 @@ func (s *Server) HandleSwaggerUserYAML(w http.ResponseWriter, r *http.Request) {
 // readSwaggerFile reads a swagger file from filesystem (dev) or embedded FS (prod)
 func (s *Server) readSwaggerFile(filename string) ([]byte, error) {
 	// Try filesystem first (for development)
+	// #nosec G304 -- filename is controlled and validated by caller (only swagger-*.yaml)
 	if data, err := os.ReadFile(filename); err == nil {
 		return data, nil
 	}

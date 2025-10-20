@@ -126,8 +126,8 @@ func (g *GitLoader) cloneOrPull(source GitProviderSource) (string, error) {
 		"path":       localPath,
 	})
 
-	// Ensure parent directory exists
-	if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+	// Ensure parent directory exists (0750 = owner+group read/write/execute)
+	if err := os.MkdirAll(filepath.Dir(localPath), 0750); err != nil {
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
