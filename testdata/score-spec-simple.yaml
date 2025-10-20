@@ -1,0 +1,21 @@
+# Simple Score specification for testing basic deployment
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: test-app
+  team: platform-team
+  costCenter: engineering
+
+containers:
+  web:
+    image: nginx:latest
+    variables:
+      PORT: "8080"
+      ENVIRONMENT: "test"
+
+resources:
+  route:
+    type: route
+    params:
+      host: test-app.localtest.me
+      port: 8080

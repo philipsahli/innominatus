@@ -1,0 +1,19 @@
+# Invalid Score specification for testing validation errors
+apiVersion: score.dev/v1b1
+
+metadata:
+  # Missing required name field
+  team: platform-team
+
+containers:
+  web:
+    # Missing required image field
+    variables:
+      PORT: "8080"
+
+resources:
+  invalid-resource:
+    # Unknown resource type
+    type: unknown-type
+    params:
+      invalid: "parameter"

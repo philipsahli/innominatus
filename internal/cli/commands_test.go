@@ -26,7 +26,7 @@ func TestListCommand(t *testing.T) {
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/specs":
+		case "/api/applications":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, `{
@@ -131,7 +131,7 @@ func TestListCommandEmptyResponse(t *testing.T) {
 func TestStatusCommand(t *testing.T) {
 	// Create test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/specs" {
+		if r.URL.Path == "/api/applications" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, `{
@@ -139,13 +139,13 @@ func TestStatusCommand(t *testing.T) {
 					"metadata": {"APIVersion": "score.dev/v1b1"}
 				}
 			}`)
-		} else if r.URL.Path == "/api/specs/test-app" {
+		} else if r.URL.Path == "/api/applications/test-app" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, `{
 				"metadata": {"APIVersion": "score.dev/v1b1"}
 			}`)
-		} else if r.URL.Path == "/api/specs/non-existing-app" {
+		} else if r.URL.Path == "/api/applications/non-existing-app" {
 			http.Error(w, "Not found", http.StatusNotFound)
 		} else if strings.HasPrefix(r.URL.Path, "/api/workflows") {
 			w.Header().Set("Content-Type", "application/json")

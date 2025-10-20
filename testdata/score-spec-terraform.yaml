@@ -1,0 +1,35 @@
+# Score specification with Terraform resources for testing infrastructure provisioning
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: test-app-with-infra
+  team: platform-team
+  costCenter: engineering
+  product: ecommerce
+
+containers:
+  web:
+    image: nginx:latest
+    variables:
+      PORT: "8080"
+      DB_HOST: "${resources.database.host}"
+      DB_PORT: "${resources.database.port}"
+
+resources:
+  database:
+    type: postgres
+    params:
+      version: "15"
+      storage: "10Gi"
+
+  storage:
+    type: s3
+    params:
+      bucket_name: "test-app-storage"
+      region: "us-east-1"
+
+  route:
+    type: route
+    params:
+      host: test-app-infra.localtest.me
+      port: 8080

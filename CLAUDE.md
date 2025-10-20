@@ -4,7 +4,14 @@ Score-based platform orchestration component for enterprise Internal Developer P
 
 ## Quick Start
 
-**Build:**
+**Build (using Makefile):**
+```bash
+make install          # Install dependencies
+make build            # Build all components
+make test             # Run all tests
+```
+
+**Or build directly:**
 ```bash
 go build -o innominatus cmd/server/main.go          # Server
 go build -o innominatus-ctl cmd/cli/main.go         # CLI
@@ -13,15 +20,29 @@ go build -o innominatus-ctl cmd/cli/main.go         # CLI
 
 **Run:**
 ```bash
-./innominatus                                        # Start server (http://localhost:8081)
+make dev              # Start server + web UI (http://localhost:8081 & http://localhost:3000)
+# Or separately:
+./innominatus                                        # Start server only
 ./innominatus-ctl list                               # List applications
 ./innominatus-ctl run deploy-app score-spec.yaml    # Deploy via golden path
 ```
 
 **Development:**
 ```bash
+make dev              # Start both server + web UI
+# Or separately:
 go run cmd/server/main.go                            # Dev server
 cd web-ui && npm run dev                             # Dev web UI (http://localhost:3000)
+```
+
+**Testing:**
+```bash
+make test             # Run all local tests
+make test-unit        # Go unit tests only
+make test-e2e         # Go E2E tests (no K8s)
+make test-ui          # Web UI Playwright tests
+make coverage         # Generate coverage report
+make help             # Show all available commands
 ```
 
 ## Core Features
