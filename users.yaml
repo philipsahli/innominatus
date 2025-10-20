@@ -12,7 +12,7 @@ users:
         - key: cf1d1f5afb8c1f1b2e17079c835b1f22d3719f651b4673f1bc4e3a006ebeb5db
           name: cli-key
           created_at: 2025-09-25T11:04:05.646963+02:00
-          last_used_at: 2025-10-19T21:35:56.322979+02:00
+          last_used_at: 2025-10-20T08:16:41.142017+02:00
           expires_at: 2025-12-24T11:04:05.646963+01:00
         - key: da703e772b3e0dffd8fc7eef1cc0a13819b2bb32a6c5f270c12fba1c9874e4d3
           name: aaa

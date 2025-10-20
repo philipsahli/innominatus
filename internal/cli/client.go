@@ -122,6 +122,18 @@ type Stats struct {
 	Users        int `json:"users"`
 }
 
+// GoldenPathInfo represents metadata for a golden path from the API
+type GoldenPathInfo struct {
+	Description       string                 `json:"description"`
+	Category          string                 `json:"category"`
+	Tags              []string               `json:"tags"`
+	EstimatedDuration string                 `json:"estimated_duration"`
+	WorkflowFile      string                 `json:"workflow_file"`
+	Parameters        map[string]interface{} `json:"parameters,omitempty"`
+	RequiredParams    []string               `json:"required_params,omitempty"`    // Deprecated
+	OptionalParams    map[string]string      `json:"optional_params,omitempty"`    // Deprecated
+}
+
 // Login authenticates with the server and stores the token
 func (c *Client) Login(username, password string) error {
 	loginData := map[string]string{
@@ -572,4 +584,13 @@ func (c *Client) GetStats() (*Stats, error) {
 		return nil, err
 	}
 	return &stats, nil
+}
+
+// GetGoldenPaths retrieves all available golden paths from the server
+func (c *Client) GetGoldenPaths() (map[string]*GoldenPathInfo, error) {
+	var paths map[string]*GoldenPathInfo
+	if err := c.http.GET("/api/golden-paths", &paths); err != nil {
+		return nil, err
+	}
+	return paths, nil
 }

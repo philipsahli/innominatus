@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -681,15 +682,16 @@ func (c *Client) deleteTeamCommand(teamID string) error {
 	return nil
 }
 
-// ListGoldenPathsCommand lists all available golden paths with metadata
+// ListGoldenPathsCommand lists all available golden paths with metadata from the server
 func (c *Client) ListGoldenPathsCommand() error {
 	formatter := NewOutputFormatter()
-	config, err := goldenpaths.LoadGoldenPaths()
+
+	// Fetch golden paths from the server API
+	paths, err := c.GetGoldenPaths()
 	if err != nil {
 		return fmt.Errorf("failed to load golden paths: %w", err)
 	}
 
-	paths := config.ListPaths()
 	if len(paths) == 0 {
 		formatter.PrintEmptyState("No golden paths configured")
 		return nil
@@ -697,12 +699,15 @@ func (c *Client) ListGoldenPathsCommand() error {
 
 	formatter.PrintHeader(fmt.Sprintf("Available Golden Paths (%d):", len(paths)))
 
-	for _, pathName := range paths {
-		metadata, err := config.GetMetadata(pathName)
-		if err != nil {
-			formatter.PrintWarning(fmt.Sprintf("Failed to load metadata for '%s': %v", pathName, err))
-			continue
-		}
+	// Sort path names for consistent output
+	pathNames := make([]string, 0, len(paths))
+	for pathName := range paths {
+		pathNames = append(pathNames, pathName)
+	}
+	sort.Strings(pathNames)
+
+	for _, pathName := range pathNames {
+		metadata := paths[pathName]
 
 		formatter.PrintEmpty()
 		formatter.PrintSection(0, SymbolWorkflow, pathName)
@@ -713,7 +718,9 @@ func (c *Client) ListGoldenPathsCommand() error {
 		}
 
 		// Workflow file
-		formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
+		if metadata.WorkflowFile != "" {
+			formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
+		}
 
 		// Category and duration
 		if metadata.Category != "" {
@@ -728,7 +735,7 @@ func (c *Client) ListGoldenPathsCommand() error {
 			formatter.PrintKeyValue(1, "Tags", strings.Join(metadata.Tags, ", "))
 		}
 
-		// Required parameters
+		// Required parameters (backward compatibility)
 		if len(metadata.RequiredParams) > 0 {
 			formatter.PrintSection(1, "", "Required Parameters:")
 			for _, param := range metadata.RequiredParams {
@@ -736,7 +743,7 @@ func (c *Client) ListGoldenPathsCommand() error {
 			}
 		}
 
-		// Optional parameters with defaults
+		// Optional parameters with defaults (backward compatibility)
 		if len(metadata.OptionalParams) > 0 {
 			formatter.PrintSection(1, "", "Optional Parameters:")
 			for param, defaultValue := range metadata.OptionalParams {

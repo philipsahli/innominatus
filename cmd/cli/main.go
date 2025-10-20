@@ -31,18 +31,17 @@ func main() {
 
 	// Commands that don't require server authentication
 	localCommands := map[string]bool{
-		"list-goldenpaths": true,
-		"run":              true,
-		"validate":         true,
-		"analyze":          true,
-		"demo-time":        true,
-		"demo-nuke":        true,
-		"demo-status":      true,
-		"demo-reset":       true,
-		"fix-gitea-oauth":  true,
-		"login":            true,
-		"logout":           true,
-		"chat":             true, // AI assistant chat
+		"run":             true,
+		"validate":        true,
+		"analyze":         true,
+		"demo-time":       true,
+		"demo-nuke":       true,
+		"demo-status":     true,
+		"demo-reset":      true,
+		"fix-gitea-oauth": true,
+		"login":           true,
+		"logout":          true,
+		"chat":            true, // AI assistant chat
 	}
 
 	// Run fast configuration validation for server commands (skip local commands)
