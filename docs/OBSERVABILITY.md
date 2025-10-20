@@ -267,6 +267,188 @@ Dashboard includes:
 - Database query performance
 - Go runtime metrics (goroutines, memory, GC)
 
+## AI/RAG Service Logging
+
+### Overview
+
+The AI/RAG service (AI assistant) uses standardized structured logging for comprehensive observability of LLM operations, RAG retrievals, and tool executions.
+
+### Components
+
+- `internal/ai/chat.go` - Chat interactions, agent loop, tool calling
+- `internal/ai/knowledge.go` - Document loading, knowledge base management
+- `internal/ai/executor.go` - Internal API tool execution
+- `internal/ai/service.go` - Service initialization, status
+
+### Log Message Format
+
+All AI/RAG logs follow a consistent message pattern:
+
+**Error messages**: `"Failed to <action>"`
+```json
+{"level":"error","message":"Failed to retrieve RAG context"}
+{"level":"error","message":"Failed to execute tool"}
+```
+
+**Success messages**: Past tense (`"Loaded"`, `"Executed"`, `"Retrieved"`)
+```json
+{"level":"debug","message":"Retrieved RAG context"}
+{"level":"debug","message":"Executed tool"}
+{"level":"info","message":"Loaded knowledge base"}
+```
+
+**In-progress messages**: Present participle (`"Loading"`, `"Executing"`)
+```json
+{"level":"debug","message":"Loading documentation files"}
+{"level":"debug","message":"Executing tool"}
+```
+
+### Log Levels
+
+**Debug** - Detailed operational information:
+- RAG retrieval parameters and results
+- Agent loop iterations with token counts
+- Individual tool executions
+- Document loading per-file details
+- HTTP request/response details
+
+**Info** - Key milestones:
+- Service initialization
+- Knowledge base loaded (with document count)
+- Major state changes
+
+**Warn** - Non-fatal issues:
+- Failed RAG retrievals (continues without context)
+- Missing authentication tokens
+- Document loading warnings
+
+**Error** - Fatal errors:
+- Service initialization failures
+- Tool execution failures
+- Critical API errors
+
+### Example Logs
+
+**RAG Context Retrieval**:
+```json
+{
+  "level": "debug",
+  "query": "how to deploy an application",
+  "top_k": 3,
+  "min_score": 0.3,
+  "results_count": 3,
+  "context_length": 1500,
+  "message": "Retrieved RAG context",
+  "timestamp": "2025-10-08T10:30:15Z"
+}
+```
+
+**Agent Loop Completion**:
+```json
+{
+  "level": "debug",
+  "iterations": 3,
+  "total_tokens": 1250,
+  "has_spec": false,
+  "citations_count": 2,
+  "message": "Agent loop completed",
+  "timestamp": "2025-10-08T10:30:18Z"
+}
+```
+
+**Tool Execution**:
+```json
+{
+  "level": "debug",
+  "iteration": 2,
+  "tool_name": "list_applications",
+  "tool_id": "toolu_abc123",
+  "result_length": 850,
+  "message": "Executed tool",
+  "timestamp": "2025-10-08T10:30:17Z"
+}
+```
+
+**Knowledge Base Loading**:
+```json
+{
+  "level": "info",
+  "document_count": 25,
+  "message": "Loaded knowledge base",
+  "timestamp": "2025-10-08T10:30:00Z"
+}
+```
+
+**LLM Response**:
+```json
+{
+  "level": "debug",
+  "iteration": 2,
+  "prompt_tokens": 450,
+  "completion_tokens": 125,
+  "total_tokens": 575,
+  "cumulative_tokens": 1250,
+  "tool_uses": 1,
+  "message": "Received LLM response",
+  "timestamp": "2025-10-08T10:30:16Z"
+}
+```
+
+### Querying AI Logs
+
+**Loki Query Examples**:
+
+Find all RAG retrievals:
+```
+{job="innominatus"} | json | message=~".*RAG context"
+```
+
+Track token usage:
+```
+{job="innominatus"} | json | total_tokens > 0
+  | line_format "{{.total_tokens}} tokens - {{.message}}"
+```
+
+Debug tool executions:
+```
+{job="innominatus"} | json | tool_name!=""
+  | line_format "{{.tool_name}}: {{.message}}"
+```
+
+Find failed operations:
+```
+{job="innominatus"} | json | level="error" | message=~"Failed to.*"
+```
+
+Monitor agent loop performance:
+```
+{job="innominatus"} | json | message="Agent loop completed"
+  | line_format "{{.iterations}} iterations, {{.total_tokens}} tokens"
+```
+
+### AI-Specific Observability
+
+**Key Metrics to Monitor**:
+- Average agent loop iterations (target: < 5)
+- Token consumption per request (for cost tracking)
+- RAG retrieval success rate (should be > 90%)
+- Tool execution success rate (should be > 95%)
+- Knowledge base document count (should be stable)
+
+**Performance Indicators**:
+- RAG retrieval latency < 300ms
+- Agent loop completion time < 5s
+- Tool execution time varies by operation
+
+**Cost Tracking**:
+```
+# Sum tokens over time window
+sum_over_time({job="innominatus"} | json | total_tokens[1h])
+
+# Average tokens per request
+avg_over_time({job="innominatus"} | json | total_tokens[5m])
+```
+
 ## Configuration
 
 ### Complete Environment Variables
@@ -286,6 +468,10 @@ export OTEL_TRACE_SAMPLE_RATE=0.1       # Sample 10% in production
 
 # Metrics
 export PUSHGATEWAY_URL=http://pushgateway:9091
+
+# AI/RAG Configuration (affects logging verbosity)
+export OPENAI_API_KEY=sk-...             # Required for embeddings
+export ANTHROPIC_API_KEY=sk-ant-...      # Required for LLM
 ```
 
 ### Production Recommended Settings

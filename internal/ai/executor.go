@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/rs/zerolog/log"
 )
 
 // ToolExecutor executes tool calls by making internal API requests
@@ -151,6 +153,14 @@ func (e *ToolExecutor) getDashboardStats(ctx context.Context) (string, error) {
 func (e *ToolExecutor) makeAPIRequest(ctx context.Context, method, endpoint string, body []byte) (string, error) {
 	url := e.apiBaseURL + endpoint
 
+	log.Debug().
+		Str("method", method).
+		Str("endpoint", endpoint).
+		Str("url", url).
+		Bool("has_body", body != nil).
+		Int("body_size", len(body)).
+		Msg("Making API request")
+
 	var req *http.Request
 	var err error
 
@@ -161,6 +171,11 @@ func (e *ToolExecutor) makeAPIRequest(ctx context.Context, method, endpoint stri
 	}
 
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("method", method).
+			Str("endpoint", endpoint).
+			Msg("Failed to create HTTP request")
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -172,25 +187,48 @@ func (e *ToolExecutor) makeAPIRequest(ctx context.Context, method, endpoint stri
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("method", method).
+			Str("endpoint", endpoint).
+			Msg("Failed to execute request")
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			// Log error but don't fail the request
-			_ = err
+			log.Warn().
+				Err(err).
+				Msg("Failed to close response body")
 		}
 	}()
 
 	// Read response
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Error().
+			Err(err).
+			Str("endpoint", endpoint).
+			Msg("Failed to read response body")
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
 
 	// Check status code
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Error().
+			Int("status_code", resp.StatusCode).
+			Str("method", method).
+			Str("endpoint", endpoint).
+			Str("response_body", string(respBody)).
+			Msg("Request failed")
 		return "", fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
+
+	log.Debug().
+		Int("status_code", resp.StatusCode).
+		Str("method", method).
+		Str("endpoint", endpoint).
+		Int("response_size", len(respBody)).
+		Msg("Completed API request")
 
 	return string(respBody), nil
 }
