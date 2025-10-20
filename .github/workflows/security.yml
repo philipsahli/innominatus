@@ -18,7 +18,7 @@ jobs:
       uses: actions/checkout@v5
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v6
       with:
         go-version: '1.24'
 
@@ -27,8 +27,28 @@ jobs:
       with:
         args: '-fmt sarif -out gosec.sarif ./...'
 
+    - name: Fix SARIF file format
+      if: always()
+      run: |
+        # Fix artifactChanges to be arrays in the SARIF file
+        if [ -f gosec.sarif ]; then
+          jq '
+            .runs[].results[]? |=
+            if .fixes then
+              .fixes[] |=
+              if .artifactChanges and (.artifactChanges | type != "array") then
+                .artifactChanges = [.artifactChanges]
+              else
+                .
+              end
+            else
+              .
+            end
+          ' gosec.sarif > gosec-fixed.sarif && mv gosec-fixed.sarif gosec.sarif
+        fi
+
     - name: Upload SARIF file
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@v4
       if: always()
       with:
         sarif_file: gosec.sarif
@@ -41,7 +61,7 @@ jobs:
       uses: actions/checkout@v5
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v6
       with:
         go-version: '1.24'
 
@@ -59,7 +79,7 @@ jobs:
       uses: actions/checkout@v5
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v6
       with:
         go-version: '1.24'
 
