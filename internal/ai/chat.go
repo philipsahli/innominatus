@@ -8,6 +8,7 @@ import (
 
 	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai/llm"
 	"github.com/philipsahli/innominatus-ai-sdk/pkg/platformai/rag"
+	"github.com/rs/zerolog/log"
 )
 
 // Chat handles chat interactions with the AI assistant with tool calling support
@@ -17,15 +18,28 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 	}
 
 	// Retrieve relevant context from RAG
+	log.Debug().
+		Str("query", req.Message).
+		Int("top_k", 3).
+		Float64("min_score", 0.3).
+		Msg("Retrieving RAG context")
+
 	ragResponse, err := s.sdk.RAG().Retrieve(ctx, rag.RetrieveRequest{
 		Query:    req.Message,
 		TopK:     3,
 		MinScore: 0.3,
 	})
 	if err != nil {
-		// Log warning but continue without context
-		fmt.Printf("Warning: Failed to retrieve RAG context: %v\n", err)
+		log.Warn().
+			Err(err).
+			Str("query", req.Message).
+			Msg("Failed to retrieve RAG context")
 		ragResponse = &rag.RetrieveResponse{Context: ""}
+	} else {
+		log.Debug().
+			Int("results_count", len(ragResponse.Results)).
+			Int("context_length", len(ragResponse.Context)).
+			Msg("Retrieved RAG context")
 	}
 
 	// Extract citations from RAG results
@@ -34,6 +48,12 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 		if source, ok := result.Document.Metadata["source"]; ok {
 			citations = append(citations, source)
 		}
+	}
+
+	if len(citations) > 0 {
+		log.Debug().
+			Strs("citations", citations).
+			Msg("Extracted citations")
 	}
 
 	// Build system prompt with tool awareness
@@ -84,11 +104,21 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 	tools := GetAvailableTools()
 
 	// Agent loop: keep calling LLM until it stops requesting tools
-	maxIterations := 5
+	maxIterations := 10 // Increased from 5 to support complex multi-tool queries
 	totalTokens := 0
 	var toolResults []string
 
+	log.Debug().
+		Int("max_iterations", maxIterations).
+		Int("available_tools", len(tools)).
+		Msg("Starting agent loop")
+
 	for i := 0; i < maxIterations; i++ {
+		log.Debug().
+			Int("iteration", i+1).
+			Int("messages_count", len(messages)).
+			Msg("Processing agent iteration")
+
 		// Call LLM with tools
 		llmResponse, err := s.sdk.LLM().GenerateWithTools(ctx, llm.GenerateWithToolsRequest{
 			SystemPrompt: systemPrompt,
@@ -98,15 +128,35 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 			Tools:        tools,
 		})
 		if err != nil {
+			log.Error().
+				Err(err).
+				Int("iteration", i+1).
+				Msg("Failed to generate response")
 			return nil, fmt.Errorf("failed to generate AI response: %w", err)
 		}
 
 		totalTokens += llmResponse.Usage.TotalTokens
 
+		log.Debug().
+			Int("iteration", i+1).
+			Int("prompt_tokens", llmResponse.Usage.PromptTokens).
+			Int("completion_tokens", llmResponse.Usage.CompletionTokens).
+			Int("total_tokens", llmResponse.Usage.TotalTokens).
+			Int("cumulative_tokens", totalTokens).
+			Int("tool_uses", len(llmResponse.ToolUses)).
+			Msg("Received LLM response")
+
 		// If no tool uses, we have a final response
 		if len(llmResponse.ToolUses) == 0 {
 			// Check if response contains a Score spec
 			generatedSpec := extractYAMLSpec(llmResponse.Text)
+
+			log.Debug().
+				Int("iterations", i+1).
+				Int("total_tokens", totalTokens).
+				Bool("has_spec", generatedSpec != "").
+				Int("citations_count", len(citations)).
+				Msg("Agent loop completed")
 
 			return &ChatResponse{
 				Message:       llmResponse.Text,
@@ -146,22 +196,41 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 
 		// Execute tools and add results
 		userContent := []llm.ContentBlock{}
-		for _, toolUse := range llmResponse.ToolUses {
+		for idx, toolUse := range llmResponse.ToolUses {
 			// Create tool executor (using internal API base URL and auth token from request)
 			apiBaseURL := "http://localhost:8081"
 			authToken := req.AuthToken
 			if authToken == "" {
-				// No auth token available - tool will fail with 401/403
-				fmt.Printf("Warning: No auth token available for tool execution\n")
+				log.Warn().
+					Str("tool", toolUse.Name).
+					Msg("No auth token available for tool execution")
 			}
+
+			log.Debug().
+				Int("iteration", i+1).
+				Int("tool_index", idx+1).
+				Int("total_tools", len(llmResponse.ToolUses)).
+				Str("tool_name", toolUse.Name).
+				Str("tool_id", toolUse.ID).
+				Msg("Executing tool")
 
 			executor := NewToolExecutor(apiBaseURL, authToken)
 			result, err := executor.ExecuteTool(ctx, toolUse.Name, toolUse.Input)
 
 			var resultContent string
 			if err != nil {
+				log.Error().
+					Err(err).
+					Str("tool_name", toolUse.Name).
+					Str("tool_id", toolUse.ID).
+					Msg("Failed to execute tool")
 				resultContent = fmt.Sprintf("Error executing tool: %v", err)
 			} else {
+				log.Debug().
+					Str("tool_name", toolUse.Name).
+					Str("tool_id", toolUse.ID).
+					Int("result_length", len(result)).
+					Msg("Executed tool")
 				resultContent = result
 				// Append tool result for display (not used in this iteration but may be useful for debugging)
 				_ = append(toolResults, fmt.Sprintf("Tool %s: %s", toolUse.Name, result))
@@ -182,6 +251,11 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 	}
 
 	// If we hit max iterations, return what we have
+	log.Warn().
+		Int("max_iterations", maxIterations).
+		Int("total_tokens", totalTokens).
+		Msg("Reached maximum agent loop iterations")
+
 	return &ChatResponse{
 		Message:    "I've executed the requested actions, but the conversation exceeded the maximum number of iterations. Please try breaking your request into smaller parts.",
 		Citations:  citations,
@@ -195,6 +269,10 @@ func (s *Service) GenerateSpec(ctx context.Context, req GenerateSpecRequest) (*G
 	if !s.enabled {
 		return nil, fmt.Errorf("AI service is not enabled")
 	}
+
+	log.Debug().
+		Str("description", req.Description).
+		Msg("Generating Score specification")
 
 	// Build a specific prompt for spec generation
 	prompt := fmt.Sprintf(`Generate a complete Score specification based on the following description:
@@ -214,13 +292,24 @@ Respond with:
 YAML Spec:`, req.Description)
 
 	// Retrieve relevant examples from RAG
+	log.Debug().
+		Str("query", req.Description+" Score specification example").
+		Msg("Retrieving RAG examples")
+
 	ragResponse, err := s.sdk.RAG().Retrieve(ctx, rag.RetrieveRequest{
 		Query:    req.Description + " Score specification example",
 		TopK:     2,
 		MinScore: 0.3,
 	})
 	if err != nil {
+		log.Warn().
+			Err(err).
+			Msg("Failed to retrieve RAG examples")
 		ragResponse = &rag.RetrieveResponse{Context: ""}
+	} else {
+		log.Debug().
+			Int("results_count", len(ragResponse.Results)).
+			Msg("Retrieved RAG examples")
 	}
 
 	// Generate spec using LLM
@@ -231,14 +320,30 @@ YAML Spec:`, req.Description)
 		MaxTokens:    3000,
 	}, ragResponse.Context)
 	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Failed to generate specification")
 		return nil, fmt.Errorf("failed to generate spec: %w", err)
 	}
+
+	log.Debug().
+		Int("prompt_tokens", llmResponse.Usage.PromptTokens).
+		Int("completion_tokens", llmResponse.Usage.CompletionTokens).
+		Int("total_tokens", llmResponse.Usage.TotalTokens).
+		Msg("Received LLM response")
 
 	// Extract YAML spec from response
 	spec := extractYAMLSpec(llmResponse.Text)
 	if spec == "" {
+		log.Error().
+			Msg("Failed to extract YAML specification")
 		return nil, fmt.Errorf("failed to extract YAML spec from AI response")
 	}
+
+	log.Debug().
+		Int("spec_length", len(spec)).
+		Int("total_tokens", llmResponse.Usage.TotalTokens).
+		Msg("Generated Score specification")
 
 	// Extract explanation (text before or after the YAML block)
 	explanation := extractExplanation(llmResponse.Text, spec)
@@ -292,6 +397,9 @@ When answering questions about the platform, use the provided context from the d
 
 Guidelines:
 - **IMPORTANT: Keep responses very brief and concise (2-3 sentences maximum)**
+- **IMPORTANT: Answer concisely and stop after addressing the user's main question**
+- **Avoid chaining more than 3-4 tools unless absolutely necessary**
+- **If you need more context, ask the user rather than exploring further**
 - Use bullet points instead of long paragraphs
 - When using tools, just present the results - don't over-explain
 - Only provide detailed explanations when explicitly asked

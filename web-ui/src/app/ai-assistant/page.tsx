@@ -15,7 +15,7 @@ interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  timestamp: string;
+  timestamp: string; // ISO 8601 format for API compatibility
   citations?: string[];
   spec?: string; // Store generated spec with the message
 }
@@ -70,7 +70,7 @@ export default function AIAssistantPage() {
       id: Date.now().toString(),
       role: 'user',
       content: message,
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: new Date().toISOString(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -92,7 +92,7 @@ export default function AIAssistantPage() {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: response.data.message,
-          timestamp: new Date(response.data.timestamp).toLocaleTimeString(),
+          timestamp: response.data.timestamp, // Keep ISO format for consistency
           citations: response.data.citations,
           spec: response.data.generated_spec, // Store spec with message
         };
@@ -127,7 +127,7 @@ export default function AIAssistantPage() {
       id: Date.now().toString(),
       role: 'user',
       content: `Generate a Score specification: ${description}`,
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: new Date().toISOString(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -141,7 +141,7 @@ export default function AIAssistantPage() {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: response.data.explanation,
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: new Date().toISOString(),
           citations: response.data.citations,
           spec: response.data.spec, // IMPORTANT: Store spec in message for conversation history!
         };
@@ -410,10 +410,11 @@ export default function AIAssistantPage() {
                       </p>
                       <ul className="text-xs text-muted-foreground space-y-0.5 ml-3">
                         <li>• README.md</li>
-                        <li>• CLAUDE.md (project guide)</li>
-                        <li>• Golden paths config</li>
                         <li>• Score specifications</li>
                       </ul>
+                      <p className="text-xs text-muted-foreground mt-2 italic">
+                        Note: Large files excluded to optimize performance
+                      </p>
                     </div>
                     {aiStatus?.documents_loaded && (
                       <div className="pt-2 border-t border-gray-200 dark:border-gray-700">

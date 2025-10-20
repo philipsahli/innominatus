@@ -21,6 +21,7 @@ func (s *Service) HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Error().Err(err).Str("endpoint", "/api/ai/chat").Msg("Failed to decode chat request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -65,6 +66,7 @@ func (s *Service) HandleGenerateSpec(w http.ResponseWriter, r *http.Request) {
 
 	var req GenerateSpecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Error().Err(err).Str("endpoint", "/api/ai/generate-spec").Msg("Failed to decode spec generation request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
