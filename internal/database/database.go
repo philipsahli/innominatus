@@ -3,20 +3,21 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"innominatus/internal/logging"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
 
-	"innominatus/internal/logging"
-
 	_ "github.com/lib/pq"
 )
 
 // Database wraps the SQL database connection
 type Database struct {
-	db *sql.DB
+	db           *sql.DB
+	migrationsFS fs.FS // Optional: embedded migrations filesystem
 }
 
 // Config holds database configuration
@@ -330,7 +331,7 @@ ALTER TABLE resource_dependencies ADD CONSTRAINT chk_dependency_type
 	return nil
 }
 
-// RunMigrations executes SQL migration files from the migrations/ directory
+// RunMigrations executes SQL migration files from filesystem or embedded FS
 func (d *Database) RunMigrations() error {
 	logger := logging.NewStructuredLogger("database.migrations")
 
@@ -338,66 +339,160 @@ func (d *Database) RunMigrations() error {
 		return fmt.Errorf("database connection is nil")
 	}
 
-	// Get migrations directory path
+	// Try filesystem first (for development), then embedded FS (for production)
 	migrationsDir := "migrations"
+	var files []string
+	var err error
+	useEmbedded := false
 
-	// Read migration files
-	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
-	if err != nil {
-		return fmt.Errorf("failed to read migrations directory: %w", err)
+	// Check if migrations directory exists on filesystem
+	if _, statErr := os.Stat(migrationsDir); statErr == nil {
+		// Use filesystem migrations
+		files, err = filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+		if err != nil {
+			return fmt.Errorf("failed to read migrations directory: %w", err)
+		}
+		logger.Info("Using filesystem migrations")
+	} else {
+		// Use embedded migrations
+		useEmbedded = true
+		logger.Info("Using embedded migrations")
+		// Import embeds package to access embedded migrations
+		// Note: This will be handled at runtime via embeds.GetMigrationsFS()
 	}
 
 	// Sort files to ensure consistent execution order
 	sort.Strings(files)
 
-	// Execute each migration file
-	for _, file := range files {
-		logger.InfoWithFields("Running migration", map[string]interface{}{
-			"migration_file": filepath.Base(file),
-			"full_path":      file,
-		})
-
-		// Execute migration using psql directly for proper multi-statement support
-		// This avoids issues with comment parsing and complex SQL statements
-		psqlCmd := fmt.Sprintf("psql -d %s -f %s",
-			getEnvWithDefault("DB_NAME", "idp_orchestrator"),
-			file,
-		)
-
-		// Set environment variables for psql connection
-		cmd := fmt.Sprintf("PGHOST=%s PGPORT=%s PGUSER=%s PGPASSWORD=%s %s",
-			getEnvWithDefault("DB_HOST", "localhost"),
-			getEnvWithDefault("DB_PORT", "5432"),
-			getEnvWithDefault("DB_USER", "postgres"),
-			getEnvWithDefault("DB_PASSWORD", ""),
-			psqlCmd,
-		)
-
-		// Execute using shell
-		output, err := exec.Command("sh", "-c", cmd).CombinedOutput() // #nosec G204 - Database migration with controlled SQL files
-		if err != nil {
-			logger.ErrorWithFields("Migration execution failed", map[string]interface{}{
-				"migration_file": filepath.Base(file),
-				"output":         string(output),
-				"error":          err.Error(),
-			})
-			return fmt.Errorf("failed to execute migration %s: %w", file, err)
+	// Execute migrations from filesystem using psql
+	if !useEmbedded {
+		for _, file := range files {
+			if err := d.runFilesystemMigration(logger, file); err != nil {
+				return err
+			}
 		}
-
-		logger.InfoWithFields("Successfully executed migration", map[string]interface{}{
-			"migration_file": filepath.Base(file),
-		})
+	} else {
+		// Execute embedded migrations
+		if err := d.runEmbeddedMigrations(logger); err != nil {
+			return err
+		}
 	}
 
-	if len(files) == 0 {
+	if len(files) == 0 && !useEmbedded {
 		logger.InfoWithFields("No migration files found", map[string]interface{}{
 			"migrations_dir": migrationsDir,
 		})
-	} else {
+	} else if !useEmbedded {
 		logger.InfoWithFields("Completed migrations", map[string]interface{}{
 			"total_migrations": len(files),
 		})
 	}
+
+	return nil
+}
+
+// runFilesystemMigration executes a single migration file from filesystem using psql
+func (d *Database) runFilesystemMigration(logger *logging.ZerologAdapter, file string) error {
+	logger.InfoWithFields("Running migration", map[string]interface{}{
+		"migration_file": filepath.Base(file),
+		"full_path":      file,
+	})
+
+	// Execute migration using psql directly for proper multi-statement support
+	psqlCmd := fmt.Sprintf("psql -d %s -f %s",
+		getEnvWithDefault("DB_NAME", "idp_orchestrator"),
+		file,
+	)
+
+	// Set environment variables for psql connection
+	cmd := fmt.Sprintf("PGHOST=%s PGPORT=%s PGUSER=%s PGPASSWORD=%s %s",
+		getEnvWithDefault("DB_HOST", "localhost"),
+		getEnvWithDefault("DB_PORT", "5432"),
+		getEnvWithDefault("DB_USER", "postgres"),
+		getEnvWithDefault("DB_PASSWORD", ""),
+		psqlCmd,
+	)
+
+	// Execute using shell
+	output, err := exec.Command("sh", "-c", cmd).CombinedOutput() // #nosec G204 - Database migration with controlled SQL files
+	if err != nil {
+		logger.ErrorWithFields("Migration execution failed", map[string]interface{}{
+			"migration_file": filepath.Base(file),
+			"output":         string(output),
+			"error":          err.Error(),
+		})
+		return fmt.Errorf("failed to execute migration %s: %w", file, err)
+	}
+
+	logger.InfoWithFields("Successfully executed migration", map[string]interface{}{
+		"migration_file": filepath.Base(file),
+	})
+	return nil
+}
+
+// runEmbeddedMigrations executes migrations from embedded filesystem
+func (d *Database) runEmbeddedMigrations(logger *logging.ZerologAdapter) error {
+	if d.migrationsFS == nil {
+		return fmt.Errorf("no embedded migrations filesystem provided")
+	}
+	migrationsFS := d.migrationsFS
+
+	// Read all .sql files from embedded FS
+	entries, err := fs.ReadDir(migrationsFS, ".")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded migrations: %w", err)
+	}
+
+	// Collect and sort migration files
+	var migrationFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" {
+			migrationFiles = append(migrationFiles, entry.Name())
+		}
+	}
+	sort.Strings(migrationFiles)
+
+	logger.InfoWithFields("Found embedded migrations", map[string]interface{}{
+		"count": len(migrationFiles),
+	})
+
+	// Execute each migration
+	for _, filename := range migrationFiles {
+		// Read migration content from embedded FS
+		content, err := fs.ReadFile(migrationsFS, filename)
+		if err != nil {
+			return fmt.Errorf("failed to read embedded migration %s: %w", filename, err)
+		}
+
+		// Create temporary file for psql execution
+		tmpFile, err := os.CreateTemp("", fmt.Sprintf("migration-%s-*.sql", filename))
+		if err != nil {
+			return fmt.Errorf("failed to create temp file for migration %s: %w", filename, err)
+		}
+		tmpPath := tmpFile.Name()
+		defer os.Remove(tmpPath) // Clean up temp file
+
+		// Write content to temp file
+		if _, err := tmpFile.Write(content); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("failed to write temp migration file %s: %w", filename, err)
+		}
+		tmpFile.Close()
+
+		// Execute migration using existing runFilesystemMigration logic
+		logger.InfoWithFields("Running embedded migration", map[string]interface{}{
+			"migration_file": filename,
+			"temp_file":      tmpPath,
+		})
+
+		if err := d.runFilesystemMigration(logger, tmpPath); err != nil {
+			return fmt.Errorf("failed to execute embedded migration %s: %w", filename, err)
+		}
+	}
+
+	logger.InfoWithFields("Completed embedded migrations", map[string]interface{}{
+		"total_migrations": len(migrationFiles),
+	})
 
 	return nil
 }

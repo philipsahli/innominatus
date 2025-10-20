@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"sort"
 
 	"innominatus/internal/admin"
@@ -140,6 +141,8 @@ type Server struct {
 	wsHub             *GraphWebSocketHub // WebSocket hub for real-time graph updates
 	aiService         AIService          // AI assistant service (optional)
 	providerRegistry  ProviderRegistry   // Provider registry (optional)
+	swaggerFS         fs.FS              // Optional: embedded swagger files
+	webUIFS           fs.FS              // Optional: embedded web-ui files
 	loginAttempts     map[string][]time.Time
 	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)

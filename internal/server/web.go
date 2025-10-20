@@ -2,7 +2,7 @@ package server
 
 import (
 	"fmt"
-
+	"io/fs"
 	"net/http"
 	"os"
 )
@@ -121,7 +121,7 @@ func (s *Server) renderSwaggerUI(w http.ResponseWriter, title, specURL, currentP
 }
 
 func (s *Server) HandleSwaggerYAML(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile("swagger.yaml")
+	data, err := s.readSwaggerFile("swagger.yaml")
 	if err != nil {
 		http.Error(w, "Could not read swagger.yaml", http.StatusInternalServerError)
 		return
@@ -135,7 +135,7 @@ func (s *Server) HandleSwaggerYAML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleSwaggerAdminYAML(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile("swagger-admin.yaml")
+	data, err := s.readSwaggerFile("swagger-admin.yaml")
 	if err != nil {
 		http.Error(w, "Could not read swagger-admin.yaml", http.StatusInternalServerError)
 		return
@@ -149,7 +149,7 @@ func (s *Server) HandleSwaggerAdminYAML(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) HandleSwaggerUserYAML(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile("swagger-user.yaml")
+	data, err := s.readSwaggerFile("swagger-user.yaml")
 	if err != nil {
 		http.Error(w, "Could not read swagger-user.yaml", http.StatusInternalServerError)
 		return
@@ -160,4 +160,23 @@ func (s *Server) HandleSwaggerUserYAML(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(data); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to write response: %v\n", err)
 	}
+}
+
+// readSwaggerFile reads a swagger file from filesystem (dev) or embedded FS (prod)
+func (s *Server) readSwaggerFile(filename string) ([]byte, error) {
+	// Try filesystem first (for development)
+	if data, err := os.ReadFile(filename); err == nil {
+		return data, nil
+	}
+
+	// Fallback to embedded FS (for production) if available
+	if s.swaggerFS != nil {
+		data, err := fs.ReadFile(s.swaggerFS, filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read swagger file from embedded FS: %w", err)
+		}
+		return data, nil
+	}
+
+	return nil, fmt.Errorf("swagger file %s not found in filesystem or embedded FS", filename)
 }
