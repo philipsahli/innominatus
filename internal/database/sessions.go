@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"innominatus/internal/users"
 	"time"
+
+	"innominatus/internal/logging"
+	"innominatus/internal/users"
 )
 
 // SessionData represents session information stored in the database
@@ -23,17 +25,17 @@ type SessionData struct {
 
 // CreateSession stores a new session in the database
 func (d *Database) CreateSession(sessionID string, user *users.User, expiresAt time.Time) error {
+	logger := logging.NewStructuredLogger("database.sessions")
+
 	if d.db == nil {
 		return fmt.Errorf("database connection is nil")
 	}
 
-	// Diagnostic: Check which database we're connected to
-	var currentDB string
-	err := d.db.QueryRow("SELECT current_database()").Scan(&currentDB)
-	if err != nil {
-		return fmt.Errorf("failed to get current database: %w", err)
-	}
-	fmt.Printf("DEBUG: CreateSession - Database pointer %p connected to: %s\n", d, currentDB)
+	logger.DebugWithFields("Creating session", map[string]interface{}{
+		"session_id": sessionID,
+		"username":   user.Username,
+		"expires_at": expiresAt,
+	})
 
 	userData := map[string]interface{}{
 		"user":              user,

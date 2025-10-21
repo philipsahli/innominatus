@@ -31,7 +31,27 @@ go build -o innominatus-ctl cmd/cli/main.go
 cd web-ui && npm install && npm run build && cd ..
 ```
 
-### 3. Start the Server
+### 3. (Optional) Enable Shell Completion
+
+Enable shell completion for the CLI (supports bash, zsh, fish, powershell):
+
+```bash
+# Bash
+./innominatus-ctl completion bash > /etc/bash_completion.d/innominatus-ctl
+source /etc/bash_completion.d/innominatus-ctl
+
+# Zsh
+./innominatus-ctl completion zsh > "${fpath[1]}/_innominatus-ctl"
+source ~/.zshrc
+
+# Fish
+./innominatus-ctl completion fish > ~/.config/fish/completions/innominatus-ctl.fish
+source ~/.config/fish/config.fish
+```
+
+After setup, you can tab-complete commands and see available options.
+
+### 4. Start the Server
 
 ```bash
 # Start with default settings (memory storage)
@@ -127,6 +147,19 @@ Output:
 ```
 NAME            STATUS    WORKFLOWS    RESOURCES    ENVIRONMENT
 my-first-app    deployed  1            2            kubernetes
+```
+
+### View Workflow Logs
+
+```bash
+# List workflow executions for your app
+./innominatus-ctl list-workflows my-first-app
+
+# View detailed workflow logs
+./innominatus-ctl workflow logs <workflow-id>
+
+# View logs for a specific step
+./innominatus-ctl workflow logs <workflow-id> --step "provision-namespace"
 ```
 
 ## What Just Happened?
@@ -258,6 +291,23 @@ kubectl cluster-info
 
 ## Getting Help
 
-- Run `./innominatus-ctl --help` for CLI documentation
-- Check the [examples](../examples/) directory for sample workflows
-- Visit [GitHub Issues](https://github.com/innominatus/innominatus/issues) for support
+The CLI includes comprehensive help powered by Cobra:
+
+```bash
+# Global help (shows all commands)
+./innominatus-ctl --help
+
+# Command-specific help
+./innominatus-ctl run --help
+./innominatus-ctl workflow --help
+./innominatus-ctl workflow logs --help
+
+# Tab completion (after enabling shell completion)
+./innominatus-ctl <tab>          # List all commands
+./innominatus-ctl workflow <tab> # List workflow subcommands
+```
+
+Additional resources:
+- [CLI Reference](../user-guide/cli-reference.md) - Complete command documentation
+- [Examples](../examples/) directory - Sample workflows
+- [GitHub Issues](https://github.com/innominatus/innominatus/issues) - Support and feedback

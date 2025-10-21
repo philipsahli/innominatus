@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -384,9 +385,15 @@ func (c *Client) AdminCommand(args []string) error {
 
 	case "revoke-api-key":
 		return c.revokeAPIKeyCommand(args[1:])
+	case "user-api-keys":
+		return c.userAPIKeysCommand(args[1:])
+	case "user-generate-key":
+		return c.userGenerateKeyCommand(args[1:])
+	case "user-revoke-key":
+		return c.userRevokeKeyCommand(args[1:])
 
 	default:
-		return fmt.Errorf("unknown admin subcommand '%s'. Available: show, add-user, list-users, delete-user, generate-api-key, list-api-keys, revoke-api-key", subcommand)
+		return fmt.Errorf("unknown admin subcommand '%s'. Available: show, add-user, list-users, delete-user, generate-api-key, list-api-keys, revoke-api-key, user-api-keys, user-generate-key, user-revoke-key", subcommand)
 	}
 }
 
@@ -409,14 +416,10 @@ func (c *Client) addUserCommand(args []string) error {
 		return fmt.Errorf("role must be 'user' or 'admin'")
 	}
 
-	store, err := users.LoadUsers()
+	// Use API instead of direct file access
+	err := c.CreateUser(*username, *password, *team, *role)
 	if err != nil {
-		return fmt.Errorf("failed to load users: %w", err)
-	}
-
-	err = store.AddUser(*username, *password, *team, *role)
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to create user: %w", err)
 	}
 
 	formatter := NewOutputFormatter()
@@ -426,18 +429,20 @@ func (c *Client) addUserCommand(args []string) error {
 
 func (c *Client) listUsersCommand() error {
 	formatter := NewOutputFormatter()
-	store, err := users.LoadUsers()
+
+	// Use API instead of direct file access
+	users, err := c.ListUsers()
 	if err != nil {
-		return fmt.Errorf("failed to load users: %w", err)
+		return fmt.Errorf("failed to list users: %w", err)
 	}
 
-	if len(store.Users) == 0 {
+	if len(users) == 0 {
 		formatter.PrintEmptyState("No users found")
 		return nil
 	}
 
 	formatter.PrintHeader("Users:")
-	for _, user := range store.Users {
+	for _, user := range users {
 		formatter.PrintItem(1, "", fmt.Sprintf("%s (%s, %s)", user.Username, user.Team, user.Role))
 	}
 
@@ -446,29 +451,247 @@ func (c *Client) listUsersCommand() error {
 
 func (c *Client) deleteUserCommand(username string) error {
 	formatter := NewOutputFormatter()
-	store, err := users.LoadUsers()
-	if err != nil {
-		return fmt.Errorf("failed to load users: %w", err)
-	}
 
-	err = store.DeleteUser(username)
+	// Use API instead of direct file access
+	err := c.DeleteUser(username)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to delete user: %w", err)
 	}
 
 	formatter.PrintSuccess(fmt.Sprintf("User '%s' deleted successfully", username))
 	return nil
 }
 
-// ListGoldenPathsCommand lists all available golden paths with metadata
+// Admin API key management commands
+
+func (c *Client) userAPIKeysCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("username is required")
+	}
+	username := args[0]
+
+	keys, err := c.AdminGetAPIKeys(username)
+	if err != nil {
+		return fmt.Errorf("failed to get API keys: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	if len(keys) == 0 {
+		formatter.PrintEmptyState(fmt.Sprintf("No API keys found for user '%s'", username))
+		return nil
+	}
+
+	formatter.PrintHeader(fmt.Sprintf("API Keys for %s:", username))
+	for _, key := range keys {
+		formatter.PrintEmpty()
+		if name, ok := key["name"].(string); ok {
+			formatter.PrintSection(1, SymbolWorkflow, name)
+		}
+		if keyVal, ok := key["key"].(string); ok {
+			formatter.PrintKeyValue(2, "Key", keyVal)
+		}
+		if createdAt, ok := key["created_at"].(string); ok {
+			formatter.PrintKeyValue(2, "Created", createdAt)
+		}
+		if expiresAt, ok := key["expires_at"].(string); ok {
+			formatter.PrintKeyValue(2, "Expires", expiresAt)
+		}
+		if lastUsed, ok := key["last_used_at"].(string); ok {
+			formatter.PrintKeyValue(2, "Last Used", lastUsed)
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) userGenerateKeyCommand(args []string) error {
+	fs := flag.NewFlagSet("user-generate-key", flag.ContinueOnError)
+	username := fs.String("username", "", "Username to generate key for")
+	name := fs.String("name", "", "Name for the API key")
+	expiryDays := fs.Int("expiry-days", 90, "Number of days until expiry")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *username == "" || *name == "" {
+		return fmt.Errorf("username and name are required")
+	}
+
+	result, err := c.AdminGenerateAPIKey(*username, *name, *expiryDays)
+	if err != nil {
+		return fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("API key generated for user '%s'", *username))
+	formatter.PrintEmpty()
+	if key, ok := result["key"].(string); ok {
+		formatter.PrintWarning("IMPORTANT: Save this key now - it won't be shown again!")
+		formatter.PrintKeyValue(1, "API Key", key)
+	}
+	if name, ok := result["name"].(string); ok {
+		formatter.PrintKeyValue(1, "Name", name)
+	}
+	if createdAt, ok := result["created_at"].(string); ok {
+		formatter.PrintKeyValue(1, "Created", createdAt)
+	}
+	if expiresAt, ok := result["expires_at"].(string); ok {
+		formatter.PrintKeyValue(1, "Expires", expiresAt)
+	}
+
+	return nil
+}
+
+func (c *Client) userRevokeKeyCommand(args []string) error {
+	fs := flag.NewFlagSet("user-revoke-key", flag.ContinueOnError)
+	username := fs.String("username", "", "Username")
+	keyName := fs.String("key-name", "", "Name of the API key to revoke")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if *username == "" || *keyName == "" {
+		return fmt.Errorf("username and key-name are required")
+	}
+
+	err := c.AdminRevokeAPIKey(*username, *keyName)
+	if err != nil {
+		return fmt.Errorf("failed to revoke API key: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("API key '%s' revoked for user '%s'", *keyName, *username))
+	return nil
+}
+
+// TeamCommand handles team management subcommands
+func (c *Client) TeamCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("team command requires a subcommand (list|get|create|delete)")
+	}
+
+	subcommand := args[0]
+
+	switch subcommand {
+	case "list":
+		return c.listTeamsCommand()
+	case "get":
+		if len(args) < 2 {
+			return fmt.Errorf("team get requires a team ID")
+		}
+		return c.getTeamCommand(args[1])
+	case "create":
+		return c.createTeamCommand(args[1:])
+	case "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("team delete requires a team ID")
+		}
+		return c.deleteTeamCommand(args[1])
+	default:
+		return fmt.Errorf("unknown team subcommand: %s", subcommand)
+	}
+}
+
+// listTeamsCommand lists all teams
+func (c *Client) listTeamsCommand() error {
+	teams, err := c.ListTeams()
+	if err != nil {
+		return fmt.Errorf("failed to list teams: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	if len(teams) == 0 {
+		formatter.PrintEmptyState("No teams found")
+		return nil
+	}
+
+	formatter.PrintHeader(fmt.Sprintf("Teams (%d):", len(teams)))
+	for _, team := range teams {
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolTeam, fmt.Sprintf("Team: %s", team.Name))
+		formatter.PrintKeyValue(1, "ID", team.ID)
+		if team.Description != "" {
+			formatter.PrintKeyValue(1, "Description", team.Description)
+		}
+		if len(team.Members) > 0 {
+			formatter.PrintKeyValue(1, "Members", fmt.Sprintf("%d", len(team.Members)))
+		}
+	}
+
+	return nil
+}
+
+// getTeamCommand gets detailed team information
+func (c *Client) getTeamCommand(teamID string) error {
+	team, err := c.GetTeam(teamID)
+	if err != nil {
+		return fmt.Errorf("failed to get team: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintHeader(fmt.Sprintf("Team: %s", team.Name))
+	formatter.PrintKeyValue(0, "ID", team.ID)
+	if team.Description != "" {
+		formatter.PrintKeyValue(0, "Description", team.Description)
+	}
+
+	if len(team.Members) > 0 {
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolUser, fmt.Sprintf("Members (%d):", len(team.Members)))
+		for _, member := range team.Members {
+			formatter.PrintItem(1, SymbolBullet, member)
+		}
+	}
+
+	return nil
+}
+
+// createTeamCommand creates a new team
+func (c *Client) createTeamCommand(args []string) error {
+	createFlags := flag.NewFlagSet("team create", flag.ContinueOnError)
+	name := createFlags.String("name", "", "Team name")
+	description := createFlags.String("description", "", "Team description")
+
+	if err := createFlags.Parse(args); err != nil {
+		return err
+	}
+
+	if *name == "" {
+		return fmt.Errorf("--name is required")
+	}
+
+	if err := c.CreateTeam(*name, *description); err != nil {
+		return fmt.Errorf("failed to create team: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("Team '%s' created successfully", *name))
+	return nil
+}
+
+// deleteTeamCommand deletes a team
+func (c *Client) deleteTeamCommand(teamID string) error {
+	if err := c.DeleteTeam(teamID); err != nil {
+		return fmt.Errorf("failed to delete team: %w", err)
+	}
+
+	formatter := NewOutputFormatter()
+	formatter.PrintSuccess(fmt.Sprintf("Team '%s' deleted successfully", teamID))
+	return nil
+}
+
+// ListGoldenPathsCommand lists all available golden paths with metadata from the server
 func (c *Client) ListGoldenPathsCommand() error {
 	formatter := NewOutputFormatter()
-	config, err := goldenpaths.LoadGoldenPaths()
+
+	// Fetch golden paths from the server API
+	paths, err := c.GetGoldenPaths()
 	if err != nil {
 		return fmt.Errorf("failed to load golden paths: %w", err)
 	}
 
-	paths := config.ListPaths()
 	if len(paths) == 0 {
 		formatter.PrintEmptyState("No golden paths configured")
 		return nil
@@ -476,12 +699,15 @@ func (c *Client) ListGoldenPathsCommand() error {
 
 	formatter.PrintHeader(fmt.Sprintf("Available Golden Paths (%d):", len(paths)))
 
-	for _, pathName := range paths {
-		metadata, err := config.GetMetadata(pathName)
-		if err != nil {
-			formatter.PrintWarning(fmt.Sprintf("Failed to load metadata for '%s': %v", pathName, err))
-			continue
-		}
+	// Sort path names for consistent output
+	pathNames := make([]string, 0, len(paths))
+	for pathName := range paths {
+		pathNames = append(pathNames, pathName)
+	}
+	sort.Strings(pathNames)
+
+	for _, pathName := range pathNames {
+		metadata := paths[pathName]
 
 		formatter.PrintEmpty()
 		formatter.PrintSection(0, SymbolWorkflow, pathName)
@@ -492,7 +718,9 @@ func (c *Client) ListGoldenPathsCommand() error {
 		}
 
 		// Workflow file
-		formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
+		if metadata.WorkflowFile != "" {
+			formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
+		}
 
 		// Category and duration
 		if metadata.Category != "" {
@@ -507,7 +735,7 @@ func (c *Client) ListGoldenPathsCommand() error {
 			formatter.PrintKeyValue(1, "Tags", strings.Join(metadata.Tags, ", "))
 		}
 
-		// Required parameters
+		// Required parameters (backward compatibility)
 		if len(metadata.RequiredParams) > 0 {
 			formatter.PrintSection(1, "", "Required Parameters:")
 			for _, param := range metadata.RequiredParams {
@@ -515,7 +743,7 @@ func (c *Client) ListGoldenPathsCommand() error {
 			}
 		}
 
-		// Optional parameters with defaults
+		// Optional parameters with defaults (backward compatibility)
 		if len(metadata.OptionalParams) > 0 {
 			formatter.PrintSection(1, "", "Optional Parameters:")
 			for param, defaultValue := range metadata.OptionalParams {
@@ -618,9 +846,8 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 		formatter.PrintSuccess(fmt.Sprintf("Loaded Score spec for application: %s", spec.Metadata.Name))
 	}
 
-	// Execute the workflow using the existing RunWorkflow function
-	// TODO: Pass finalParams to runWorkflow for parameter substitution in workflow steps
-	err = c.runWorkflow(metadata.WorkflowFile, scoreFile)
+	// Execute the workflow using the existing RunWorkflow function with golden path parameters
+	err = c.runWorkflow(metadata.WorkflowFile, scoreFile, finalParams)
 	if err != nil {
 		return fmt.Errorf("failed to execute golden path workflow: %w", err)
 	}
@@ -630,7 +857,7 @@ func (c *Client) RunGoldenPathCommand(pathName string, scoreFile string, params 
 }
 
 // runWorkflow executes a workflow via the server API with real resource provisioning
-func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
+func (c *Client) runWorkflow(workflowFile string, scoreFile string, parameters map[string]string) error {
 	formatter := NewOutputFormatter()
 
 	// Extract workflow name from file path
@@ -668,6 +895,15 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 	// Make API request to server for golden path execution
 	url := fmt.Sprintf("%s/api/workflows/golden-paths/%s/execute", c.baseURL, workflowName)
 
+	// Add golden path parameters as query parameters
+	if len(parameters) > 0 {
+		queryParams := make([]string, 0, len(parameters))
+		for key, value := range parameters {
+			queryParams = append(queryParams, fmt.Sprintf("param.%s=%s", key, value))
+		}
+		url = url + "?" + strings.Join(queryParams, "&")
+	}
+
 	var req *http.Request
 	if scoreData != nil {
 		req, err = http.NewRequest("POST", url, bytes.NewBuffer(scoreData))
@@ -684,27 +920,99 @@ func (c *Client) runWorkflow(workflowFile string, scoreFile string) error {
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
+	// Retry logic with exponential backoff for transient failures
+	maxRetries := 3
+	var resp *http.Response
+	var body []byte
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute workflow: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(attempt*attempt) * time.Second
+			formatter.PrintInfo(fmt.Sprintf("Retrying request (attempt %d/%d) after %v...", attempt+1, maxRetries+1, backoff))
+			time.Sleep(backoff)
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("workflow execution failed (status %d): %s", resp.StatusCode, string(body))
+			// Recreate URL with parameters for retry
+			retryURL := fmt.Sprintf("%s/api/workflows/golden-paths/%s/execute", c.baseURL, workflowName)
+			if len(parameters) > 0 {
+				queryParams := make([]string, 0, len(parameters))
+				for key, value := range parameters {
+					queryParams = append(queryParams, fmt.Sprintf("param.%s=%s", key, value))
+				}
+				retryURL = retryURL + "?" + strings.Join(queryParams, "&")
+			}
+
+			// Recreate request body for retry
+			if scoreData != nil {
+				req, err = http.NewRequest("POST", retryURL, bytes.NewBuffer(scoreData))
+				if err != nil {
+					return fmt.Errorf("failed to create retry request: %w", err)
+				}
+				req.Header.Set("Content-Type", "application/yaml")
+			} else {
+				req, err = http.NewRequest("POST", retryURL, nil)
+				if err != nil {
+					return fmt.Errorf("failed to create retry request: %w", err)
+				}
+			}
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+
+		resp, err = client.Do(req)
+		if err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to execute workflow after %d retries: %w", maxRetries+1, err)
+			}
+			formatter.PrintWarning(fmt.Sprintf("Request failed: %v", err))
+			continue
+		}
+
+		body, err = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			if attempt == maxRetries {
+				return fmt.Errorf("failed to read response after %d retries: %w", maxRetries+1, err)
+			}
+			formatter.PrintWarning(fmt.Sprintf("Failed to read response: %v", err))
+			continue
+		}
+
+		// Check for transient errors (5xx) or JSON parsing issues
+		if resp.StatusCode >= 500 {
+			if attempt == maxRetries {
+				return fmt.Errorf("workflow execution failed (status %d) after %d retries: %s", resp.StatusCode, maxRetries+1, string(body))
+			}
+			formatter.PrintWarning(fmt.Sprintf("Server error (status %d), will retry", resp.StatusCode))
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("workflow execution failed (status %d): %s", resp.StatusCode, string(body))
+		}
+
+		// Success - break out of retry loop
+		break
 	}
 
 	// Parse response
 	var response map[string]interface{}
+
+	// Check if response is HTML (likely an error page)
+	if len(body) > 0 && body[0] == '<' {
+		truncated := string(body)
+		if len(truncated) > 500 {
+			truncated = truncated[:500] + "..."
+		}
+		return fmt.Errorf("server returned HTML instead of JSON (possible gateway/server error):\n%s", truncated)
+	}
+
 	err = json.Unmarshal(body, &response)
 	if err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		preview := string(body)
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		return fmt.Errorf("failed to parse response: %w\nReceived: %s", err, preview)
 	}
 
 	// Display execution results
@@ -1003,6 +1311,167 @@ func (c *Client) DemoStatusCommand() error {
 
 	// Print useful commands
 	cheatSheet.PrintCommands()
+
+	return nil
+}
+
+// DemoResetCommand resets the database to a clean state
+func (c *Client) DemoResetCommand() error {
+	// Create demo environment and reset handler
+	env := demo.NewDemoEnvironment()
+	resetHandler := demo.NewDemoReset(env.KubeContext)
+
+	fmt.Println("🔄 Demo Database Reset")
+	fmt.Println("")
+
+	// Check if demo-time has been run
+	fmt.Println("Checking if demo environment is installed...")
+	installed, err := resetHandler.CheckDemoInstalled()
+	if err != nil {
+		return fmt.Errorf("failed to check demo installation: %w", err)
+	}
+
+	if !installed {
+		fmt.Println("❌ Demo environment not detected.")
+		fmt.Println("   Run 'demo-time' first to install the demo environment.")
+		return fmt.Errorf("demo environment not installed")
+	}
+
+	fmt.Println("✅ Demo environment detected")
+	fmt.Println("")
+
+	// Display warning
+	fmt.Println("⚠️  WARNING: This will DELETE ALL DATA from the database!")
+	fmt.Println("   This includes:")
+	fmt.Println("   - All workflow executions and step logs")
+	fmt.Println("   - All applications and resources")
+	fmt.Println("   - All graph data and annotations")
+	fmt.Println("   - All sessions and API keys")
+	fmt.Println("   - All queue tasks")
+	fmt.Println("")
+	fmt.Println("   The database will be completely empty (except schema).")
+	fmt.Println("")
+
+	// Require explicit confirmation
+	fmt.Print("Type 'yes' to confirm: ")
+	var confirmation string
+	_, _ = fmt.Scanln(&confirmation) // nolint:errcheck
+
+	if confirmation != "yes" {
+		fmt.Println("Cancelled.")
+		return nil
+	}
+
+	fmt.Println("")
+	fmt.Println("🔄 Resetting database...")
+
+	// Connect to database
+	db, err := database.NewDatabase()
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer func() { _ = db.Close() }() // nolint:errcheck
+
+	// Truncate all tables
+	tableCount, err := db.TruncateAllTables()
+	if err != nil {
+		return fmt.Errorf("failed to truncate tables: %w", err)
+	}
+
+	fmt.Println("")
+	fmt.Println("✅ Database reset complete!")
+	fmt.Println("")
+	fmt.Printf("   📊 Statistics:\n")
+	fmt.Printf("      • Tables truncated: %d\n", tableCount)
+	fmt.Println("")
+	fmt.Println("   The database is now empty and ready for fresh data.")
+	fmt.Println("   Visit http://localhost:8081 to verify.")
+	fmt.Println("")
+
+	return nil
+}
+
+// FixGiteaOAuthCommand fixes Gitea OAuth2 configuration to enable auto-registration
+func (c *Client) FixGiteaOAuthCommand() error {
+	fmt.Println("🔧 Fixing Gitea OAuth2 configuration for auto-registration...")
+	fmt.Println("")
+
+	namespace := "gitea"
+	keycloakURL := "http://keycloak.localtest.me"
+	keycloakRealm := "demo-realm"
+	oauthName := "Keycloak"
+
+	// Get Gitea pod name
+	fmt.Println("📦 Finding Gitea pod...")
+	getPodCmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-l", "app.kubernetes.io/name=gitea", "-o", "jsonpath={.items[0].metadata.name}") // #nosec G204 - kubectl command with controlled namespace
+	podNameBytes, err := getPodCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get Gitea pod: %v. Make sure demo environment is running (./innominatus-ctl demo-time)", err)
+	}
+
+	podName := strings.TrimSpace(string(podNameBytes))
+	if podName == "" {
+		return fmt.Errorf("no Gitea pod found in namespace %s. Make sure demo environment is running", namespace)
+	}
+
+	fmt.Printf("   Found pod: %s\n\n", podName)
+
+	// List existing OAuth2 sources
+	fmt.Println("🔍 Checking existing OAuth2 sources...")
+	listCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", "gitea", "admin", "auth", "list") // #nosec G204 - kubectl exec with controlled pod name
+	listCmd.Stdout = os.Stdout
+	listCmd.Stderr = os.Stderr
+	_ = listCmd.Run()
+	fmt.Println("")
+
+	// Try to delete existing OAuth2 source (ignore errors if it doesn't exist)
+	fmt.Println("🗑️  Removing existing OAuth2 source (if any)...")
+	deleteCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", "gitea", "admin", "auth", "delete", "--id", "1") // #nosec G204 - kubectl exec with controlled pod name
+	_ = deleteCmd.Run()
+	fmt.Println("")
+
+	// Add OAuth2 source
+	// Note: Auto-registration is controlled by app.ini [oauth2] ENABLE_AUTO_REGISTRATION = true, not by CLI flag
+	fmt.Println("➕ Adding OAuth2 source...")
+	addCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", // #nosec G204 - kubectl exec with controlled parameters
+		"gitea", "admin", "auth", "add-oauth",
+		"--name", oauthName,
+		"--provider", "openidConnect",
+		"--key", "gitea",
+		"--secret", "gitea-client-secret",
+		"--auto-discover-url", fmt.Sprintf("%s/realms/%s/.well-known/openid-configuration", keycloakURL, keycloakRealm),
+		"--skip-local-2fa",
+		"--scopes", "openid", "email", "profile")
+
+	addCmd.Stdout = os.Stdout
+	addCmd.Stderr = os.Stderr
+	err = addCmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to add OAuth2 source: %v", err)
+	}
+
+	fmt.Println("   ✅ OAuth2 source added successfully with auto-registration!")
+	fmt.Println("")
+
+	// Verify the OAuth2 source was added
+	fmt.Println("✅ Verifying OAuth2 sources...")
+	verifyCmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--", "gitea", "admin", "auth", "list") // #nosec G204 - kubectl exec with controlled pod name
+	verifyCmd.Stdout = os.Stdout
+	verifyCmd.Stderr = os.Stderr
+	_ = verifyCmd.Run()
+	fmt.Println("")
+
+	fmt.Println("🎉 OAuth2 configuration fix completed!")
+	fmt.Println("")
+	fmt.Println("📝 Next steps:")
+	fmt.Println("   1. Go to http://gitea.localtest.me")
+	fmt.Println("   2. Click 'Sign In'")
+	fmt.Println("   3. Click 'Sign in with OAuth' and select 'Keycloak'")
+	fmt.Println("   4. Login with Keycloak credentials:")
+	fmt.Println("      - Username: demo-user")
+	fmt.Println("      - Password: password123")
+	fmt.Println("   5. Your account should be automatically created in Gitea!")
+	fmt.Println("")
 
 	return nil
 }
@@ -1468,11 +1937,47 @@ func (c *Client) LogoutCommand() error {
 	return nil
 }
 
-// ListResourcesCommand lists all resource instances with optional filtering by application
-func (c *Client) ListResourcesCommand(appName string) error {
+// filterResources applies client-side filtering to resource instances
+func (c *Client) filterResources(resources map[string][]*ResourceInstance, resourceType, state string) map[string][]*ResourceInstance {
+	filtered := make(map[string][]*ResourceInstance)
+
+	for appName, resourceList := range resources {
+		filteredList := []*ResourceInstance{}
+
+		for _, resource := range resourceList {
+			// Check type filter
+			if resourceType != "" && !strings.EqualFold(resource.ResourceType, resourceType) {
+				continue
+			}
+
+			// Check state filter
+			if state != "" && !strings.EqualFold(resource.State, state) {
+				continue
+			}
+
+			// Resource matches all filters
+			filteredList = append(filteredList, resource)
+		}
+
+		// Only include app if it has matching resources
+		if len(filteredList) > 0 {
+			filtered[appName] = filteredList
+		}
+	}
+
+	return filtered
+}
+
+// ListResourcesCommand lists all resource instances with optional filtering by application, type, and state
+func (c *Client) ListResourcesCommand(appName, resourceType, state string) error {
 	resources, err := c.ListResources(appName)
 	if err != nil {
 		return err
+	}
+
+	// Apply client-side filtering
+	if resourceType != "" || state != "" {
+		resources = c.filterResources(resources, resourceType, state)
 	}
 
 	if len(resources) == 0 {
@@ -1487,6 +1992,18 @@ func (c *Client) ListResourcesCommand(appName string) error {
 	title := "All Resource Instances"
 	if appName != "" {
 		title = fmt.Sprintf("Resource Instances for '%s'", appName)
+	}
+
+	// Add filter info to title
+	if resourceType != "" || state != "" {
+		filterParts := []string{}
+		if resourceType != "" {
+			filterParts = append(filterParts, fmt.Sprintf("type=%s", resourceType))
+		}
+		if state != "" {
+			filterParts = append(filterParts, fmt.Sprintf("state=%s", state))
+		}
+		title += fmt.Sprintf(" [filtered: %s]", strings.Join(filterParts, ", "))
 	}
 
 	totalCount := 0
@@ -1578,6 +2095,131 @@ func (c *Client) ListResourcesCommand(appName string) error {
 	}
 
 	fmt.Printf("\nTotal: %d resource instance(s) across %d application(s)\n", totalCount, len(resources))
+	return nil
+}
+
+// ResourceCommand handles resource management subcommands
+func (c *Client) ResourceCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("resource command requires a subcommand (get, delete, update, transition, health)")
+	}
+
+	subcommand := args[0]
+	formatter := NewOutputFormatter()
+
+	switch subcommand {
+	case "get":
+		if len(args) < 2 {
+			return fmt.Errorf("get subcommand requires a resource ID")
+		}
+		resourceID := args[1]
+
+		resource, err := c.GetResource(resourceID)
+		if err != nil {
+			return fmt.Errorf("failed to get resource: %w", err)
+		}
+
+		formatter.PrintHeader(fmt.Sprintf("Resource Details: %s", resource.ResourceName))
+		formatter.PrintKeyValue(0, "ID", fmt.Sprintf("%d", resource.ID))
+		formatter.PrintKeyValue(0, "Application", resource.ApplicationName)
+		formatter.PrintKeyValue(0, "Name", resource.ResourceName)
+		formatter.PrintKeyValue(0, "Type", resource.ResourceType)
+		formatter.PrintKeyValue(0, "State", resource.State)
+		formatter.PrintKeyValue(0, "Health Status", resource.HealthStatus)
+
+		if resource.ProviderID != nil && *resource.ProviderID != "" {
+			formatter.PrintKeyValue(0, "Provider ID", *resource.ProviderID)
+		}
+
+		if len(resource.Configuration) > 0 {
+			formatter.PrintSection(0, SymbolResource, "Configuration:")
+			for key, value := range resource.Configuration {
+				formatter.PrintKeyValue(1, key, value)
+			}
+		}
+
+	case "delete":
+		if len(args) < 2 {
+			return fmt.Errorf("delete subcommand requires a resource ID")
+		}
+		resourceID := args[1]
+
+		if err := c.DeleteResource(resourceID); err != nil {
+			return fmt.Errorf("failed to delete resource: %w", err)
+		}
+
+		formatter.PrintSuccess(fmt.Sprintf("Resource %s deleted successfully", resourceID))
+
+	case "update":
+		if len(args) < 3 {
+			return fmt.Errorf("update subcommand requires a resource ID and config JSON")
+		}
+		resourceID := args[1]
+		configJSON := args[2]
+
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+			return fmt.Errorf("invalid config JSON: %w", err)
+		}
+
+		if err := c.UpdateResource(resourceID, config); err != nil {
+			return fmt.Errorf("failed to update resource: %w", err)
+		}
+
+		formatter.PrintSuccess(fmt.Sprintf("Resource %s updated successfully", resourceID))
+
+	case "transition":
+		if len(args) < 3 {
+			return fmt.Errorf("transition subcommand requires a resource ID and target state")
+		}
+		resourceID := args[1]
+		targetState := args[2]
+
+		if err := c.TransitionResource(resourceID, targetState); err != nil {
+			return fmt.Errorf("failed to transition resource: %w", err)
+		}
+
+		formatter.PrintSuccess(fmt.Sprintf("Resource %s transitioned to %s", resourceID, targetState))
+
+	case "health":
+		if len(args) < 2 {
+			return fmt.Errorf("health subcommand requires a resource ID")
+		}
+		resourceID := args[1]
+
+		// Check if --check flag is present to trigger new health check
+		checkNew := false
+		for _, arg := range args {
+			if arg == "--check" {
+				checkNew = true
+				break
+			}
+		}
+
+		var health map[string]interface{}
+		var err error
+
+		if checkNew {
+			health, err = c.CheckResourceHealth(resourceID)
+			if err != nil {
+				return fmt.Errorf("failed to check resource health: %w", err)
+			}
+		} else {
+			health, err = c.GetResourceHealth(resourceID)
+			if err != nil {
+				return fmt.Errorf("failed to get resource health: %w", err)
+			}
+		}
+
+		formatter.PrintHeader(fmt.Sprintf("Resource Health: %s", resourceID))
+		for key, value := range health {
+			formatter.PrintKeyValue(0, key, value)
+		}
+
+	default:
+		return fmt.Errorf("unknown resource subcommand: %s (valid: get, delete, update, transition, health)", subcommand)
+	}
+
 	return nil
 }
 
@@ -1800,6 +2442,68 @@ type LogsOptions struct {
 	Verbose  bool   // Show additional metadata
 }
 
+// RetryWorkflowCommand retries a failed workflow execution from the first failed step
+func (c *Client) RetryWorkflowCommand(workflowID, workflowSpecFile string) error {
+	formatter := NewOutputFormatter()
+
+	// Read and parse the workflow specification file
+	// #nosec G304 -- workflowSpecFile is user-provided CLI argument
+	workflowData, err := os.ReadFile(workflowSpecFile)
+	if err != nil {
+		return fmt.Errorf("failed to read workflow spec file: %w", err)
+	}
+
+	var workflow types.Workflow
+	if err := yaml.Unmarshal(workflowData, &workflow); err != nil {
+		return fmt.Errorf("failed to parse workflow spec: %w", err)
+	}
+
+	// Convert workflow to JSON for API request
+	workflowJSON, err := json.Marshal(workflow)
+	if err != nil {
+		return fmt.Errorf("failed to marshal workflow: %w", err)
+	}
+
+	formatter.PrintInfo(fmt.Sprintf("%s Retrying workflow execution %s...", SymbolWorkflow, workflowID))
+
+	// Make API request to retry endpoint
+	url := fmt.Sprintf("%s/api/workflows/%s/retry", c.baseURL, workflowID)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(workflowJSON))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send retry request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }() // nolint:errcheck
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("retry failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// Display success message
+	formatter.PrintSuccess("Workflow retry completed successfully!")
+	formatter.PrintKeyValue(1, "Parent Execution ID", result["parent_execution_id"])
+	formatter.PrintKeyValue(1, "Application", result["app_name"])
+	formatter.PrintKeyValue(1, "Workflow", result["workflow_name"])
+
+	return nil
+}
+
 // displayWorkflowHeader shows workflow execution summary
 func (c *Client) displayWorkflowHeader(workflow *WorkflowExecutionDetail) {
 	statusEmoji := "❓"
@@ -1951,4 +2655,198 @@ func toTitle(s string) string {
 	runes := []rune(s)
 	runes[0] = unicode.ToUpper(runes[0])
 	return string(runes)
+}
+
+// ProviderCommand handles provider-related subcommands
+func (c *Client) ProviderCommand(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("provider command requires a subcommand (list, stats)")
+	}
+
+	subcommand := args[0]
+
+	switch subcommand {
+	case "list":
+		return c.ListProvidersCommand()
+	case "stats":
+		return c.ProviderStatsCommand()
+	default:
+		return fmt.Errorf("unknown provider subcommand: %s (available: list, stats)", subcommand)
+	}
+}
+
+// ListProvidersCommand lists all loaded providers
+func (c *Client) ListProvidersCommand() error {
+	formatter := NewOutputFormatter()
+
+	providers, err := c.ListProviders()
+	if err != nil {
+		return fmt.Errorf("failed to list providers: %w", err)
+	}
+
+	if len(providers) == 0 {
+		formatter.PrintEmptyState("No providers loaded")
+		return nil
+	}
+
+	formatter.PrintHeader(fmt.Sprintf("Loaded Providers (%d):", len(providers)))
+
+	for _, provider := range providers {
+		formatter.PrintEmpty()
+		formatter.PrintSection(0, SymbolApp, fmt.Sprintf("%s v%s", provider.Name, provider.Version))
+
+		if provider.Category != "" {
+			formatter.PrintKeyValue(1, "Category", provider.Category)
+		}
+		if provider.Description != "" {
+			formatter.PrintKeyValue(1, "Description", provider.Description)
+		}
+		formatter.PrintKeyValue(1, "Provisioners", fmt.Sprintf("%d", provider.Provisioners))
+		formatter.PrintKeyValue(1, "Golden Paths", fmt.Sprintf("%d", provider.GoldenPaths))
+	}
+
+	formatter.PrintEmpty()
+	return nil
+}
+
+// ProviderStatsCommand shows provider statistics
+func (c *Client) ProviderStatsCommand() error {
+	formatter := NewOutputFormatter()
+
+	stats, err := c.GetProviderStats()
+	if err != nil {
+		return fmt.Errorf("failed to get provider stats: %w", err)
+	}
+
+	formatter.PrintHeader("Provider Statistics")
+	formatter.PrintEmpty()
+	formatter.PrintKeyValue(0, "Total Providers", fmt.Sprintf("%d", stats.Providers))
+	formatter.PrintKeyValue(0, "Total Provisioners", fmt.Sprintf("%d", stats.Provisioners))
+	formatter.PrintEmpty()
+
+	return nil
+}
+
+// StatsCommand displays platform statistics (applications, workflows, resources, users)
+func (c *Client) StatsCommand() error {
+	formatter := NewOutputFormatter()
+
+	stats, err := c.GetStats()
+	if err != nil {
+		return fmt.Errorf("failed to get statistics: %w", err)
+	}
+
+	formatter.PrintHeader("📊 Platform Statistics")
+	formatter.PrintEmpty()
+	formatter.PrintSection(0, "📦", fmt.Sprintf("Applications: %d", stats.Applications))
+	formatter.PrintSection(0, "⚙️", fmt.Sprintf("Active Workflows: %d", stats.Workflows))
+	formatter.PrintSection(0, "🔧", fmt.Sprintf("Resources: %d", stats.Resources))
+	formatter.PrintSection(0, "👤", fmt.Sprintf("Users: %d", stats.Users))
+	formatter.PrintEmpty()
+
+	return nil
+}
+
+// WorkflowDetailCommand displays comprehensive metadata about a workflow execution
+func (c *Client) WorkflowDetailCommand(workflowID string) error {
+	formatter := NewOutputFormatter()
+
+	// Get workflow details
+	workflow, err := c.GetWorkflowDetail(workflowID)
+	if err != nil {
+		return fmt.Errorf("failed to get workflow details: %w", err)
+	}
+
+	// Header
+	formatter.PrintHeader(fmt.Sprintf("Workflow Details: %s", workflow.WorkflowName))
+	formatter.PrintEmpty()
+
+	// Basic information
+	formatter.PrintKeyValue(0, "Workflow ID", workflow.ID)
+	formatter.PrintKeyValue(0, "Workflow Name", workflow.WorkflowName)
+	formatter.PrintKeyValue(0, "Application", workflow.ApplicationName)
+
+	// Status with visual indicator
+	statusDisplay := formatter.PrintStatusBadge(workflow.Status)
+	formatter.PrintKeyValue(0, "Status", statusDisplay)
+
+	// Timestamps
+	formatter.PrintKeyValue(0, "Started At", workflow.StartedAt.Format(time.RFC3339))
+	if workflow.CompletedAt != nil {
+		formatter.PrintKeyValue(0, "Completed At", workflow.CompletedAt.Format(time.RFC3339))
+
+		// Calculate duration from timestamps
+		duration := workflow.CompletedAt.Sub(workflow.StartedAt)
+		formatter.PrintKeyValue(0, "Duration", formatter.FormatDuration(duration))
+	}
+
+	// Error message if failed
+	if workflow.ErrorMessage != nil && *workflow.ErrorMessage != "" {
+		formatter.PrintEmpty()
+		formatter.PrintError(fmt.Sprintf("Error: %s", *workflow.ErrorMessage))
+	}
+
+	formatter.PrintEmpty()
+
+	// Step summary
+	completedSteps := 0
+	for _, step := range workflow.Steps {
+		if step.Status == "completed" || step.Status == "succeeded" {
+			completedSteps++
+		}
+	}
+	formatter.PrintSection(0, "⚙️", fmt.Sprintf("Steps: %d/%d completed", completedSteps, workflow.TotalSteps))
+	formatter.PrintEmpty()
+
+	// Step breakdown table
+	if len(workflow.Steps) > 0 {
+		columns := []TableColumn{
+			{Header: "#", Width: 3},
+			{Header: "Step Name", Width: 30},
+			{Header: "Type", Width: 15},
+			{Header: "Status", Width: 12},
+			{Header: "Duration", Width: 10},
+		}
+
+		formatter.PrintTableHeader(columns)
+
+		for _, step := range workflow.Steps {
+			statusIcon := ""
+			switch step.Status {
+			case "completed", "succeeded":
+				statusIcon = "✓"
+			case "running":
+				statusIcon = "⏳"
+			case "failed":
+				statusIcon = "✗"
+			default:
+				statusIcon = "○"
+			}
+
+			stepNum := fmt.Sprintf("%d", step.StepNumber)
+			stepName := step.StepName
+			if len(stepName) > 28 {
+				stepName = stepName[:25] + "..."
+			}
+			stepType := step.StepType
+
+			durationStr := "-"
+			if step.DurationMs != nil && *step.DurationMs > 0 {
+				duration := time.Duration(*step.DurationMs) * time.Millisecond
+				durationStr = formatter.FormatDuration(duration)
+			}
+
+			formatter.PrintTableRow(columns, []string{
+				stepNum,
+				stepName,
+				stepType,
+				fmt.Sprintf("%s %s", statusIcon, step.Status),
+				durationStr,
+			})
+		}
+
+		formatter.PrintEmpty()
+	}
+
+	return nil
 }

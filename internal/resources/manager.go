@@ -3,7 +3,10 @@ package resources
 import (
 	"fmt"
 	"innominatus/internal/database"
+	"innominatus/internal/graph"
 	"innominatus/internal/types"
+
+	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
 )
 
 // Provisioner interface for resource provisioning
@@ -17,6 +20,7 @@ type Provisioner interface {
 type Manager struct {
 	resourceRepo *database.ResourceRepository
 	provisioners map[string]Provisioner
+	graphAdapter *graph.Adapter
 }
 
 // NewManager creates a new resource manager with built-in provisioners
@@ -39,6 +43,12 @@ func NewManager(resourceRepo *database.ResourceRepository) *Manager {
 func (m *Manager) RegisterProvisioner(resourceType string, provisioner Provisioner) {
 	m.provisioners[resourceType] = provisioner
 	fmt.Printf("📦 Registered provisioner for resource type: %s\n", resourceType)
+}
+
+// SetGraphAdapter sets the graph adapter for tracking resources in the graph
+func (m *Manager) SetGraphAdapter(adapter *graph.Adapter) {
+	m.graphAdapter = adapter
+	fmt.Println("Graph adapter set for resource manager")
 }
 
 // GetProvisioner returns the provisioner for a given resource type
@@ -103,6 +113,28 @@ func (m *Manager) CreateResourceFromSpec(appName string, spec *types.ScoreSpec, 
 			return fmt.Errorf("failed to create resource instance %s: %w", resourceName, err)
 		}
 
+		// Add resource node to graph
+		if m.graphAdapter != nil {
+			resourceNodeID := fmt.Sprintf("resource-%d", resourceInstance.ID)
+			resourceNode := &sdk.Node{
+				ID:    resourceNodeID,
+				Type:  sdk.NodeTypeResource,
+				Name:  resourceName,
+				State: sdk.NodeStatePending,
+				Properties: map[string]interface{}{
+					"resource_id":   resourceInstance.ID,
+					"resource_type": resource.Type,
+					"app_name":      appName,
+					"params":        resource.Params,
+				},
+			}
+			if err := m.graphAdapter.AddNode(appName, resourceNode); err != nil {
+				fmt.Printf("Warning: failed to add resource node to graph: %v\n", err)
+			} else {
+				fmt.Printf("📊 Added resource node to graph: %s\n", resourceName)
+			}
+		}
+
 		// Transition to provisioning state
 		err = m.TransitionResourceState(resourceInstance.ID,
 			database.ResourceStateProvisioning,
@@ -134,7 +166,38 @@ func (m *Manager) TransitionResourceState(resourceID int64, newState database.Re
 	}
 
 	// Update state with audit trail
-	return m.resourceRepo.UpdateResourceInstanceState(resourceID, newState, reason, transitionedBy, metadata)
+	err = m.resourceRepo.UpdateResourceInstanceState(resourceID, newState, reason, transitionedBy, metadata)
+	if err != nil {
+		return err
+	}
+
+	// Update graph node state if graph adapter is available
+	if m.graphAdapter != nil {
+		resourceNodeID := fmt.Sprintf("resource-%d", resourceID)
+		var graphState sdk.NodeState
+
+		// Map resource lifecycle state to graph node state
+		switch newState {
+		case database.ResourceStateProvisioning:
+			graphState = sdk.NodeStateRunning
+		case database.ResourceStateActive:
+			graphState = sdk.NodeStateSucceeded
+		case database.ResourceStateFailed:
+			graphState = sdk.NodeStateFailed
+		case database.ResourceStateTerminated:
+			graphState = sdk.NodeStateFailed // Mark as failed when terminated
+		default:
+			graphState = sdk.NodeStatePending
+		}
+
+		if err := m.graphAdapter.UpdateNodeState(resource.ApplicationName, resourceNodeID, graphState); err != nil {
+			fmt.Printf("Warning: failed to update resource node state in graph: %v\n", err)
+		} else {
+			fmt.Printf("📊 Updated resource node state: %s -> %s\n", resource.ResourceName, graphState)
+		}
+	}
+
+	return nil
 }
 
 // ProvisionResource provisions a resource instance using registered provisioners

@@ -8,11 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
+	"sort"
 
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
 	"innominatus/internal/demo"
+	"innominatus/internal/goldenpaths"
 	"innominatus/internal/graph"
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
@@ -23,15 +26,18 @@ import (
 	"innominatus/internal/types"
 	"innominatus/internal/users"
 	"innominatus/internal/workflow"
+	providersdk "innominatus/pkg/sdk"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
+	"github.com/rs/zerolog/log"
 
 	"gopkg.in/yaml.v3"
 )
@@ -42,6 +48,13 @@ type AIService interface {
 	HandleGenerateSpec(w http.ResponseWriter, r *http.Request)
 	HandleStatus(w http.ResponseWriter, r *http.Request)
 	IsEnabled() bool
+}
+
+// ProviderRegistry interface for provider management
+type ProviderRegistry interface {
+	ListProviders() []*providersdk.Provider
+	GetProvider(name string) (*providersdk.Provider, error)
+	Count() (providers int, provisioners int)
 }
 
 // LogBuffer captures command output for workflow step logging
@@ -125,7 +138,11 @@ type Server struct {
 	healthChecker     *health.HealthChecker
 	rateLimiter       *RateLimiter
 	graphAdapter      *graph.Adapter
-	aiService         AIService // AI assistant service (optional)
+	wsHub             *GraphWebSocketHub // WebSocket hub for real-time graph updates
+	aiService         AIService          // AI assistant service (optional)
+	providerRegistry  ProviderRegistry   // Provider registry (optional)
+	swaggerFS         fs.FS              // Optional: embedded swagger files
+	webUIFS           fs.FS              // Optional: embedded web-ui files
 	loginAttempts     map[string][]time.Time
 	loginMutex        sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -140,6 +157,26 @@ type Server struct {
 // SetAIService sets the AI service for the server
 func (s *Server) SetAIService(aiSvc AIService) {
 	s.aiService = aiSvc
+}
+
+// SetProviderRegistry sets the provider registry for the server
+func (s *Server) SetProviderRegistry(registry ProviderRegistry) {
+	s.providerRegistry = registry
+}
+
+// SetSwaggerFS sets the embedded swagger files filesystem
+func (s *Server) SetSwaggerFS(fsys fs.FS) {
+	s.swaggerFS = fsys
+}
+
+// SetWebUIFS sets the embedded web-ui files filesystem
+func (s *Server) SetWebUIFS(fsys fs.FS) {
+	s.webUIFS = fsys
+}
+
+// GetWebUIFS returns the embedded web-ui files filesystem
+func (s *Server) GetWebUIFS() fs.FS {
+	return s.webUIFS
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
@@ -182,12 +219,17 @@ func NewServer() *Server {
 	// Register basic health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 
+	// Initialize WebSocket hub for real-time graph updates
+	wsHub := NewGraphWebSocketHub()
+	go wsHub.Run()
+
 	server := &Server{
 		workflowAnalyzer:  workflow.NewWorkflowAnalyzer(),
 		teamManager:       teams.NewTeamManager(),
 		sessionManager:    auth.NewSessionManager(),
 		oidcAuthenticator: oidcAuth,
 		healthChecker:     healthChecker,
+		wsHub:             wsHub,
 		loginAttempts:     make(map[string][]time.Time),
 		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
 		workflowCounter:   0,
@@ -200,6 +242,13 @@ func NewServer() *Server {
 }
 
 func NewServerWithDB(db *database.Database) *Server {
+	// Call with nil admin config for backward compatibility
+	return NewServerWithDBAndAdminConfig(db, nil)
+}
+
+// NewServerWithDBAndAdminConfig creates a new server with database and admin configuration support
+// If adminConfig is provided, enables multi-tier workflow executor with product workflows
+func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{}) *Server {
 	// Initialize OIDC authenticator
 	oidcConfig := auth.LoadOIDCConfig()
 	oidcAuth, err := auth.NewOIDCAuthenticator(oidcConfig)
@@ -210,10 +259,47 @@ func NewServerWithDB(db *database.Database) *Server {
 		fmt.Println("OIDC authentication enabled")
 	}
 
+	// Create repositories
 	workflowRepo := database.NewWorkflowRepository(db)
 	resourceRepo := database.NewResourceRepository(db)
 	resourceManager := resources.NewManager(resourceRepo)
-	workflowExecutor := workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+
+	// Create workflow executor - use multi-tier if admin config available
+	var workflowExecutor *workflow.WorkflowExecutor
+	if adminConfig != nil {
+		// Multi-tier executor with product workflow support
+		if adminCfg, ok := adminConfig.(*admin.AdminConfig); ok && adminCfg != nil {
+			policies := workflow.WorkflowPolicies{
+				RequiredPlatformWorkflows: adminCfg.WorkflowPolicies.RequiredPlatformWorkflows,
+				AllowedProductWorkflows:   adminCfg.WorkflowPolicies.AllowedProductWorkflows,
+				WorkflowOverrides: struct {
+					Platform bool `yaml:"platform"`
+					Product  bool `yaml:"product"`
+				}{
+					Platform: adminCfg.WorkflowPolicies.WorkflowOverrides.Platform,
+					Product:  adminCfg.WorkflowPolicies.WorkflowOverrides.Product,
+				},
+				MaxWorkflowDuration: adminCfg.WorkflowPolicies.MaxWorkflowDuration,
+			}
+
+			workflowsRoot := adminCfg.WorkflowPolicies.WorkflowsRoot
+			if workflowsRoot == "" {
+				workflowsRoot = "./workflows" // Default
+			}
+
+			resolver := workflow.NewWorkflowResolver(workflowsRoot, policies)
+			workflowExecutor = workflow.NewMultiTierWorkflowExecutorWithResourceManager(workflowRepo, resolver, resourceManager)
+			fmt.Println("✅ Multi-tier workflow executor enabled (platform + product + application workflows)")
+		} else {
+			// Fall back to single-tier if admin config type assertion fails
+			fmt.Println("⚠️  Admin config type mismatch, using single-tier executor")
+			workflowExecutor = workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+		}
+	} else {
+		// Single-tier executor (backward compatible)
+		workflowExecutor = workflow.NewWorkflowExecutorWithResourceManager(workflowRepo, resourceManager)
+		fmt.Println("ℹ️  Single-tier workflow executor (use admin-config.yaml for product workflows)")
+	}
 
 	// Initialize async workflow queue (5 workers)
 	workflowQueue := queue.NewQueue(5, workflowExecutor, db)
@@ -229,12 +315,18 @@ func NewServerWithDB(db *database.Database) *Server {
 		fmt.Println("Graph adapter initialized successfully")
 		// Set graph adapter on workflow executor
 		workflowExecutor.SetGraphAdapter(graphAdapter)
+		// Set graph adapter on resource manager for resource tracking
+		resourceManager.SetGraphAdapter(graphAdapter)
 	}
 
 	healthChecker := health.NewHealthChecker()
 	// Register health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
+
+	// Initialize WebSocket hub for real-time graph updates
+	wsHub := NewGraphWebSocketHub()
+	go wsHub.Run()
 
 	server := &Server{
 		db:                db,
@@ -247,6 +339,7 @@ func NewServerWithDB(db *database.Database) *Server {
 		sessionManager:    auth.NewDBSessionManager(db),
 		oidcAuthenticator: oidcAuth,
 		healthChecker:     healthChecker,
+		wsHub:             wsHub,
 		graphAdapter:      graphAdapter,
 		loginAttempts:     make(map[string][]time.Time),
 		memoryWorkflows:   make(map[int64]*MemoryWorkflowExecution),
@@ -259,6 +352,34 @@ func NewServerWithDB(db *database.Database) *Server {
 	return server
 }
 
+// HandleApplications is the preferred endpoint for application management
+func (s *Server) HandleApplications(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		s.handleListSpecs(w, r)
+	case "POST":
+		s.handleDeploySpec(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleApplicationDetail handles operations on a specific application
+func (s *Server) HandleApplicationDetail(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Path[len("/api/applications/"):]
+
+	switch r.Method {
+	case "GET":
+		s.handleGetSpec(w, r, name)
+	case "DELETE":
+		s.handleDeleteSpec(w, r, name)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// HandleSpecs is DEPRECATED - use HandleApplications instead
+// Kept for backward compatibility
 func (s *Server) HandleSpecs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -268,6 +389,20 @@ func (s *Server) HandleSpecs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// HandleSpecsDeprecated wraps HandleSpecs with deprecation warning
+func (s *Server) HandleSpecsDeprecated(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-API-Warn", "Deprecated: Use /api/applications instead of /api/specs")
+	w.Header().Set("Deprecation", "true")
+	s.HandleSpecs(w, r)
+}
+
+// HandleSpecDetailDeprecated wraps HandleSpecDetail with deprecation warning
+func (s *Server) HandleSpecDetailDeprecated(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("X-API-Warn", "Deprecated: Use /api/applications/{name} instead of /api/specs/{name}")
+	w.Header().Set("Deprecation", "true")
+	s.HandleSpecDetail(w, r)
 }
 
 func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
@@ -642,10 +777,83 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Path
 
-	// Handle /api/graph/<app> pattern
+	// Handle /api/graph/<app>/export pattern
 	if len(path) > len("/api/graph/") && path[:len("/api/graph/")] == "/api/graph/" {
-		appName := path[len("/api/graph/"):]
-		s.handleAppGraph(w, r, appName)
+		remainder := path[len("/api/graph/"):]
+
+		// Check if it's an export request
+		if strings.Contains(remainder, "/export") {
+			parts := strings.Split(remainder, "/export")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphExport(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a history request
+		if strings.Contains(remainder, "/history") {
+			parts := strings.Split(remainder, "/history")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphHistory(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a WebSocket request
+		if strings.Contains(remainder, "/ws") {
+			parts := strings.Split(remainder, "/ws")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphWebSocket(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's an annotations request
+		if strings.Contains(remainder, "/annotations") {
+			parts := strings.Split(remainder, "/annotations")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphAnnotations(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a critical path request
+		if strings.Contains(remainder, "/critical-path") {
+			parts := strings.Split(remainder, "/critical-path")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleCriticalPath(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a metrics request
+		if strings.Contains(remainder, "/metrics") {
+			parts := strings.Split(remainder, "/metrics")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handlePerformanceMetrics(w, r, appName)
+				return
+			}
+		}
+
+		// Check if it's a workflow details request: /api/graph/<app>/workflow/<id>
+		if strings.Contains(remainder, "/workflow/") {
+			parts := strings.Split(remainder, "/workflow/")
+			if len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+				appName := parts[0]
+				workflowID := parts[1]
+				s.handleGraphWorkflowDetails(w, r, appName, workflowID)
+				return
+			}
+		}
+
+		// Regular graph request
+		s.handleAppGraph(w, r, remainder)
 		return
 	}
 
@@ -677,6 +885,90 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 	s.handleListSpecs(w, r)
 }
 
+// handleGraphExport handles /api/graph/<app>/export requests
+func (s *Server) handleGraphExport(w http.ResponseWriter, r *http.Request, appName string) {
+	// Get the graph from the database via graph adapter
+	if s.graphAdapter == nil {
+		http.Error(w, "Graph adapter not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	sdkGraph, err := s.graphAdapter.GetGraph(appName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Application '%s' not found", appName), http.StatusNotFound)
+		return
+	}
+
+	// Get format from query parameter (default: mermaid)
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "mermaid"
+	}
+
+	switch format {
+	case "mermaid":
+		exporter := graph.NewMermaidExporter()
+		mermaidDiagram, err := exporter.ExportGraph(sdkGraph)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.mmd", appName))
+		if _, err := fmt.Fprint(w, mermaidDiagram); err != nil {
+			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
+		}
+
+	case "mermaid-simple":
+		exporter := graph.NewMermaidExporter()
+		mermaidDiagram, err := exporter.ExportGraphSimple(sdkGraph)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph-simple.mmd", appName))
+		if _, err := fmt.Fprint(w, mermaidDiagram); err != nil {
+			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
+		}
+
+	case "svg", "png", "dot":
+		// Use existing graph adapter export functionality
+		data, err := s.graphAdapter.ExportGraph(appName, format)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph as %s: %v", format, err), http.StatusInternalServerError)
+			return
+		}
+
+		// Set appropriate content type
+		contentType := map[string]string{
+			"svg": "image/svg+xml",
+			"png": "image/png",
+			"dot": "text/plain",
+		}[format]
+
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.%s", appName, format))
+		if _, err := w.Write(data); err != nil {
+			log.Error().Err(err).Msg("Failed to write graph data response")
+		}
+
+	case "json":
+		// Export as JSON (same as regular graph endpoint)
+		response := convertSDKGraphToFrontend(sdkGraph)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.json", appName))
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		}
+
+	default:
+		http.Error(w, fmt.Sprintf("Unsupported format: %s. Supported formats: mermaid, mermaid-simple, svg, png, dot, json", format), http.StatusBadRequest)
+	}
+}
+
 // handleAppGraph handles /api/graph/<app> requests with enhanced graph data
 func (s *Server) handleAppGraph(w http.ResponseWriter, r *http.Request, appName string) {
 	// Get the graph from the database via graph adapter
@@ -701,12 +993,67 @@ func (s *Server) handleAppGraph(w http.ResponseWriter, r *http.Request, appName 
 	}
 }
 
+// handleGraphHistory handles /api/graph/<app>/history requests
+// Returns historical snapshots of graph states based on workflow executions
+func (s *Server) handleGraphHistory(w http.ResponseWriter, r *http.Request, appName string) {
+	// Parse query parameters
+	limitStr := r.URL.Query().Get("limit")
+	limit := 10 // default
+	if limitStr != "" {
+		var parsedLimit int
+		if _, err := fmt.Sscanf(limitStr, "%d", &parsedLimit); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+			limit = parsedLimit
+		}
+	}
+
+	// Use workflow repository to get execution history
+	executions, err := s.workflowRepo.ListWorkflowExecutions(appName, "", "", limit, 0)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to query history: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to response format
+	snapshots := make([]map[string]interface{}, 0, len(executions))
+	for _, exec := range executions {
+		snapshot := map[string]interface{}{
+			"id":              exec.ID,
+			"workflow_name":   exec.WorkflowName,
+			"status":          exec.Status,
+			"started_at":      exec.StartedAt,
+			"completed_at":    exec.CompletedAt,
+			"total_steps":     exec.TotalSteps,
+			"completed_steps": exec.CompletedSteps,
+			"failed_steps":    exec.FailedSteps,
+		}
+
+		// Calculate duration if completed
+		if exec.CompletedAt != nil {
+			duration := exec.CompletedAt.Sub(exec.StartedAt)
+			snapshot["duration_seconds"] = duration.Seconds()
+		}
+
+		snapshots = append(snapshots, snapshot)
+	}
+
+	response := map[string]interface{}{
+		"application": appName,
+		"snapshots":   snapshots,
+		"count":       len(snapshots),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // convertSDKGraphToFrontend converts the SDK Graph format to frontend JSON format
 func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
-	// Convert nodes map to array
+	// Convert nodes map to array with enriched information
 	nodes := make([]map[string]interface{}, 0, len(sdkGraph.Nodes))
 	for _, node := range sdkGraph.Nodes {
-		nodes = append(nodes, map[string]interface{}{
+		nodeData := map[string]interface{}{
 			"id":          node.ID,
 			"name":        node.Name,
 			"type":        string(node.Type),
@@ -715,7 +1062,82 @@ func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
 			"metadata":    node.Properties,
 			"created_at":  node.CreatedAt,
 			"updated_at":  node.UpdatedAt,
-		})
+		}
+
+		// Enrich with step number if available
+		if stepNum, ok := node.Properties["step_number"].(int); ok {
+			nodeData["step_number"] = stepNum
+		} else if stepNum, ok := node.Properties["step_number"].(float64); ok {
+			nodeData["step_number"] = int(stepNum)
+		}
+
+		// Enrich with total steps if available
+		if totalSteps, ok := node.Properties["total_steps"].(int); ok {
+			nodeData["total_steps"] = totalSteps
+		} else if totalSteps, ok := node.Properties["total_steps"].(float64); ok {
+			nodeData["total_steps"] = int(totalSteps)
+		}
+
+		// Enrich with workflow execution ID if available
+		if wfID, ok := node.Properties["workflow_execution_id"]; ok {
+			nodeData["workflow_id"] = wfID
+		}
+
+		// Calculate duration if both timestamps exist
+		if !node.CreatedAt.IsZero() && !node.UpdatedAt.IsZero() {
+			duration := node.UpdatedAt.Sub(node.CreatedAt)
+			nodeData["duration_ms"] = duration.Milliseconds()
+		}
+
+		nodes = append(nodes, nodeData)
+	}
+
+	// Sort nodes for consistent ordering:
+	// 1. By node type priority (workflow > step > resource)
+	// 2. By creation timestamp (oldest first)
+	// 3. By node ID (tie-breaker)
+	sort.Slice(nodes, func(i, j int) bool {
+		// Type priority: workflow=1, step=2, resource=3, other=4
+		typePriority := map[string]int{
+			"workflow": 1,
+			"step":     2,
+			"resource": 3,
+		}
+
+		typeI := nodes[i]["type"].(string)
+		typeJ := nodes[j]["type"].(string)
+		priorityI := typePriority[typeI]
+		priorityJ := typePriority[typeJ]
+		if priorityI == 0 {
+			priorityI = 4
+		}
+		if priorityJ == 0 {
+			priorityJ = 4
+		}
+
+		if priorityI != priorityJ {
+			return priorityI < priorityJ
+		}
+
+		// Sort by creation timestamp
+		createdI, okI := nodes[i]["created_at"].(time.Time)
+		createdJ, okJ := nodes[j]["created_at"].(time.Time)
+
+		if okI && okJ && !createdI.IsZero() && !createdJ.IsZero() {
+			if !createdI.Equal(createdJ) {
+				return createdI.Before(createdJ)
+			}
+		}
+
+		// Final tie-breaker: node ID
+		idI := nodes[i]["id"].(string)
+		idJ := nodes[j]["id"].(string)
+		return idI < idJ
+	})
+
+	// Add execution order based on sorted position
+	for idx := range nodes {
+		nodes[idx]["execution_order"] = idx + 1
 	}
 
 	// Convert edges map to array
@@ -730,6 +1152,18 @@ func convertSDKGraphToFrontend(sdkGraph *sdk.Graph) map[string]interface{} {
 			"metadata":    edge.Properties,
 		})
 	}
+
+	// Sort edges for consistent ordering (by source, then target)
+	sort.Slice(edges, func(i, j int) bool {
+		sourceI := edges[i]["source_id"].(string)
+		sourceJ := edges[j]["source_id"].(string)
+		if sourceI != sourceJ {
+			return sourceI < sourceJ
+		}
+		targetI := edges[i]["target_id"].(string)
+		targetJ := edges[j]["target_id"].(string)
+		return targetI < targetJ
+	})
 
 	return map[string]interface{}{
 		"nodes": nodes,
@@ -775,6 +1209,16 @@ func (s *Server) HandleWorkflowDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for retry sub-route: /api/workflows/{id}/retry
+	if strings.HasSuffix(path, "/retry") {
+		if r.Method == "POST" {
+			s.handleRetryWorkflow(w, r, workflowID)
+			return
+		}
+		http.Error(w, "Method not allowed - use POST for retry", http.StatusMethodNotAllowed)
+		return
+	}
+
 	switch r.Method {
 	case "GET":
 		s.handleGetWorkflow(w, r, workflowID)
@@ -783,11 +1227,23 @@ func (s *Server) HandleWorkflowDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// PaginatedWorkflowsResponse represents a paginated list of workflow executions
+type PaginatedWorkflowsResponse struct {
+	Data       []*database.WorkflowExecutionSummary `json:"data"`
+	Total      int64                                `json:"total"`
+	Page       int                                  `json:"page"`
+	PageSize   int                                  `json:"page_size"`
+	TotalPages int                                  `json:"total_pages"`
+}
+
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	// Get query parameters
 	appName := r.URL.Query().Get("app")
+	searchTerm := r.URL.Query().Get("search")
+	statusFilter := r.URL.Query().Get("status")
+
 	limit := 50 // default limit
-	offset := 0 // default offset
+	page := 1   // default page
 
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || l != 1 || limit > 100 {
@@ -795,20 +1251,49 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if o, err := fmt.Sscanf(offsetStr, "%d", &offset); err != nil || o != 1 || offset < 0 {
-			offset = 0
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := fmt.Sscanf(pageStr, "%d", &page); err != nil || p != 1 || page < 1 {
+			page = 1
 		}
 	}
 
-	workflows, err := s.workflowExecutor.ListWorkflowExecutions(appName, limit, offset)
+	// Calculate offset from page number
+	offset := (page - 1) * limit
+
+	// Get total count matching filters
+	total, err := s.workflowExecutor.CountWorkflowExecutions(appName, searchTerm, statusFilter)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to count workflows: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get paginated workflows
+	workflows, err := s.workflowExecutor.ListWorkflowExecutions(appName, searchTerm, statusFilter, limit, offset)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to list workflows: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	// Calculate total pages
+	totalPages := int(total) / limit
+	if int(total)%limit > 0 {
+		totalPages++
+	}
+	if totalPages == 0 {
+		totalPages = 1
+	}
+
+	// Build paginated response
+	response := PaginatedWorkflowsResponse{
+		Data:       workflows,
+		Total:      total,
+		Page:       page,
+		PageSize:   limit,
+		TotalPages: totalPages,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(workflows); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }
@@ -826,6 +1311,98 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request, workf
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(workflow); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// handleRetryWorkflow handles retrying a failed workflow execution from the first failed step
+// @Summary Retry a failed workflow execution
+// @Description Retry a failed workflow execution from the first failed step with an updated workflow specification
+// @Tags workflows
+// @Accept json
+// @Produce json
+// @Param id path int true "Workflow Execution ID"
+// @Param workflow body types.Workflow true "Updated workflow specification to retry with"
+// @Success 200 {object} map[string]interface{} "Retry successful"
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 404 {object} map[string]string "Workflow execution not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /api/workflows/{id}/retry [post]
+func (s *Server) handleRetryWorkflow(w http.ResponseWriter, r *http.Request, workflowID int64) {
+	// Get the parent workflow execution to retrieve app name and workflow name
+	parentExec, err := s.workflowExecutor.GetWorkflowExecution(workflowID)
+	if err != nil {
+		if err.Error() == "workflow execution not found" {
+			http.Error(w, "Workflow execution not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to get workflow execution: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Try to parse workflow from request body (optional)
+	// If body is empty, reconstruct workflow from database
+	var workflowMap map[string]interface{}
+	bodyBytes, _ := io.ReadAll(r.Body)
+
+	if len(bodyBytes) > 0 {
+		// User provided updated workflow specification
+		if err := json.Unmarshal(bodyBytes, &workflowMap); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid workflow specification: %v", err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		// Reconstruct workflow from database (automatic retry)
+		reconstructed, err := s.workflowExecutor.GetRepository().ReconstructWorkflowFromExecution(workflowID)
+		if err != nil {
+			// Check if error is due to missing steps (old workflow executions)
+			if strings.Contains(err.Error(), "no steps found") {
+				http.Error(w, "This workflow execution has no stored step configuration and cannot be retried automatically. This may be an older workflow execution created before step configuration storage was implemented.", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Failed to reconstruct workflow: %v", err), http.StatusInternalServerError)
+			return
+		}
+		workflowMap = reconstructed
+	}
+
+	// Convert map to types.Workflow
+	workflowJSON, err := json.Marshal(workflowMap)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to marshal workflow: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var workflow types.Workflow
+	if err := json.Unmarshal(workflowJSON, &workflow); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to unmarshal workflow: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Execute retry from failed step
+	err = s.workflowExecutor.RetryWorkflowFromFailedStep(
+		parentExec.ApplicationName,
+		parentExec.WorkflowName,
+		workflow,
+		workflowID,
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to retry workflow: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
+	response := map[string]interface{}{
+		"success":             true,
+		"message":             "Workflow retry completed successfully",
+		"parent_execution_id": workflowID,
+		"app_name":            parentExec.ApplicationName,
+		"workflow_name":       parentExec.WorkflowName,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }
@@ -1470,6 +2047,80 @@ func (s *Server) HandleDemoNuke(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleDemoReset handles POST /api/admin/demo/reset - Reset database to clean state
+func (s *Server) HandleDemoReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Require database connection
+	if s.workflowRepo == nil {
+		http.Error(w, "Database not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse request body for confirmation
+	var reqBody struct {
+		Confirm bool `json:"confirm"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		// If no body provided, treat as not confirmed
+		reqBody.Confirm = false
+	}
+
+	if !reqBody.Confirm {
+		http.Error(w, "Confirmation required: send {\"confirm\": true} in request body", http.StatusBadRequest)
+		return
+	}
+
+	// Truncate all tables
+	tableCount, err := s.db.TruncateAllTables()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to reset database: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"success":          true,
+		"tables_truncated": tableCount,
+		"tasks_stopped":    0, // Future enhancement: stop queue tasks
+		"message":          "Database reset complete",
+		"timestamp":        time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// HandleAdminConfig handles GET /api/admin/config - Returns admin configuration with masked sensitive data
+func (s *Server) HandleAdminConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Load admin configuration
+	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load admin config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to masked JSON (passwords/tokens as ****)
+	maskedConfig := adminConfig.ToMaskedJSON()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(maskedConfig); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // HandleStats handles GET /api/stats - Returns dashboard statistics
 func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -1499,18 +2150,22 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	applicationsCount := len(apps)
 
-	// Count workflows
+	// Count active (running) workflows only
 	var workflowsCount int
 	if s.workflowExecutor != nil {
-		// Use database workflow count if available
-		workflows, err := s.workflowExecutor.ListWorkflowExecutions("", 1000, 0)
+		// Use database workflow count - filter by "running" status only
+		workflows, err := s.workflowExecutor.ListWorkflowExecutions("", "", "running", 0, 0)
 		if err == nil {
 			workflowsCount = len(workflows)
 		}
 	} else {
-		// Use memory workflow count
+		// Use memory workflow count - count only running workflows
 		s.workflowMutex.RLock()
-		workflowsCount = len(s.memoryWorkflows)
+		for _, wf := range s.memoryWorkflows {
+			if wf.Status == "running" {
+				workflowsCount++
+			}
+		}
 		s.workflowMutex.RUnlock()
 	}
 
@@ -1864,6 +2519,112 @@ func (s *Server) handleDeprovisionApplication(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// HandleGoldenPaths handles listing and retrieving golden paths
+func (s *Server) HandleGoldenPaths(w http.ResponseWriter, r *http.Request) {
+	// Extract path to check if it's a specific golden path request
+	path := strings.TrimPrefix(r.URL.Path, "/api/golden-paths")
+	path = strings.TrimPrefix(path, "/")
+
+	if path == "" {
+		// List all golden paths
+		s.handleListGoldenPaths(w, r)
+	} else {
+		// Get specific golden path metadata
+		goldenPathName := strings.TrimSuffix(path, "/")
+		s.handleGetGoldenPath(w, r, goldenPathName)
+	}
+}
+
+func (s *Server) handleListGoldenPaths(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	config, err := goldenpaths.LoadGoldenPaths()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load golden paths: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	paths := config.ListPaths()
+
+	// Build response with metadata for each path
+	response := make(map[string]interface{})
+	for _, pathName := range paths {
+		metadata, err := config.GetMetadata(pathName)
+		if err != nil {
+			continue // Skip paths that fail to load
+		}
+
+		pathInfo := map[string]interface{}{
+			"description":        metadata.Description,
+			"category":           metadata.Category,
+			"tags":               metadata.Tags,
+			"estimated_duration": metadata.EstimatedDuration,
+			"workflow_file":      metadata.WorkflowFile,
+		}
+
+		// Add parameter schemas if available
+		if len(metadata.Parameters) > 0 {
+			pathInfo["parameters"] = metadata.Parameters
+		}
+
+		response[pathName] = pathInfo
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+func (s *Server) handleGetGoldenPath(w http.ResponseWriter, r *http.Request, pathName string) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	config, err := goldenpaths.LoadGoldenPaths()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load golden paths: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	metadata, err := config.GetMetadata(pathName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Golden path '%s' not found", pathName), http.StatusNotFound)
+		return
+	}
+
+	response := map[string]interface{}{
+		"name":               pathName,
+		"description":        metadata.Description,
+		"category":           metadata.Category,
+		"tags":               metadata.Tags,
+		"estimated_duration": metadata.EstimatedDuration,
+		"workflow_file":      metadata.WorkflowFile,
+	}
+
+	// Add parameter schemas if available
+	if len(metadata.Parameters) > 0 {
+		response["parameters"] = metadata.Parameters
+	}
+
+	// Add deprecated fields for backward compatibility
+	if len(metadata.RequiredParams) > 0 {
+		response["required_params"] = metadata.RequiredParams
+	}
+	if len(metadata.OptionalParams) > 0 {
+		response["optional_params"] = metadata.OptionalParams
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // HandleGoldenPathExecution handles golden path workflow execution with resource management integration
 func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -1912,6 +2673,22 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 	}
 
 	fmt.Printf("🚀 Executing golden path '%s' for application: %s\n", goldenPathName, spec.Metadata.Name)
+
+	// Extract golden path parameters from query string (param.KEY=value)
+	goldenPathParams := make(map[string]string)
+	for key, values := range r.URL.Query() {
+		if strings.HasPrefix(key, "param.") {
+			paramName := strings.TrimPrefix(key, "param.")
+			if len(values) > 0 {
+				goldenPathParams[paramName] = values[0]
+			}
+		}
+	}
+
+	// Log parameters if any were provided
+	if len(goldenPathParams) > 0 {
+		fmt.Printf("   📋 Golden path parameters: %v\n", goldenPathParams)
+	}
 
 	// Load golden path workflow
 	workflowFile := fmt.Sprintf("./workflows/%s.yaml", goldenPathName)
@@ -1964,6 +2741,7 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 			"user":        user.Username,
 			"golden_path": goldenPathName,
 			"source":      "api",
+			"parameters":  goldenPathParams,
 		}
 		taskID, err = s.workflowQueue.Enqueue(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, metadata)
 		if err != nil {
@@ -1971,8 +2749,8 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	} else if s.workflowExecutor != nil {
-		// Fallback: Execute workflow synchronously if queue is not available
-		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow)
+		// Fallback: Execute workflow synchronously if queue is not available with golden path parameters
+		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, goldenPathParams)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
 			return
@@ -2976,6 +3754,44 @@ func (s *Server) generateDatabaseAPIKey(username, keyName string, expiryDays int
 		CreatedAt: time.Now(),
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// handleGraphWorkflowDetails handles /api/graph/<app>/workflow/<id> requests
+// Returns workflow execution details including steps with configuration and logs
+func (s *Server) handleGraphWorkflowDetails(w http.ResponseWriter, r *http.Request, appName, workflowID string) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.workflowExecutor == nil {
+		http.Error(w, "Workflow executor not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse workflow ID
+	id, err := strconv.ParseInt(workflowID, 10, 64)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid workflow ID: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get workflow execution details
+	execution, err := s.workflowExecutor.GetWorkflowExecution(id)
+	if err != nil {
+		if err.Error() == "workflow execution not found" {
+			http.Error(w, "Workflow execution not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Failed to get workflow execution: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the full workflow execution with steps
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(execution); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
 }
 
 // generateAPIKeyString generates a cryptographically secure API key

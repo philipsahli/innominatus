@@ -32,7 +32,6 @@ cookies.txt
 
 # Database files
 data/
-database/
 *.db
 *.sqlite
 *.sqlite3
@@ -80,3 +79,21 @@ ansible/*.retry
 *.orig
 terraform/infra/terraform.tfstate
 terraform/alice-nginx-simple-default/.terraform.lock.hcl
+
+# Node.js dependencies
+node_modules/
+**/node_modules/
+
+# Claude Code settings copies
+.claude/settings.local copy*.json
+
+# Old binaries
+innominatus-old
+
+# Temp docs
+docs/TODO's
+
+# Embed copies (copied for Go embed - originals in root)
+cmd/server/migrations/
+cmd/server/swagger-*.yaml
+cmd/server/web-ui-out/

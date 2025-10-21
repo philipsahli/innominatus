@@ -100,6 +100,40 @@ type ResourceInstance struct {
 	ErrorMessage     *string                `json:"error_message,omitempty"`
 }
 
+type ProviderSummary struct {
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	Category     string `json:"category"`
+	Description  string `json:"description"`
+	Provisioners int    `json:"provisioners"`
+	GoldenPaths  int    `json:"golden_paths"`
+}
+
+type ProviderStats struct {
+	Providers    int `json:"providers"`
+	Provisioners int `json:"provisioners"`
+}
+
+// Stats represents platform statistics from the dashboard
+type Stats struct {
+	Applications int `json:"applications"`
+	Workflows    int `json:"workflows"`
+	Resources    int `json:"resources"`
+	Users        int `json:"users"`
+}
+
+// GoldenPathInfo represents metadata for a golden path from the API
+type GoldenPathInfo struct {
+	Description       string                 `json:"description"`
+	Category          string                 `json:"category"`
+	Tags              []string               `json:"tags"`
+	EstimatedDuration string                 `json:"estimated_duration"`
+	WorkflowFile      string                 `json:"workflow_file"`
+	Parameters        map[string]interface{} `json:"parameters,omitempty"`
+	RequiredParams    []string               `json:"required_params,omitempty"`    // Deprecated
+	OptionalParams    map[string]string      `json:"optional_params,omitempty"`    // Deprecated
+}
+
 // Login authenticates with the server and stores the token
 func (c *Client) Login(username, password string) error {
 	loginData := map[string]string{
@@ -120,7 +154,8 @@ func (c *Client) Login(username, password string) error {
 
 func (c *Client) Deploy(yamlContent []byte) (*DeployResponse, error) {
 	var result DeployResponse
-	if err := c.http.doYAMLRequest("POST", "/api/specs", yamlContent, &result); err != nil {
+	// Updated to use /api/applications endpoint
+	if err := c.http.doYAMLRequest("POST", "/api/applications", yamlContent, &result); err != nil {
 		return nil, fmt.Errorf("failed to deploy spec: %w", err)
 	}
 	return &result, nil
@@ -128,7 +163,8 @@ func (c *Client) Deploy(yamlContent []byte) (*DeployResponse, error) {
 
 func (c *Client) ListSpecs() (map[string]*SpecResponse, error) {
 	var result map[string]*SpecResponse
-	if err := c.http.GET("/api/specs", &result); err != nil {
+	// Updated to use /api/applications endpoint
+	if err := c.http.GET("/api/applications", &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -136,14 +172,16 @@ func (c *Client) ListSpecs() (map[string]*SpecResponse, error) {
 
 func (c *Client) GetSpec(name string) (*SpecResponse, error) {
 	var result SpecResponse
-	if err := c.http.GET("/api/specs/"+name, &result); err != nil {
+	// Updated to use /api/applications endpoint
+	if err := c.http.GET("/api/applications/"+name, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 func (c *Client) DeleteSpec(name string) error {
-	return c.http.DELETE("/api/specs/" + name)
+	// Updated to use /api/applications endpoint
+	return c.http.DELETE("/api/applications/" + name)
 }
 
 func (c *Client) ListEnvironments() (map[string]*Environment, error) {
@@ -190,6 +228,49 @@ func (c *Client) DeleteApplication(name string) error {
 // DeprovisionApplication performs infrastructure teardown with audit trail preserved
 func (c *Client) DeprovisionApplication(name string) error {
 	return c.http.POST("/api/applications/"+name+"/deprovision", nil, nil)
+}
+
+// GetResource retrieves details of a specific resource
+func (c *Client) GetResource(id string) (*ResourceInstance, error) {
+	var result ResourceInstance
+	if err := c.http.GET("/api/resources/"+id, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// DeleteResource deletes a specific resource
+func (c *Client) DeleteResource(id string) error {
+	return c.http.DELETE("/api/resources/" + id)
+}
+
+// UpdateResource updates resource configuration
+func (c *Client) UpdateResource(id string, config map[string]interface{}) error {
+	return c.http.PUT("/api/resources/"+id, config, nil)
+}
+
+// TransitionResource transitions resource to a new state
+func (c *Client) TransitionResource(id string, state string) error {
+	data := map[string]string{"state": state}
+	return c.http.POST("/api/resources/"+id+"/transition", data, nil)
+}
+
+// GetResourceHealth gets cached resource health status
+func (c *Client) GetResourceHealth(id string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if err := c.http.GET("/api/resources/"+id+"/health", &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// CheckResourceHealth triggers a new resource health check
+func (c *Client) CheckResourceHealth(id string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if err := c.http.POST("/api/resources/"+id+"/health", nil, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // WorkflowStepDetail represents a detailed workflow step with logs
@@ -358,4 +439,158 @@ func (c *Client) GraphStatusCommand(appName string) error {
 	}
 
 	return nil
+}
+
+// User represents a user in the system
+type User struct {
+	Username string `json:"username"`
+	Team     string `json:"team"`
+	Role     string `json:"role"`
+}
+
+// CreateUser creates a new user via the API
+func (c *Client) CreateUser(username, password, team, role string) error {
+	data := map[string]string{
+		"username": username,
+		"password": password,
+		"team":     team,
+		"role":     role,
+	}
+	return c.http.POST("/admin/users", data, nil)
+}
+
+// GetUser retrieves user information
+func (c *Client) GetUser(username string) (*User, error) {
+	var user User
+	if err := c.http.GET(fmt.Sprintf("/admin/users/%s", username), &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// ListUsers retrieves all users
+func (c *Client) ListUsers() ([]User, error) {
+	var result struct {
+		Users []User `json:"users"`
+	}
+	if err := c.http.GET("/users", &result); err != nil {
+		return nil, err
+	}
+	return result.Users, nil
+}
+
+// UpdateUser updates user information
+func (c *Client) UpdateUser(username string, updates map[string]string) error {
+	return c.http.PUT(fmt.Sprintf("/admin/users/%s", username), updates, nil)
+}
+
+// DeleteUser deletes a user
+func (c *Client) DeleteUser(username string) error {
+	return c.http.DELETE(fmt.Sprintf("/admin/users/%s", username))
+}
+
+// AdminGetAPIKeys retrieves API keys for a specific user (admin only)
+func (c *Client) AdminGetAPIKeys(username string) ([]map[string]interface{}, error) {
+	var result struct {
+		Username string                   `json:"username"`
+		APIKeys  []map[string]interface{} `json:"api_keys"`
+	}
+	if err := c.http.GET(fmt.Sprintf("/admin/users/%s/api-keys", username), &result); err != nil {
+		return nil, err
+	}
+	return result.APIKeys, nil
+}
+
+// AdminGenerateAPIKey generates an API key for a user (admin only)
+func (c *Client) AdminGenerateAPIKey(username, name string, expiryDays int) (map[string]interface{}, error) {
+	data := map[string]interface{}{
+		"name":        name,
+		"expiry_days": expiryDays,
+	}
+	var result map[string]interface{}
+	if err := c.http.POST(fmt.Sprintf("/admin/users/%s/api-keys", username), data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// AdminRevokeAPIKey revokes an API key for a user (admin only)
+func (c *Client) AdminRevokeAPIKey(username, keyName string) error {
+	return c.http.DELETE(fmt.Sprintf("/admin/users/%s/api-keys/%s", username, keyName))
+}
+
+// Team represents a team in the system
+type Team struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Members     []string `json:"members,omitempty"`
+}
+
+// ListTeams retrieves all teams
+func (c *Client) ListTeams() ([]Team, error) {
+	var teams []Team
+	if err := c.http.GET("/teams", &teams); err != nil {
+		return nil, err
+	}
+	return teams, nil
+}
+
+// GetTeam retrieves a specific team
+func (c *Client) GetTeam(teamID string) (*Team, error) {
+	var team Team
+	if err := c.http.GET(fmt.Sprintf("/teams/%s", teamID), &team); err != nil {
+		return nil, err
+	}
+	return &team, nil
+}
+
+// CreateTeam creates a new team
+func (c *Client) CreateTeam(name, description string) error {
+	data := map[string]string{
+		"name":        name,
+		"description": description,
+	}
+	return c.http.POST("/teams", data, nil)
+}
+
+// DeleteTeam deletes a team
+func (c *Client) DeleteTeam(teamID string) error {
+	return c.http.DELETE(fmt.Sprintf("/teams/%s", teamID))
+}
+
+// ListProviders retrieves all loaded providers from the server
+func (c *Client) ListProviders() ([]ProviderSummary, error) {
+	var providers []ProviderSummary
+	if err := c.http.GET("/api/providers", &providers); err != nil {
+		return nil, err
+	}
+	return providers, nil
+}
+
+// GetProviderStats retrieves provider statistics from the server
+func (c *Client) GetProviderStats() (*ProviderStats, error) {
+	var stats ProviderStats
+	if err := c.http.GET("/api/providers/stats", &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+// GetStats retrieves platform statistics (applications, workflows, resources, users)
+func (c *Client) GetStats() (*Stats, error) {
+	var stats Stats
+	if err := c.http.GET("/api/stats", &stats); err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+// GetGoldenPaths retrieves all available golden paths from the server
+func (c *Client) GetGoldenPaths() (map[string]*GoldenPathInfo, error) {
+	var paths map[string]*GoldenPathInfo
+	if err := c.http.GET("/api/golden-paths", &paths); err != nil {
+		return nil, err
+	}
+	return paths, nil
 }

@@ -1,0 +1,162 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: team-setup
+  description: Create Gitea team organization for collaborative development
+spec:
+  steps:
+    - name: create-gitea-organization
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "🔧 Platform Setup: Creating Gitea Organization"
+          echo "=============================================="
+          echo ""
+
+          # Load admin configuration
+          GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+          GITEA_USER="${GITEA_USER:-giteaadmin}"
+          GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+          ORG_NAME="${ORG_NAME:-platform-team}"
+          ORG_DESCRIPTION="${ORG_DESCRIPTION:-Platform engineering team organization}"
+          ORG_VISIBILITY="${ORG_VISIBILITY:-public}"
+
+          echo "📋 Configuration:"
+          echo "  Gitea URL: $GITEA_URL"
+          echo "  Admin User: $GITEA_USER"
+          echo "  Organization: $ORG_NAME"
+          echo "  Visibility: $ORG_VISIBILITY"
+          echo ""
+
+          # Check if organization already exists
+          echo "🔍 Checking if organization '$ORG_NAME' exists..."
+          HTTP_CODE=$(curl -s -o /tmp/gitea_org_check.json -w "%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            "$GITEA_URL/api/v1/orgs/$ORG_NAME")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Organization '$ORG_NAME' already exists"
+            echo ""
+            echo "Organization details:"
+            cat /tmp/gitea_org_check.json | grep -E '"(username|full_name|description|visibility)"' || true
+            echo ""
+            echo "⏭️  Skipping creation (idempotent)"
+            exit 0
+          fi
+
+          echo "📝 Organization does not exist, creating..."
+
+          # Create organization
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"username\": \"$ORG_NAME\",
+              \"full_name\": \"$ORG_NAME\",
+              \"description\": \"$ORG_DESCRIPTION\",
+              \"visibility\": \"$ORG_VISIBILITY\",
+              \"repo_admin_change_team_access\": true
+            }" \
+            "$GITEA_URL/api/v1/orgs")
+
+          # Extract HTTP code
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '/HTTP_CODE:/d')
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ Successfully created organization '$ORG_NAME'"
+            echo ""
+            echo "Organization details:"
+            echo "$RESPONSE_BODY" | grep -E '"(id|username|full_name|description|visibility)"' || echo "$RESPONSE_BODY"
+            echo ""
+
+            # Verify organization was created
+            echo "🔍 Verifying organization creation..."
+            VERIFY_CODE=$(curl -s -o /tmp/gitea_org_verify.json -w "%{http_code}" \
+              -u "$GITEA_USER:$GITEA_PASSWORD" \
+              "$GITEA_URL/api/v1/orgs/$ORG_NAME")
+
+            if [ "$VERIFY_CODE" = "200" ]; then
+              echo "✅ Organization verified successfully"
+            else
+              echo "⚠️  Warning: Could not verify organization (HTTP $VERIFY_CODE)"
+            fi
+          else
+            echo "❌ Failed to create organization (HTTP $HTTP_CODE)"
+            echo "Response:"
+            echo "$RESPONSE_BODY"
+            exit 1
+          fi
+
+          echo ""
+          echo "🎉 Platform setup completed successfully!"
+          echo ""
+          echo "Next steps:"
+          echo "  1. Organization '$ORG_NAME' is now available"
+          echo "  2. You can create repositories under this organization"
+          echo "  3. Add team members via Gitea UI: $GITEA_URL/$ORG_NAME"
+
+    - name: verify-platform-readiness
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "🔍 Verifying Platform Readiness"
+          echo "==============================="
+          echo ""
+
+          GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+          GITEA_USER="${GITEA_USER:-giteaadmin}"
+          GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+          ORG_NAME="${ORG_NAME:-platform-team}"
+
+          # Check Gitea service
+          echo "📡 Checking Gitea service..."
+          if curl -s -f "$GITEA_URL/api/swagger" > /dev/null; then
+            echo "  ✅ Gitea is accessible"
+          else
+            echo "  ❌ Gitea is not accessible"
+            exit 1
+          fi
+
+          # Check authentication
+          echo "🔐 Checking authentication..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            "$GITEA_URL/api/v1/user")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "  ✅ Authentication successful"
+          else
+            echo "  ❌ Authentication failed (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          # Check organization exists
+          echo "🏢 Checking organization '$ORG_NAME'..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            "$GITEA_URL/api/v1/orgs/$ORG_NAME")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "  ✅ Organization exists and is accessible"
+          else
+            echo "  ❌ Organization not found (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Platform is ready for application deployments!"
+          echo ""
+          echo "Summary:"
+          echo "  • Gitea: Running and accessible"
+          echo "  • Authentication: Working"
+          echo "  • Organization '$ORG_NAME': Available"
+          echo ""
+          echo "You can now deploy applications that use the '$ORG_NAME' organization."

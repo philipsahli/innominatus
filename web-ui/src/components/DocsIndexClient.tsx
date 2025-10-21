@@ -92,35 +92,41 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
       description: 'Install and operate innominatus',
       order: 3,
     },
+    'product-team-guide': {
+      title: '🛠️ Product Team Guide',
+      icon: Wrench,
+      description: 'Extend innominatus with product workflows',
+      order: 4,
+    },
     cli: {
       title: '💻 CLI Reference',
       icon: Terminal,
       description: 'Command-line tool documentation',
-      order: 4,
+      order: 5,
     },
     features: {
       title: '⭐ Features',
       icon: Star,
       description: 'Advanced capabilities and workflows',
-      order: 5,
+      order: 6,
     },
     development: {
       title: '🔧 Development Guide',
-      icon: Wrench,
+      icon: BookMarked,
       description: 'Contributing to innominatus',
-      order: 6,
+      order: 7,
     },
     guides: {
       title: 'Guides',
       icon: BookMarked,
       description: 'In-depth tutorials and workflows',
-      order: 7,
+      order: 8,
     },
     General: {
       title: 'General Documentation',
       icon: FileText,
       description: 'Other documentation',
-      order: 8,
+      order: 9,
     },
   };
 
@@ -178,7 +184,7 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
               </div>
 
               {/* Persona Chooser */}
-              <div className="grid md:grid-cols-2 gap-4 max-w-3xl">
+              <div className="grid md:grid-cols-3 gap-4 max-w-5xl">
                 <Card
                   className="bg-white dark:bg-gray-800 border-2 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 dark:hover:border-indigo-600 cursor-pointer transition-all hover:shadow-lg"
                   onClick={() => router.push('/docs/user-guide/README')}
@@ -221,6 +227,31 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                           Install and operate the platform
                         </p>
                         <div className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 font-medium pt-2">
+                          <span>Start learning</span>
+                          <ArrowUpRight className="w-3 h-3" />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card
+                  className="bg-white dark:bg-gray-800 border-2 border-green-200 dark:border-green-800 hover:border-green-400 dark:hover:border-green-600 cursor-pointer transition-all hover:shadow-lg"
+                  onClick={() => router.push('/docs/product-team-guide/README')}
+                >
+                  <CardContent className="pt-6">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 rounded-lg bg-green-100 dark:bg-green-900">
+                        <Wrench className="w-6 h-6 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div className="space-y-1 flex-1">
+                        <h3 className="font-semibold text-lg text-gray-900 dark:text-gray-100">
+                          I&apos;m a Product Engineer
+                        </h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Extend innominatus with product workflows
+                        </p>
+                        <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 font-medium pt-2">
                           <span>Start learning</span>
                           <ArrowUpRight className="w-3 h-3" />
                         </div>
@@ -474,6 +505,64 @@ export function DocsIndexClient({ allDocs }: DocsIndexClientProps) {
                       <div className="font-semibold">Operations</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">
                         Scaling & backup
+                      </div>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+
+              {/* For Product Teams */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                  <Wrench className="w-4 h-4" />
+                  For Product Teams
+                </h3>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push('/docs/product-team-guide/README')}
+                    className="justify-start h-auto py-4 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <div className="text-left">
+                      <div className="font-semibold">Product Team Guide</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Overview & getting started
+                      </div>
+                    </div>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push('/docs/product-team-guide/product-workflows')}
+                    className="justify-start h-auto py-4 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <div className="text-left">
+                      <div className="font-semibold">Product Workflows</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Create & manage workflows
+                      </div>
+                    </div>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push('/docs/product-team-guide/activation-guide')}
+                    className="justify-start h-auto py-4 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <div className="text-left">
+                      <div className="font-semibold">Activation Guide</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Enable product workflows
+                      </div>
+                    </div>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push('/docs/PRODUCT_WORKFLOW_GAPS')}
+                    className="justify-start h-auto py-4 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <div className="text-left">
+                      <div className="font-semibold">Gap Analysis</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        Technical roadmap
                       </div>
                     </div>
                   </Button>

@@ -80,8 +80,9 @@ func NewDemoEnvironment() *DemoEnvironment {
 								"DISABLE_SSH": true,
 							},
 							"service": map[string]interface{}{
-								"DISABLE_REGISTRATION":             true,
+								"DISABLE_REGISTRATION":             false, // Must be false for ALLOW_ONLY_EXTERNAL_REGISTRATION to work
 								"ALLOW_ONLY_EXTERNAL_REGISTRATION": true,
+								"SHOW_REGISTRATION_BUTTON":         false, // Hide the normal registration button
 							},
 							"oauth2": map[string]interface{}{
 								"ENABLE":                   true,

@@ -19,6 +19,7 @@ type WorkflowTask struct {
 	Workflow     types.Workflow         `json:"workflow"`
 	EnqueuedAt   time.Time              `json:"enqueued_at"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	Parameters   map[string]string      `json:"parameters,omitempty"` // Golden path parameters
 }
 
 // TaskStatus represents the status of a task
@@ -33,7 +34,7 @@ const (
 
 // WorkflowExecutor defines the interface for executing workflows
 type WorkflowExecutor interface {
-	ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow) error
+	ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow, goldenPathParams ...map[string]string) error
 }
 
 // Queue represents an async task queue for workflow execution
@@ -138,6 +139,12 @@ func (q *Queue) Stop() {
 
 // Enqueue adds a workflow task to the queue
 func (q *Queue) Enqueue(appName, workflowName string, workflow types.Workflow, metadata map[string]interface{}) (string, error) {
+	// Extract parameters from metadata if present
+	var parameters map[string]string
+	if params, ok := metadata["parameters"].(map[string]string); ok {
+		parameters = params
+	}
+
 	task := &WorkflowTask{
 		ID:           generateTaskID(),
 		AppName:      appName,
@@ -145,6 +152,7 @@ func (q *Queue) Enqueue(appName, workflowName string, workflow types.Workflow, m
 		Workflow:     workflow,
 		EnqueuedAt:   time.Now(),
 		Metadata:     metadata,
+		Parameters:   parameters,
 	}
 
 	// Store task in database for persistence
@@ -217,8 +225,13 @@ func (q *Queue) processTask(workerID int, task *WorkflowTask) {
 		"queue_time_ms": queueTime.Milliseconds(),
 	})
 
-	// Execute workflow
-	err := q.executor.ExecuteWorkflowWithName(task.AppName, task.WorkflowName, task.Workflow)
+	// Execute workflow with golden path parameters if provided
+	var err error
+	if len(task.Parameters) > 0 {
+		err = q.executor.ExecuteWorkflowWithName(task.AppName, task.WorkflowName, task.Workflow, task.Parameters)
+	} else {
+		err = q.executor.ExecuteWorkflowWithName(task.AppName, task.WorkflowName, task.Workflow)
+	}
 
 	// Calculate execution time
 	executionTime := time.Since(startTime)

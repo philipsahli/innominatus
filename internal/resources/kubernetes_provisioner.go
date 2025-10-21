@@ -86,6 +86,34 @@ func (kp *KubernetesProvisioner) Provision(resource *database.ResourceInstance, 
 
 	// Resource status is updated by the Manager's ProvisionResource method
 
+	// Add multiple hints for easy access to Kubernetes resources
+	hints := []database.ResourceHint{
+		{
+			Type:  "dashboard",
+			Label: "Kubernetes Dashboard",
+			Value: fmt.Sprintf("http://k8s.localtest.me/#/overview?namespace=%s", namespace),
+			Icon:  "external-link",
+		},
+		{
+			Type:  "namespace",
+			Label: "Namespace",
+			Value: namespace,
+			Icon:  "server",
+		},
+		{
+			Type:  "command",
+			Label: "View Pods",
+			Value: fmt.Sprintf("kubectl get pods -n %s", namespace),
+			Icon:  "terminal",
+		},
+	}
+
+	// Update resource hints in database
+	if err := kp.repo.UpdateResourceHints(resource.ID, hints); err != nil {
+		// Log error but don't fail the provisioning
+		fmt.Printf("   ⚠️  Warning: Failed to update resource hints: %v\n", err)
+	}
+
 	fmt.Printf("🎉 Kubernetes deployment completed for '%s'\n", appName)
 	return nil
 }

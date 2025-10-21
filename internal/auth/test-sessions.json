@@ -1,0 +1,17 @@
+{
+  "80b4d4c2a28d80b35c4fa345c33e62bf99e375fa5efd1592dc984a3624522fa1": {
+    "ID": "80b4d4c2a28d80b35c4fa345c33e62bf99e375fa5efd1592dc984a3624522fa1",
+    "User": {
+      "Username": "testuser",
+      "Password": "",
+      "Team": "",
+      "Role": "",
+      "APIKeys": null
+    },
+    "CreatedAt": "2025-10-20T15:40:10.056129+02:00",
+    "ExpiresAt": "2025-10-20T18:40:10.066287+02:00",
+    "OriginalUser": null,
+    "ImpersonatedUser": null,
+    "IsImpersonating": false
+  }
+}

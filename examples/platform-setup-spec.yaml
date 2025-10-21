@@ -1,0 +1,13 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: platform-setup
+
+service:
+  ports:
+    web:
+      port: 80
+
+containers:
+  platform:
+    image: alpine:3.18
+    command: ["/bin/sh", "-c", "echo 'Platform setup placeholder'"]

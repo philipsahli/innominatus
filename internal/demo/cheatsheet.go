@@ -8,6 +8,11 @@ import (
 	"unicode"
 )
 
+// NOTE: This file contains numerous fmt.Println/Printf statements that are INTENTIONAL
+// user-facing output for displaying demo environment credentials and status. These are
+// NOT debug logging and should NOT be converted to structured logging. They provide
+// formatted terminal output for the demo cheat sheet display.
+
 // CheatSheet handles the display of demo environment status and credentials
 type CheatSheet struct {
 	environment *DemoEnvironment
@@ -23,7 +28,7 @@ func NewCheatSheet(env *DemoEnvironment) *CheatSheet {
 // PrintWelcome prints the welcome message
 func (c *CheatSheet) PrintWelcome() {
 	fmt.Println()
-	fmt.Println("🚀 OpenAlps Demo Environment")
+	fmt.Println("Innominatus Demo Application")
 	fmt.Println("===============================")
 	fmt.Println()
 }
@@ -33,7 +38,7 @@ func (c *CheatSheet) PrintInstallationComplete() {
 	fmt.Println()
 	fmt.Println("🎉 Demo Environment Installation Complete!")
 	fmt.Println()
-	fmt.Println("Your OpenAlps demo environment is now ready with:")
+	fmt.Println("Your Innominatus demo environment is now ready with:")
 	fmt.Println("• GitOps workflow with ArgoCD")
 	fmt.Println("• Git repository with Gitea")
 	fmt.Println("• Secret management with Vault")

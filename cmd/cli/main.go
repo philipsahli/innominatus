@@ -1,423 +1,512 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"innominatus/internal/cli"
 	"innominatus/internal/users"
 	"innominatus/internal/validation"
 	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	var serverURL = flag.String("server", "http://localhost:8081", "Score orchestrator server URL")
-	var details = flag.Bool("details", false, "Show detailed information including URLs and workflow links")
-	var skipValidation = flag.Bool("skip-validation", false, "Skip configuration validation")
-	flag.Parse()
+// NOTE: This file contains numerous fmt.Println/Printf statements that are INTENTIONAL
+// user-facing CLI output. These are NOT debug logging and should NOT be converted to
+// structured logging. They provide the interactive UX for the CLI commands and are
+// designed for human-readable terminal output.
 
-	if len(flag.Args()) < 1 {
-		printUsage()
-		os.Exit(1)
-	}
+var (
+	serverURL      string
+	details        bool
+	skipValidation bool
+	client         *cli.Client
+)
 
-	client := cli.NewClient(*serverURL)
-	command := flag.Args()[0]
+// Commands that don't require server authentication
+var localCommands = map[string]bool{
+	"run":             true,
+	"validate":        true,
+	"analyze":         true,
+	"demo-time":       true,
+	"demo-nuke":       true,
+	"demo-status":     true,
+	"demo-reset":      true,
+	"fix-gitea-oauth": true,
+	"login":           true,
+	"logout":          true,
+	"chat":            true,
+	"help":            true, // Cobra built-in help command
+	"completion":      true, // Cobra built-in completion command
+	"bash":            true, // completion subcommands
+	"zsh":             true,
+	"fish":            true,
+	"powershell":      true,
+}
 
-	// Commands that don't require server authentication
-	localCommands := map[string]bool{
-		"list-goldenpaths": true,
-		"run":              true,
-		"validate":         true,
-		"analyze":          true,
-		"demo-time":        true,
-		"demo-nuke":        true,
-		"demo-status":      true,
-		"login":            true,
-		"logout":           true,
-		"chat":             true, // AI assistant chat
-	}
+var rootCmd = &cobra.Command{
+	Use:   "innominatus-ctl",
+	Short: "Open Alps CLI",
+	Long:  `Command-line interface for the Open Alps Score-based Platform Orchestration system.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Initialize client with server URL
+		client = cli.NewClient(serverURL)
 
-	// Run fast configuration validation for server commands (skip local commands)
-	if !localCommands[command] && !*skipValidation {
-		summary := validation.ValidateWithMode(validation.ValidationModeFast)
-		if !summary.Valid {
-			fmt.Printf("❌ Configuration validation failed. Run with --skip-validation to bypass.\n")
-			summary.PrintSummary()
-			os.Exit(1)
+		// Skip authentication for built-in Cobra commands (help, completion)
+		// These commands have no RunE or Run function
+		if cmd.RunE == nil && cmd.Run == nil {
+			return nil
 		}
-		if summary.WarningCount > 0 {
-			fmt.Printf("⚠️  Configuration warnings detected (%d warnings)\n", summary.WarningCount)
-		}
-	}
 
-	var user *users.User
-	var err error
-	if !localCommands[command] {
-		// Check if API key is already set (from environment variable or credentials file)
+		// Skip authentication for local commands
+		cmdName := cmd.Name()
+		if localCommands[cmdName] {
+			return nil
+		}
+
+		// Run fast configuration validation for server commands
+		if !skipValidation {
+			summary := validation.ValidateWithMode(validation.ValidationModeFast)
+			if !summary.Valid {
+				fmt.Printf("❌ Configuration validation failed. Run with --skip-validation to bypass.\n")
+				summary.PrintSummary()
+				os.Exit(1)
+			}
+			if summary.WarningCount > 0 {
+				fmt.Printf("⚠️  Configuration warnings detected (%d warnings)\n", summary.WarningCount)
+			}
+		}
+
+		// Check if API key is already set
 		if client.HasToken() {
-			// API key authentication - no need to prompt for login
 			if os.Getenv("IDP_API_KEY") != "" {
 				fmt.Printf("✓ Using API key from environment variable\n")
 			} else {
 				fmt.Printf("✓ Using API key from credentials file\n")
 			}
-		} else {
-			// Authenticate user with server for server commands
-			user, err = users.PromptLogin()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
-				os.Exit(1)
-			}
-
-			// Login to server to get authentication token
-			err = client.Login(user.Username, user.Password)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Server authentication failed: %v\n", err)
-				os.Exit(1)
-			}
-
-			//fmt.Printf("✓ Authenticated as %s (%s, %s)\n", user.Username, user.Team, user.Role)
-		}
-	}
-	switch command {
-	case "list":
-		err = client.ListCommand(*details)
-
-	case "status":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: status command requires an application name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s status <app-name>\n", os.Args[0])
-			os.Exit(1)
-		}
-		err = client.StatusCommand(flag.Args()[1])
-
-	case "validate":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: validate command requires a file path\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s validate <score-spec.yaml> [--explain] [--format=<text|json|simple>]\n", os.Args[0])
-			os.Exit(1)
-		}
-
-		// Parse validate-specific flags
-		validateFlags := flag.NewFlagSet("validate", flag.ExitOnError)
-		explainFlag := validateFlags.Bool("explain", false, "Show detailed validation explanations")
-		formatFlag := validateFlags.String("format", "text", "Output format (text, json, simple)")
-
-		// Parse remaining arguments for validate command
-		validateArgs := flag.Args()[2:]
-		if len(validateArgs) > 0 {
-			if err := validateFlags.Parse(validateArgs); err != nil {
-				fmt.Fprintf(os.Stderr, "Error parsing validate flags: %v\n", err)
-				os.Exit(1)
-			}
-		}
-
-		err = client.ValidateCommand(flag.Args()[1], *explainFlag, *formatFlag)
-
-	case "analyze":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: analyze command requires a file path\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s analyze <score-spec.yaml>\n", os.Args[0])
-			os.Exit(1)
-		}
-		err = client.AnalyzeCommand(flag.Args()[1])
-
-	case "environments":
-		err = client.EnvironmentsCommand()
-
-	case "delete":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: delete command requires an application name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s delete <app-name>\n", os.Args[0])
-			os.Exit(1)
-		}
-		err = client.DeleteCommand(flag.Args()[1])
-
-	case "deprovision":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: deprovision command requires an application name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s deprovision <app-name>\n", os.Args[0])
-			os.Exit(1)
-		}
-		err = client.DeprovisionCommand(flag.Args()[1])
-
-	case "admin":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: admin command requires a subcommand\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s admin <show|add-user|list-users|delete-user>\n", os.Args[0])
-			os.Exit(1)
-		}
-		err = client.AdminCommand(flag.Args()[1:])
-
-	case "list-goldenpaths":
-		err = client.ListGoldenPathsCommand()
-
-	case "run":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: run command requires a golden path name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s run <golden-path-name> [score-spec.yaml] [--param key=value ...]\n", os.Args[0])
-			os.Exit(1)
-		}
-
-		// Parse run-specific flags
-		runFlags := flag.NewFlagSet("run", flag.ContinueOnError)
-		runFlags.SetOutput(os.Stderr)
-
-		// Define --param flag for parameter overrides
-		var params []string
-		runFlags.Func("param", "Parameter override (key=value)", func(s string) error {
-			params = append(params, s)
 			return nil
-		})
-
-		// Parse flags after the golden path name
-		goldenPath := flag.Args()[1]
-		scoreFile := ""
-		remainingArgs := flag.Args()[2:]
-
-		// Parse flags
-		if err := runFlags.Parse(remainingArgs); err != nil {
-			os.Exit(1)
 		}
 
-		// Check for score file (first non-flag argument)
-		if runFlags.NArg() > 0 {
-			scoreFile = runFlags.Arg(0)
+		// Prompt for login for server commands
+		user, err := users.PromptLogin()
+		if err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+
+		// Login to server
+		err = client.Login(user.Username, user.Password)
+		if err != nil {
+			return fmt.Errorf("server authentication failed: %w", err)
+		}
+
+		return nil
+	},
+}
+
+func init() {
+	// Persistent flags available to all commands
+	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "http://localhost:8081", "Score orchestrator server URL")
+	rootCmd.PersistentFlags().BoolVar(&details, "details", false, "Show detailed information including URLs and workflow links")
+	rootCmd.PersistentFlags().BoolVar(&skipValidation, "skip-validation", false, "Skip configuration validation")
+}
+
+// Basic commands
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all deployed applications",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.ListCommand(details)
+	},
+}
+
+var statusCmd = &cobra.Command{
+	Use:   "status <app-name>",
+	Short: "Show application status and resources",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.StatusCommand(args[0])
+	},
+}
+
+var (
+	validateExplain bool
+	validateFormat  string
+)
+
+var validateCmd = &cobra.Command{
+	Use:   "validate <score-spec.yaml>",
+	Short: "Validate Score spec locally",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.ValidateCommand(args[0], validateExplain, validateFormat)
+	},
+}
+
+var analyzeCmd = &cobra.Command{
+	Use:   "analyze <score-spec.yaml>",
+	Short: "Analyze Score spec workflow dependencies",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.AnalyzeCommand(args[0])
+	},
+}
+
+var statsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "Show platform statistics (apps, workflows, resources, users)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.StatsCommand()
+	},
+}
+
+var environmentsCmd = &cobra.Command{
+	Use:   "environments",
+	Short: "List active environments",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.EnvironmentsCommand()
+	},
+}
+
+var deleteCmd = &cobra.Command{
+	Use:   "delete <app-name>",
+	Short: "Delete application and all resources completely",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.DeleteCommand(args[0])
+	},
+}
+
+var deprovisionCmd = &cobra.Command{
+	Use:   "deprovision <app-name>",
+	Short: "Deprovision infrastructure (keep audit trail)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.DeprovisionCommand(args[0])
+	},
+}
+
+// Workflow commands
+var listWorkflowsCmd = &cobra.Command{
+	Use:   "list-workflows [app-name]",
+	Short: "List workflow executions (optionally filtered by app)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		appName := ""
+		if len(args) > 0 {
+			appName = args[0]
+		}
+		return client.ListWorkflowsCommand(appName)
+	},
+}
+
+var workflowCmd = &cobra.Command{
+	Use:   "workflow",
+	Short: "Workflow operations",
+}
+
+var workflowDetailCmd = &cobra.Command{
+	Use:   "detail <workflow-id>",
+	Short: "Show detailed workflow metadata and step breakdown",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.WorkflowDetailCommand(args[0])
+	},
+}
+
+var (
+	logsStep     string
+	logsStepOnly bool
+	logsTail     int
+	logsVerbose  bool
+)
+
+var workflowLogsCmd = &cobra.Command{
+	Use:   "logs <workflow-id>",
+	Short: "Show workflow execution logs with step details",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		options := cli.LogsOptions{
+			Step:     logsStep,
+			StepOnly: logsStepOnly,
+			Tail:     logsTail,
+			Verbose:  logsVerbose,
+		}
+		return client.LogsCommand(args[0], options)
+	},
+}
+
+// Backward compatibility: logs command
+var logsCmd = &cobra.Command{
+	Use:   "logs <workflow-id>",
+	Short: "Show workflow execution logs (shortcut for workflow logs)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		options := cli.LogsOptions{
+			Step:     logsStep,
+			StepOnly: logsStepOnly,
+			Tail:     logsTail,
+			Verbose:  logsVerbose,
+		}
+		return client.LogsCommand(args[0], options)
+	},
+}
+
+var retryCmd = &cobra.Command{
+	Use:   "retry <workflow-id> <workflow-spec.yaml>",
+	Short: "Retry failed workflow from first failed step",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.RetryWorkflowCommand(args[0], args[1])
+	},
+}
+
+// Resource commands
+var (
+	resourceType  string
+	resourceState string
+)
+
+var listResourcesCmd = &cobra.Command{
+	Use:   "list-resources [app-name]",
+	Short: "List resource instances with optional filters",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		appName := ""
+		if len(args) > 0 {
+			appName = args[0]
+		}
+		return client.ListResourcesCommand(appName, resourceType, resourceState)
+	},
+}
+
+var resourceCmd = &cobra.Command{
+	Use:   "resource",
+	Short: "Manage resource instances",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.ResourceCommand(args)
+	},
+}
+
+// Graph commands
+var (
+	graphFormat string
+	graphOutput string
+)
+
+var graphExportCmd = &cobra.Command{
+	Use:   "graph-export <app-name>",
+	Short: "Export workflow graph visualization",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.GraphExportCommand(args[0], graphFormat, graphOutput)
+	},
+}
+
+var graphStatusCmd = &cobra.Command{
+	Use:   "graph-status <app-name>",
+	Short: "Show workflow graph status and statistics",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.GraphStatusCommand(args[0])
+	},
+}
+
+// Golden path commands
+var listGoldenPathsCmd = &cobra.Command{
+	Use:   "list-goldenpaths",
+	Short: "List available golden paths",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.ListGoldenPathsCommand()
+	},
+}
+
+var runParams []string
+
+var runCmd = &cobra.Command{
+	Use:   "run <golden-path-name> [score-spec.yaml]",
+	Short: "Run a golden path workflow",
+	Args:  cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		goldenPath := args[0]
+		scoreFile := ""
+		if len(args) > 1 {
+			scoreFile = args[1]
 		}
 
 		// Parse parameters into map
 		paramMap := make(map[string]string)
-		for _, param := range params {
+		for _, param := range runParams {
 			parts := strings.SplitN(param, "=", 2)
 			if len(parts) != 2 {
-				fmt.Fprintf(os.Stderr, "Error: invalid parameter format '%s'. Use key=value\n", param)
-				os.Exit(1)
+				return fmt.Errorf("invalid parameter format '%s'. Use key=value", param)
 			}
 			paramMap[parts[0]] = parts[1]
 		}
 
-		err = client.RunGoldenPathCommand(goldenPath, scoreFile, paramMap)
+		return client.RunGoldenPathCommand(goldenPath, scoreFile, paramMap)
+	},
+}
 
-	case "demo-time":
-		// Parse demo-time specific flags
-		demoFlags := flag.NewFlagSet("demo-time", flag.ExitOnError)
-		componentFilter := demoFlags.String("component", "", "Comma-separated list of components to install (e.g., grafana, gitea,argocd)")
+// Demo commands
+var demoComponent string
 
-		// Parse remaining arguments for demo-time command
-		if len(flag.Args()) > 1 {
-			_ = demoFlags.Parse(flag.Args()[1:])
-		}
+var demoTimeCmd = &cobra.Command{
+	Use:   "demo-time",
+	Short: "Install/reconcile demo environment",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.DemoTimeCommand(demoComponent)
+	},
+}
 
-		err = client.DemoTimeCommand(*componentFilter)
+var demoNukeCmd = &cobra.Command{
+	Use:   "demo-nuke",
+	Short: "Uninstall and clean demo environment",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.DemoNukeCommand()
+	},
+}
 
-	case "demo-nuke":
-		err = client.DemoNukeCommand()
+var demoStatusCmd = &cobra.Command{
+	Use:   "demo-status",
+	Short: "Check demo environment health and status",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.DemoStatusCommand()
+	},
+}
 
-	case "demo-status":
-		err = client.DemoStatusCommand()
+var demoResetCmd = &cobra.Command{
+	Use:   "demo-reset",
+	Short: "Reset database to clean state (deletes all data)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.DemoResetCommand()
+	},
+}
 
-	case "list-workflows":
-		appName := ""
-		if len(flag.Args()) >= 2 {
-			appName = flag.Args()[1]
-		}
-		err = client.ListWorkflowsCommand(appName)
+var fixGiteaOAuthCmd = &cobra.Command{
+	Use:   "fix-gitea-oauth",
+	Short: "Fix Gitea OAuth2 auto-registration with Keycloak",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.FixGiteaOAuthCommand()
+	},
+}
 
-	case "list-resources":
-		appName := ""
-		if len(flag.Args()) >= 2 {
-			appName = flag.Args()[1]
-		}
-		err = client.ListResourcesCommand(appName)
+// Auth commands
+var loginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Authenticate and store API key locally",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.LoginCommand(args)
+	},
+}
 
-	case "logs":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: logs command requires a workflow ID\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s logs <workflow-id> [options]\n", os.Args[0])
-			os.Exit(1)
-		}
-		workflowID := flag.Args()[1]
+var logoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Remove stored credentials",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.LogoutCommand()
+	},
+}
 
-		// Parse logs-specific flags
-		logsFlags := flag.NewFlagSet("logs", flag.ExitOnError)
-		stepFlag := logsFlags.String("step", "", "Show logs for specific step name")
-		stepOnlyFlag := logsFlags.Bool("step-only", false, "Only show step logs, skip workflow header")
-		tailFlag := logsFlags.Int("tail", 0, "Number of lines to show from end of logs (0 = all)")
-		verboseFlag := logsFlags.Bool("verbose", false, "Show additional metadata")
+var chatCmd = &cobra.Command{
+	Use:   "chat",
+	Short: "Interactive AI assistant chat",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf("chat command not yet implemented")
+	},
+}
 
-		// Parse remaining arguments for logs command
-		logsArgs := flag.Args()[2:]
-		if len(logsArgs) > 0 {
-			if err := logsFlags.Parse(logsArgs); err != nil {
-				fmt.Fprintf(os.Stderr, "Error parsing logs flags: %v\n", err)
-				os.Exit(1)
-			}
-		}
+// Admin commands
+var adminCmd = &cobra.Command{
+	Use:   "admin",
+	Short: "Admin commands (requires admin role)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.AdminCommand(args)
+	},
+}
 
-		options := cli.LogsOptions{
-			Step:     *stepFlag,
-			StepOnly: *stepOnlyFlag,
-			Tail:     *tailFlag,
-			Verbose:  *verboseFlag,
-		}
+// Team commands
+var teamCmd = &cobra.Command{
+	Use:   "team",
+	Short: "Team management commands",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.TeamCommand(args)
+	},
+}
 
-		err = client.LogsCommand(workflowID, options)
+// Provider commands
+var providerCmd = &cobra.Command{
+	Use:   "provider",
+	Short: "Provider management commands",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.ProviderCommand(args)
+	},
+}
 
-	case "graph-export":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: graph-export command requires an application name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s graph-export <app-name> [--format svg|png|dot] [--output file]\n", os.Args[0])
-			os.Exit(1)
-		}
-		appName := flag.Args()[1]
+func init() {
+	// Add flags to specific commands
+	validateCmd.Flags().BoolVar(&validateExplain, "explain", false, "Show detailed validation explanations")
+	validateCmd.Flags().StringVar(&validateFormat, "format", "text", "Output format (text, json, simple)")
 
-		// Parse graph-export-specific flags
-		graphFlags := flag.NewFlagSet("graph-export", flag.ExitOnError)
-		formatFlag := graphFlags.String("format", "svg", "Output format (svg, png, dot)")
-		outputFlag := graphFlags.String("output", "", "Output file path (default: stdout)")
+	workflowLogsCmd.Flags().StringVar(&logsStep, "step", "", "Show logs for specific step name")
+	workflowLogsCmd.Flags().BoolVar(&logsStepOnly, "step-only", false, "Only show step logs, skip workflow header")
+	workflowLogsCmd.Flags().IntVar(&logsTail, "tail", 0, "Number of lines to show from end of logs (0 = all)")
+	workflowLogsCmd.Flags().BoolVar(&logsVerbose, "verbose", false, "Show additional metadata")
 
-		// Parse remaining arguments
-		graphArgs := flag.Args()[2:]
-		if len(graphArgs) > 0 {
-			if err := graphFlags.Parse(graphArgs); err != nil {
-				fmt.Fprintf(os.Stderr, "Error parsing graph-export flags: %v\n", err)
-				os.Exit(1)
-			}
-		}
+	logsCmd.Flags().StringVar(&logsStep, "step", "", "Show logs for specific step name")
+	logsCmd.Flags().BoolVar(&logsStepOnly, "step-only", false, "Only show step logs, skip workflow header")
+	logsCmd.Flags().IntVar(&logsTail, "tail", 0, "Number of lines to show from end of logs (0 = all)")
+	logsCmd.Flags().BoolVar(&logsVerbose, "verbose", false, "Show additional metadata")
 
-		err = client.GraphExportCommand(appName, *formatFlag, *outputFlag)
+	listResourcesCmd.Flags().StringVar(&resourceType, "type", "", "Filter by resource type (e.g., postgres, redis)")
+	listResourcesCmd.Flags().StringVar(&resourceState, "state", "", "Filter by state (e.g., active, provisioning, failed)")
 
-	case "graph-status":
-		if len(flag.Args()) < 2 {
-			fmt.Fprintf(os.Stderr, "Error: graph-status command requires an application name\n")
-			fmt.Fprintf(os.Stderr, "Usage: %s graph-status <app-name>\n", os.Args[0])
-			os.Exit(1)
-		}
-		appName := flag.Args()[1]
-		err = client.GraphStatusCommand(appName)
+	graphExportCmd.Flags().StringVar(&graphFormat, "format", "svg", "Output format (svg, png, dot)")
+	graphExportCmd.Flags().StringVar(&graphOutput, "output", "", "Output file path (default: stdout)")
 
-	case "login":
-		// Login command - authenticate and store credentials
-		err = client.LoginCommand(flag.Args()[1:])
+	runCmd.Flags().StringArrayVar(&runParams, "param", []string{}, "Parameter override (key=value)")
 
-	case "logout":
-		// Logout command - remove stored credentials
-		err = client.LogoutCommand()
+	demoTimeCmd.Flags().StringVar(&demoComponent, "component", "", "Comma-separated list of components to install")
 
-	case "chat":
-		// AI chat command - interactive chat or one-shot question
-		args := flag.Args()[1:]
-		if len(args) == 0 {
-			// Interactive chat mode
-			err = ChatCommand()
-		} else {
-			// Check for flags
-			chatFlags := flag.NewFlagSet("chat", flag.ExitOnError)
-			oneShotFlag := chatFlags.String("one-shot", "", "Ask a single question and exit")
-			generateSpecFlag := chatFlags.String("generate-spec", "", "Generate a Score spec from description")
-			outputFlag := chatFlags.String("o", "spec.yaml", "Output file for generated spec")
-			if err := chatFlags.Parse(args); err != nil {
-				fmt.Fprintf(os.Stderr, "Error parsing chat flags: %v\n", err)
-				os.Exit(1)
-			}
+	// Add workflow subcommands
+	workflowCmd.AddCommand(workflowDetailCmd, workflowLogsCmd)
 
-			if *oneShotFlag != "" {
-				err = OneShotCommand(*oneShotFlag)
-			} else if *generateSpecFlag != "" {
-				err = GenerateSpecCommand(*generateSpecFlag, *outputFlag)
-			} else {
-				// Default: interactive chat
-				err = ChatCommand()
-			}
-		}
+	// Add all commands to root
+	rootCmd.AddCommand(
+		listCmd,
+		statusCmd,
+		validateCmd,
+		analyzeCmd,
+		statsCmd,
+		environmentsCmd,
+		deleteCmd,
+		deprovisionCmd,
+		listWorkflowsCmd,
+		workflowCmd,
+		logsCmd,
+		retryCmd,
+		listResourcesCmd,
+		resourceCmd,
+		graphExportCmd,
+		graphStatusCmd,
+		listGoldenPathsCmd,
+		runCmd,
+		demoTimeCmd,
+		demoNukeCmd,
+		demoStatusCmd,
+		demoResetCmd,
+		fixGiteaOAuthCmd,
+		loginCmd,
+		logoutCmd,
+		chatCmd,
+		adminCmd,
+		teamCmd,
+		providerCmd,
+	)
+}
 
-	default:
-		fmt.Fprintf(os.Stderr, "Error: unknown command '%s'\n", command)
-		printUsage()
-		os.Exit(1)
-	}
-
-	if err != nil {
+func main() {
+	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func printUsage() {
-	fmt.Printf("Open Alps CLI\n\n")
-	fmt.Printf("Usage: %s [--server <url>] <command> [arguments]\n\n", os.Args[0])
-	fmt.Printf("Commands:\n")
-	fmt.Printf("  list                  List all deployed applications\n")
-	fmt.Printf("  status <name>         Show application status and resources\n")
-	fmt.Printf("  validate <file>       Validate Score spec locally\n")
-	fmt.Printf("  analyze <file>        Analyze Score spec workflow dependencies\n")
-	fmt.Printf("  environments          List active environments\n")
-	fmt.Printf("  delete <name>         Delete application and all resources completely\n")
-	fmt.Printf("  deprovision <name>    Deprovision infrastructure (keep audit trail)\n")
-	fmt.Printf("  list-workflows [app]  List workflow executions (optionally filtered by app)\n")
-	fmt.Printf("  list-resources [app]  List resource instances (optionally filtered by app)\n")
-	fmt.Printf("  logs <workflow-id>    Show workflow execution logs with step details\n")
-	fmt.Printf("  graph-export <app>    Export workflow graph visualization\n")
-	fmt.Printf("  graph-status <app>    Show workflow graph status and statistics\n")
-	fmt.Printf("  list-goldenpaths      List available golden paths\n")
-	fmt.Printf("  run <path> [spec]     Run a golden path workflow\n")
-	fmt.Printf("  login [options]       Authenticate and store API key locally\n")
-	fmt.Printf("  logout                Remove stored credentials\n")
-	fmt.Printf("  chat                  Interactive AI assistant chat\n")
-	fmt.Printf("    --one-shot <q>      Ask a single question and exit\n")
-	fmt.Printf("    --generate-spec <d> Generate Score spec from description\n")
-	fmt.Printf("    -o <file>           Output file for generated spec (default: spec.yaml)\n")
-	fmt.Printf("  admin <command>       Admin commands (requires admin role)\n")
-	fmt.Printf("    show                Show admin configuration\n")
-	fmt.Printf("    add-user            Add new user\n")
-	fmt.Printf("    list-users          List all users\n")
-	fmt.Printf("    delete-user         Delete user\n")
-	fmt.Printf("    generate-api-key    Generate API key for user\n")
-	fmt.Printf("    list-api-keys       List API keys for user\n")
-	fmt.Printf("    revoke-api-key      Revoke API key for user\n")
-	fmt.Printf("  demo-time [options]   Install/reconcile demo environment\n")
-	fmt.Printf("    -component <names>  Comma-separated list of components to install\n")
-	fmt.Printf("                        (e.g., grafana, gitea,argocd). Dependencies are\n")
-	fmt.Printf("                        automatically included. Omit to install all.\n")
-	fmt.Printf("  demo-nuke             Uninstall and clean demo environment\n")
-	fmt.Printf("  demo-status           Check demo environment health and status\n\n")
-	fmt.Printf("Options:\n")
-	fmt.Printf("  --server <url>        Orchestrator server URL (default: http://localhost:8081)\n\n")
-	fmt.Printf("Examples:\n")
-	fmt.Printf("  %s list\n", os.Args[0])
-	fmt.Printf("  %s status product-service\n", os.Args[0])
-	fmt.Printf("  %s validate score-spec.yaml\n", os.Args[0])
-	fmt.Printf("  %s analyze score-spec.yaml\n", os.Args[0])
-	fmt.Printf("  %s list-workflows\n", os.Args[0])
-	fmt.Printf("  %s list-workflows my-app\n", os.Args[0])
-	fmt.Printf("  %s list-resources\n", os.Args[0])
-	fmt.Printf("  %s list-resources my-app\n", os.Args[0])
-	fmt.Printf("  %s logs 1234\n", os.Args[0])
-	fmt.Printf("  %s logs 1234 --step deploy-application --verbose\n", os.Args[0])
-	fmt.Printf("  %s logs 1234 --tail 50 --step-only\n", os.Args[0])
-	fmt.Printf("  %s list-goldenpaths\n", os.Args[0])
-	fmt.Printf("  %s run deploy-app score-spec.yaml\n", os.Args[0])
-	fmt.Printf("  %s run ephemeral-env\n", os.Args[0])
-	fmt.Printf("  %s demo-time\n", os.Args[0])
-	fmt.Printf("  %s demo-time -component grafana\n", os.Args[0])
-	fmt.Printf("  %s demo-time -component gitea,argocd\n", os.Args[0])
-	fmt.Printf("  %s demo-status\n", os.Args[0])
-	fmt.Printf("  %s demo-nuke\n", os.Args[0])
-	fmt.Printf("  %s login\n", os.Args[0])
-	fmt.Printf("  %s login --name my-laptop --expiry-days 30\n", os.Args[0])
-	fmt.Printf("  %s logout\n", os.Args[0])
-	fmt.Printf("  %s chat\n", os.Args[0])
-	fmt.Printf("  %s chat --one-shot \"How do I deploy a Node.js app?\"\n", os.Args[0])
-	fmt.Printf("  %s chat --generate-spec \"Python FastAPI app with Redis\" -o my-app.yaml\n", os.Args[0])
-	fmt.Printf("  %s admin show\n", os.Args[0])
-	fmt.Printf("  %s admin add-user --username bob --password secret --team dev --role user\n", os.Args[0])
-	fmt.Printf("  %s admin list-users\n", os.Args[0])
-	fmt.Printf("  %s admin delete-user bob\n", os.Args[0])
-	fmt.Printf("  %s admin generate-api-key --name cli-key --expiry-days 90\n", os.Args[0])
-	fmt.Printf("  %s admin list-api-keys\n", os.Args[0])
-	fmt.Printf("  %s admin revoke-api-key --name cli-key\n", os.Args[0])
-	fmt.Printf("  export IDP_API_KEY=your_api_key_here\n")
-	fmt.Printf("  %s list  # Uses API key from environment\n", os.Args[0])
-	fmt.Printf("  %s --server http://prod-orchestrator:8081 list\n", os.Args[0])
 }

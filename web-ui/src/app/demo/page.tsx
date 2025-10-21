@@ -1,16 +1,21 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ExternalLink, Play, Trash2, RefreshCw } from 'lucide-react';
+import { ExternalLink, Play, Trash2, RefreshCw, Database } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 import { useDemoStatus, useDemoActions } from '@/hooks/use-api';
 
 export default function DemoEnvironmentPage() {
   // API hooks
   const { data: demoData, loading: statusLoading, error: statusError, refetch } = useDemoStatus();
-  const { runDemoTime, runDemoNuke } = useDemoActions();
+  const { runDemoTime, runDemoNuke, runDemoReset } = useDemoActions();
+
+  // State for reset confirmation
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
 
   const components = demoData?.components || [];
 
@@ -27,6 +32,18 @@ export default function DemoEnvironmentPage() {
     if (result.success) {
       console.log('Demo nuke completed successfully');
       refetch(); // Refresh status after action
+    }
+  };
+
+  const handleDemoReset = async () => {
+    setShowResetConfirm(false);
+    setResetSuccess(null);
+    const result = await runDemoReset.mutate(undefined);
+    if (result.success && result.data) {
+      const message = `Database reset complete! Truncated ${result.data.tables_truncated} tables.`;
+      setResetSuccess(message);
+      console.log(message);
+      setTimeout(() => setResetSuccess(null), 5000); // Clear after 5 seconds
     }
   };
 
@@ -201,14 +218,66 @@ export default function DemoEnvironmentPage() {
                     </>
                   )}
                 </Button>
+
+                <Button
+                  onClick={() => setShowResetConfirm(true)}
+                  disabled={runDemoTime.loading || runDemoNuke.loading || runDemoReset.loading}
+                  variant="outline"
+                  className="shadow-lg border-orange-500 text-orange-600 hover:bg-orange-50 dark:border-orange-400 dark:text-orange-400 dark:hover:bg-orange-950"
+                >
+                  {runDemoReset.loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-orange-500/20 border-t-orange-500 rounded-full animate-spin mr-2" />
+                      Resetting...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="w-4 h-4 mr-2" />
+                      Reset Database
+                    </>
+                  )}
+                </Button>
               </div>
 
+              {/* Success message for reset */}
+              {resetSuccess && (
+                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                  <p className="text-green-800 dark:text-green-200 text-sm">{resetSuccess}</p>
+                </div>
+              )}
+
               {/* Error display for actions */}
-              {(runDemoTime.error || runDemoNuke.error) && (
+              {(runDemoTime.error || runDemoNuke.error || runDemoReset.error) && (
                 <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
                   <p className="text-gray-800 dark:text-gray-200 text-sm">
-                    {runDemoTime.error || runDemoNuke.error}
+                    {runDemoTime.error || runDemoNuke.error || runDemoReset.error}
                   </p>
+                </div>
+              )}
+
+              {/* Reset Confirmation Dialog */}
+              {showResetConfirm && (
+                <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-900/20 border-2 border-orange-500 rounded-lg">
+                  <h4 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">
+                    Confirm Database Reset
+                  </h4>
+                  <p className="text-orange-800 dark:text-orange-200 text-sm mb-4">
+                    This will DELETE ALL DATA from the database including workflows, applications,
+                    resources, and logs. This action cannot be undone.
+                  </p>
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={handleDemoReset}
+                      variant="destructive"
+                      size="sm"
+                      className="bg-orange-600 hover:bg-orange-700"
+                    >
+                      Yes, Reset Database
+                    </Button>
+                    <Button onClick={() => setShowResetConfirm(false)} variant="outline" size="sm">
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               )}
 

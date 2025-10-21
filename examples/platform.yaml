@@ -1,0 +1,58 @@
+apiVersion: innominatus.io/v1
+kind: Platform
+metadata:
+  name: builtin
+  version: 1.0.0
+  description: Built-in platform with Gitea, Kubernetes, and ArgoCD provisioners
+  author: Innominatus Core Team
+  homepage: https://github.com/innominatus/innominatus-core
+  repository: https://github.com/innominatus/innominatus-core
+  license: Apache-2.0
+  tags:
+    - builtin
+    - gitea
+    - kubernetes
+    - argocd
+    - git
+    - gitops
+
+compatibility:
+  minCoreVersion: "1.0.0"
+  maxCoreVersion: "2.0.0"
+
+provisioners:
+  - name: gitea-repo
+    type: gitea-repo
+    version: 1.0.0
+    description: Provisions Gitea repositories for GitOps workflows
+    author: Innominatus Core Team
+    tags:
+      - git
+      - repository
+      - gitops
+
+  - name: kubernetes
+    type: kubernetes
+    version: 1.0.0
+    description: Deploys applications to Kubernetes clusters
+    author: Innominatus Core Team
+    tags:
+      - kubernetes
+      - k8s
+      - deployment
+      - containers
+
+  - name: argocd-app
+    type: argocd-app
+    version: 1.0.0
+    description: Creates ArgoCD applications for GitOps continuous deployment
+    author: Innominatus Core Team
+    tags:
+      - argocd
+      - gitops
+      - continuous-deployment
+      - cd
+
+configuration:
+  # Platform-specific configuration can be added here
+  # These values override defaults but can be overridden by admin-config.yaml

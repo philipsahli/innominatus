@@ -1095,6 +1095,7 @@ func (i *Installer) configureGiteaOIDC() error {
 	}
 
 	// Use Gitea CLI to add OAuth2 authentication source
+	// Note: Auto-registration is controlled by app.ini [oauth2] ENABLE_AUTO_REGISTRATION = true, not by CLI flag
 	// Note: This command may fail if the source already exists, which is acceptable
 	addAuthCmd := exec.Command("kubectl", "--context", i.kubeContext, // #nosec G204 - kubectl exec gitea command
 		"exec", "-n", "gitea", podName, "--",
@@ -1103,7 +1104,9 @@ func (i *Installer) configureGiteaOIDC() error {
 		"--provider", "openidConnect",
 		"--key", "gitea",
 		"--secret", "gitea-client-secret",
-		"--auto-discover-url", "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration")
+		"--auto-discover-url", "http://keycloak.localtest.me/realms/demo-realm/.well-known/openid-configuration",
+		"--skip-local-2fa",
+		"--scopes", "openid", "email", "profile")
 
 	output, err := addAuthCmd.CombinedOutput()
 	if err != nil {
@@ -1381,15 +1384,15 @@ data:
     </head>
     <body>
         <div class="container">
-            <h1>🚀 OpenAlps Demo Environment</h1>
+            <h1>Innominatus Demo Environment</h1>
             <p>Welcome to your demo platform! This application was deployed from a Score specification.</p>
             <div class="links">
-                <a href="http://gitea.localtest.me" class="link">📚 Gitea</a>
-                <a href="http://argocd.localtest.me" class="link">🔄 ArgoCD</a>
-                <a href="http://vault.localtest.me" class="link">🔒 Vault</a>
-                <a href="http://grafana.localtest.me" class="link">📊 Grafana</a>
-                <a href="http://backstage.localtest.me" class="link">🚪 Backstage</a>
-                <a href="http://k8s.localtest.me" class="link">🎛️ Dashboard</a>
+                <a href="http://gitea.localtest.me" class="link">Gitea</a>
+                <a href="http://argocd.localtest.me" class="link">ArgoCD</a>
+                <a href="http://vault.localtest.me" class="link">Vault</a>
+                <a href="http://grafana.localtest.me" class="link">Grafana</a>
+                <a href="http://backstage.localtest.me" class="link">Backstage</a>
+                <a href="http://k8s.localtest.me" class="link">Dashboard</a>
             </div>
         </div>
     </body>

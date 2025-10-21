@@ -134,8 +134,81 @@ func (m *MockWorkflowRepository) GetWorkflowExecution(id int64) (*database.Workf
 	return exec, nil
 }
 
-func (m *MockWorkflowRepository) ListWorkflowExecutions(appName string, limit, offset int) ([]*database.WorkflowExecutionSummary, error) {
+func (m *MockWorkflowRepository) CountWorkflowExecutions(appName, workflowName, status string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	count := int64(0)
+	for _, exec := range m.executions {
+		if appName != "" && exec.ApplicationName != appName {
+			continue
+		}
+		if workflowName != "" && exec.WorkflowName != workflowName {
+			continue
+		}
+		if status != "" && exec.Status != status {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (m *MockWorkflowRepository) ListWorkflowExecutions(appName, workflowName, status string, limit, offset int) ([]*database.WorkflowExecutionSummary, error) {
 	return nil, nil
+}
+
+func (m *MockWorkflowRepository) GetLatestWorkflowExecution(appName, workflowName string) (*database.WorkflowExecution, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var latest *database.WorkflowExecution
+	for _, exec := range m.executions {
+		if exec.ApplicationName == appName && exec.WorkflowName == workflowName {
+			if latest == nil || exec.StartedAt.After(latest.StartedAt) {
+				latest = exec
+			}
+		}
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("no execution found for app %s and workflow %s", appName, workflowName)
+	}
+	return latest, nil
+}
+
+func (m *MockWorkflowRepository) GetFirstFailedStepNumber(executionID int64) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, step := range m.steps {
+		if step.WorkflowExecutionID == executionID && step.Status == database.StepStatusFailed {
+			return step.StepNumber, nil
+		}
+	}
+	return 0, fmt.Errorf("no failed step found for execution %d", executionID)
+}
+
+func (m *MockWorkflowRepository) CreateRetryExecution(parentID int64, appName, workflowName string, totalSteps, resumeFromStep int) (*database.WorkflowExecution, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	exec := &database.WorkflowExecution{
+		ID:              m.nextExecID,
+		ApplicationName: appName,
+		WorkflowName:    workflowName,
+		Status:          database.WorkflowStatusRunning,
+		StartedAt:       time.Now(),
+		TotalSteps:      totalSteps,
+	}
+
+	m.executions[m.nextExecID] = exec
+	m.nextExecID++
+
+	return exec, nil
+}
+
+func (m *MockWorkflowRepository) ReconstructWorkflowFromExecution(executionID int64) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not implemented in mock")
 }
 
 // Helper to get timing information for parallel verification
@@ -501,4 +574,116 @@ func TestNoParallelFieldsUsesSequential(t *testing.T) {
 	// Should use sequential execution (backward compatible)
 	assert.GreaterOrEqual(t, duration, 140*time.Millisecond,
 		"Without parallel flags, should execute sequentially")
+}
+
+// TestGoldenPathParameterSubstitution tests that golden path parameters are properly substituted in workflow steps
+func TestGoldenPathParameterSubstitution(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Execute with golden path parameters
+	goldenPathParams := map[string]string{
+		"GOLDEN_PARAM": "test-value-123",
+	}
+
+	// Create workflow with variable reference (using empty steps to avoid execution)
+	workflow := types.Workflow{
+		Steps: []types.Step{},
+	}
+
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow, goldenPathParams)
+	require.NoError(t, err)
+
+	// Verify parameter was set in execution context
+	value, exists := executor.execContext.GetVariable("GOLDEN_PARAM")
+	assert.True(t, exists, "Golden path parameter should exist in execution context")
+	assert.Equal(t, "test-value-123", value, "Golden path parameter value should match")
+}
+
+// TestGoldenPathParameterPrecedence tests parameter precedence (golden path > workflow > env)
+func TestGoldenPathParameterPrecedence(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Create workflow with workflow-level variables
+	workflow := types.Workflow{
+		Variables: map[string]string{
+			"PARAM1": "workflow-value",
+			"PARAM2": "workflow-value-2",
+		},
+		Steps: []types.Step{},
+	}
+
+	// Execute with golden path parameters (should override workflow variables)
+	goldenPathParams := map[string]string{
+		"PARAM1": "golden-path-value",
+	}
+
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow, goldenPathParams)
+	require.NoError(t, err)
+
+	// Verify golden path param took precedence over workflow variable
+	value1, exists1 := executor.execContext.GetVariable("PARAM1")
+	assert.True(t, exists1)
+	assert.Equal(t, "workflow-value", value1, "Workflow variable should override golden path param (last wins)")
+
+	value2, exists2 := executor.execContext.GetVariable("PARAM2")
+	assert.True(t, exists2)
+	assert.Equal(t, "workflow-value-2", value2, "Workflow variable should be used when no golden path param")
+}
+
+// TestGoldenPathParameterWithoutParameters tests backward compatibility (no parameters)
+func TestGoldenPathParameterWithoutParameters(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Create workflow with workflow-level variables
+	workflow := types.Workflow{
+		Variables: map[string]string{
+			"WORKFLOW_VAR": "workflow-value",
+		},
+		Steps: []types.Step{},
+	}
+
+	// Execute without golden path parameters (backward compatible)
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow)
+	require.NoError(t, err)
+
+	// Verify workflow variable was used
+	value, exists := executor.execContext.GetVariable("WORKFLOW_VAR")
+	assert.True(t, exists)
+	assert.Equal(t, "workflow-value", value, "Workflow variable should be used when no golden path params")
+}
+
+// TestGoldenPathParameterMultipleParameters tests multiple golden path parameters
+func TestGoldenPathParameterMultipleParameters(t *testing.T) {
+	repo := NewMockWorkflowRepository()
+	executor := NewWorkflowExecutor(repo)
+
+	// Execute with multiple golden path parameters
+	goldenPathParams := map[string]string{
+		"ENVIRONMENT": "production",
+		"REGION":      "us-east-1",
+		"APP_VERSION": "1.2.3",
+	}
+
+	workflow := types.Workflow{
+		Steps: []types.Step{},
+	}
+
+	err := executor.ExecuteWorkflowWithName("test-app", "test-workflow", workflow, goldenPathParams)
+	require.NoError(t, err)
+
+	// Verify all parameters were set
+	env, exists1 := executor.execContext.GetVariable("ENVIRONMENT")
+	assert.True(t, exists1)
+	assert.Equal(t, "production", env)
+
+	region, exists2 := executor.execContext.GetVariable("REGION")
+	assert.True(t, exists2)
+	assert.Equal(t, "us-east-1", region)
+
+	version, exists3 := executor.execContext.GetVariable("APP_VERSION")
+	assert.True(t, exists3)
+	assert.Equal(t, "1.2.3", version)
 }

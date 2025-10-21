@@ -128,7 +128,7 @@ func (g *GitManager) createRepository() error {
 	}
 
 	// Commit
-	if err := g.runGitCommand(g.workDir, "commit", "-m", "Initial commit: OpenAlps demo environment"); err != nil {
+	if err := g.runGitCommand(g.workDir, "commit", "-m", "Initial commit: Innominatus demo environment"); err != nil {
 		return err
 	}
 
@@ -195,7 +195,7 @@ func (g *GitManager) updateRepository() error {
 	}
 
 	// Commit changes
-	if err := g.runGitCommand(g.workDir, "commit", "-m", "Update OpenAlps demo environment"); err != nil {
+	if err := g.runGitCommand(g.workDir, "commit", "-m", "Update Innominatus demo environment"); err != nil {
 		return err
 	}
 
@@ -403,7 +403,7 @@ data:
     <!DOCTYPE html>
     <html>
     <head>
-        <title>OpenAlps Demo</title>
+        <title>Innominatus Demo</title>
         <style>
             body { font-family: Arial, sans-serif; margin: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
             .container { text-align: center; padding: 60px; }
@@ -415,7 +415,7 @@ data:
     </head>
     <body>
         <div class="container">
-            <h1>OpenAlps Demo Environment</h1>
+            <h1>Innominatus Demo Environment</h1>
             <p>Welcome to your demo platform! This application was deployed from a Score specification.</p>
             <div class="links">
                 <a href="http://gitea.localtest.me" class="link">Gitea</a>

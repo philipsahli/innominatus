@@ -15,6 +15,7 @@ type Application struct {
 	ScoreSpec *types.ScoreSpec `json:"score_spec"`
 	Team      string           `json:"team"`
 	CreatedBy string           `json:"created_by"`
+	Labels    []string         `json:"labels"`
 	CreatedAt time.Time        `json:"created_at"`
 	UpdatedAt time.Time        `json:"updated_at"`
 }
@@ -59,7 +60,7 @@ func (d *Database) AddApplication(name string, spec *types.ScoreSpec, team strin
 // GetApplication retrieves an application by name
 func (d *Database) GetApplication(name string) (*Application, error) {
 	query := `
-		SELECT id, name, score_spec, team, created_by, created_at, updated_at
+		SELECT id, name, score_spec, team, created_by, COALESCE(labels, '{}'), created_at, updated_at
 		FROM applications
 		WHERE name = $1
 	`
@@ -73,6 +74,7 @@ func (d *Database) GetApplication(name string) (*Application, error) {
 		&specJSON,
 		&app.Team,
 		&app.CreatedBy,
+		&app.Labels,
 		&app.CreatedAt,
 		&app.UpdatedAt,
 	)

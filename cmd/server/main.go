@@ -2,22 +2,34 @@ package main
 
 import (
 	"context"
+	"embed"
 	"flag"
-	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/ai"
 	"innominatus/internal/database"
 	"innominatus/internal/logging"
 	"innominatus/internal/metrics"
+	"innominatus/internal/providers"
 	"innominatus/internal/server"
 	"innominatus/internal/tracing"
 	"innominatus/internal/validation"
+	"innominatus/pkg/sdk"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
+
+//go:embed migrations/*.sql
+var migrationsFS embed.FS
+
+//go:embed swagger-admin.yaml swagger-user.yaml
+var swaggerFilesFS embed.FS
+
+//go:embed web-ui-out
+var webUIFS embed.FS
 
 // Build information - set via ldflags during release builds
 var (
@@ -61,10 +73,9 @@ func main() {
 	// Initialize OpenTelemetry tracing
 	tp, err := tracing.InitTracer(version, commit)
 	if err != nil {
-		logger.WarnWithFields("Failed to initialize tracer", map[string]interface{}{
+		logger.WarnWithFields("Failed to initialize tracer, continuing without distributed tracing", map[string]interface{}{
 			"error": err.Error(),
 		})
-		fmt.Println("Continuing without distributed tracing...")
 	} else if tp.IsEnabled() {
 		logger.Info("OpenTelemetry tracing initialized")
 		defer func() {
@@ -81,12 +92,95 @@ func main() {
 	// Load admin configuration
 	adminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
 	if err != nil {
-		fmt.Printf("Warning: Failed to load admin config: %v\n", err)
-		fmt.Println("Continuing without admin configuration...")
+		logger.WarnWithFields("Failed to load admin config, continuing without admin configuration", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
-		fmt.Println("Admin configuration loaded:")
-		adminConfig.PrintConfig()
-		fmt.Println()
+		logger.InfoWithFields("Admin configuration loaded", map[string]interface{}{
+			"config": adminConfig.String(),
+		})
+	}
+
+	// Initialize provider registry and load providers
+	providerRegistry := providers.NewRegistry()
+	if adminConfig != nil && len(adminConfig.Providers) > 0 {
+		logger.InfoWithFields("Loading providers", map[string]interface{}{
+			"count": len(adminConfig.Providers),
+		})
+
+		fsLoader := providers.NewLoader(version)
+		gitLoader := providers.NewGitLoader("/tmp/innominatus-providers", version)
+
+		for _, providerSrc := range adminConfig.Providers {
+			if !providerSrc.Enabled {
+				logger.DebugWithFields("Skipping disabled provider", map[string]interface{}{
+					"name": providerSrc.Name,
+				})
+				continue
+			}
+
+			var provider *sdk.Provider
+			var loadErr error
+
+			switch providerSrc.Type {
+			case "filesystem":
+				// Load from filesystem path
+				manifestPath := providerSrc.Path + "/provider.yaml"
+				if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+					// Try legacy platform.yaml
+					manifestPath = providerSrc.Path + "/platform.yaml"
+				}
+				provider, loadErr = fsLoader.LoadFromFile(manifestPath)
+
+			case "git":
+				// Load from Git repository
+				provider, loadErr = gitLoader.LoadFromGit(providers.GitProviderSource{
+					Name:       providerSrc.Name,
+					Repository: providerSrc.Repository,
+					Ref:        providerSrc.Ref,
+				})
+
+			default:
+				logger.WarnWithFields("Unknown provider type", map[string]interface{}{
+					"name": providerSrc.Name,
+					"type": providerSrc.Type,
+				})
+				continue
+			}
+
+			if loadErr != nil {
+				logger.WarnWithFields("Failed to load provider", map[string]interface{}{
+					"name":  providerSrc.Name,
+					"type":  providerSrc.Type,
+					"error": loadErr.Error(),
+				})
+				continue
+			}
+
+			// Register provider
+			if err := providerRegistry.RegisterProvider(provider); err != nil {
+				logger.WarnWithFields("Failed to register provider", map[string]interface{}{
+					"name":  provider.Metadata.Name,
+					"error": err.Error(),
+				})
+				continue
+			}
+
+			logger.InfoWithFields("Provider loaded successfully", map[string]interface{}{
+				"name":         provider.Metadata.Name,
+				"version":      provider.Metadata.Version,
+				"category":     provider.Metadata.Category,
+				"provisioners": len(provider.Provisioners),
+			})
+		}
+
+		providerCount, provisionerCount := providerRegistry.Count()
+		logger.InfoWithFields("Provider loading complete", map[string]interface{}{
+			"providers":    providerCount,
+			"provisioners": provisionerCount,
+		})
+	} else {
+		logger.Info("No providers configured in admin-config.yaml")
 	}
 
 	var srv *server.Server
@@ -95,29 +189,46 @@ func main() {
 		// Try to initialize database
 		db, err := database.NewDatabase()
 		if err != nil {
-			logger.WarnWithFields("Failed to connect to database", map[string]interface{}{
+			logger.WarnWithFields("Failed to connect to database, starting without database features", map[string]interface{}{
 				"error": err.Error(),
 			})
-			fmt.Println("Starting server without database features...")
 			srv = server.NewServer()
 		} else {
 			// Initialize schema
 			err = db.InitSchema()
 			if err != nil {
-				logger.WarnWithFields("Failed to initialize database schema", map[string]interface{}{
+				logger.WarnWithFields("Failed to initialize database schema, starting without database features", map[string]interface{}{
 					"error": err.Error(),
 				})
-				fmt.Println("Starting server without database features...")
 				_ = db.Close()
 				srv = server.NewServer()
 			} else {
 				logger.Info("Database connected successfully")
-				srv = server.NewServerWithDB(db)
+
+				// Set embedded migrations filesystem
+				migrationsSubFS, err := fs.Sub(migrationsFS, "migrations")
+				if err != nil {
+					logger.WarnWithFields("Failed to create migrations sub-filesystem", map[string]interface{}{
+						"error": err.Error(),
+					})
+				} else {
+					db.SetMigrationsFS(migrationsSubFS)
+					logger.Info("Embedded migrations filesystem configured")
+				}
+
+				// Pass admin config to enable multi-tier workflows
+				srv = server.NewServerWithDBAndAdminConfig(db, adminConfig)
 			}
 		}
 	} else {
 		logger.Info("Database features disabled")
 		srv = server.NewServer()
+	}
+
+	// Set provider registry on server
+	if providerRegistry != nil {
+		srv.SetProviderRegistry(providerRegistry)
+		logger.Info("Provider registry configured")
 	}
 
 	// Initialize AI service (optional - continues without AI if not configured)
@@ -129,6 +240,23 @@ func main() {
 	} else if aiService.IsEnabled() {
 		srv.SetAIService(aiService)
 		logger.Info("AI assistant service initialized successfully")
+	} else {
+		logger.Info("AI assistant service disabled (missing API keys)")
+	}
+
+	// Set embedded swagger files filesystem
+	srv.SetSwaggerFS(swaggerFilesFS)
+	logger.Info("Embedded swagger files filesystem configured")
+
+	// Set embedded web-ui files filesystem
+	webUISubFS, err := fs.Sub(webUIFS, "web-ui-out")
+	if err != nil {
+		logger.WarnWithFields("Failed to create web-ui sub-filesystem", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		srv.SetWebUIFS(webUISubFS)
+		logger.Info("Embedded web-ui filesystem configured")
 	}
 
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
@@ -167,8 +295,13 @@ func main() {
 	http.HandleFunc("/auth/callback", withTrace(srv.HandleOIDCCallback))
 
 	// API routes (with trace ID, logging, CORS, and authentication)
-	http.HandleFunc("/api/specs", withTraceCORSAuth(srv.HandleSpecs))
-	http.HandleFunc("/api/specs/", withTraceCORSAuth(srv.HandleSpecDetail))
+	// Applications endpoints (preferred)
+	http.HandleFunc("/api/applications", withTraceCORSAuth(srv.HandleApplications))
+	http.HandleFunc("/api/applications/", withTraceCORSAuth(srv.HandleApplicationDetail))
+	// Deprecated: /api/specs endpoints (kept for backward compatibility)
+	http.HandleFunc("/api/specs", withTraceCORSAuth(srv.HandleSpecsDeprecated))
+	http.HandleFunc("/api/specs/", withTraceCORSAuth(srv.HandleSpecDetailDeprecated))
+
 	http.HandleFunc("/api/environments", withTraceCORSAuth(srv.HandleEnvironments))
 	http.HandleFunc("/api/workflows", withTraceCORSAuth(srv.HandleWorkflows))
 	http.HandleFunc("/api/workflows/", withTraceCORSAuth(srv.HandleWorkflowDetail))
@@ -181,6 +314,22 @@ func main() {
 	// Admin-only impersonation routes
 	http.HandleFunc("/api/impersonate", withTraceCORSAdmin(srv.HandleImpersonate))
 	http.HandleFunc("/api/users", withTraceCORSAdmin(srv.HandleListUsers))
+
+	// User management routes (admin only)
+	http.HandleFunc("/api/admin/users", withTraceCORSAdmin(srv.HandleUserManagement))
+	http.HandleFunc("/api/admin/users/", withTraceCORSAdmin(func(w http.ResponseWriter, r *http.Request) {
+		// Route to appropriate handler based on path
+		if strings.Contains(r.URL.Path, "/api-keys/") {
+			// /api/admin/users/{username}/api-keys/{keyname}
+			srv.HandleAdminUserAPIKeyDetail(w, r)
+		} else if strings.HasSuffix(r.URL.Path, "/api-keys") {
+			// /api/admin/users/{username}/api-keys
+			srv.HandleAdminUserAPIKeys(w, r)
+		} else {
+			// /api/admin/users/{username}
+			srv.HandleUserDetail(w, r)
+		}
+	}))
 
 	// Profile management routes (authenticated users only)
 	http.HandleFunc("/api/profile", withTraceCORSAuth(srv.HandleGetProfile))
@@ -207,16 +356,37 @@ func main() {
 	http.HandleFunc("/api/demo/time", withTraceCORSAuth(srv.HandleDemoTime))
 	http.HandleFunc("/api/demo/nuke", withTraceCORSAuth(srv.HandleDemoNuke))
 
+	// Admin-only demo routes
+	http.HandleFunc("/api/admin/demo/reset", withTraceCORSAdmin(srv.HandleDemoReset))
+
+	// Admin configuration routes
+	http.HandleFunc("/api/admin/config", withTraceCORSAdmin(srv.HandleAdminConfig))
+
 	// Graph API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/graph", withTraceCORSAuth(srv.HandleGraph))
-	http.HandleFunc("/api/graph/", withTraceCORSAuth(srv.HandleGraph))
+	// WebSocket endpoint needs special handling - no response-wrapping middleware
+	http.HandleFunc("/api/graph/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/ws") {
+			// WebSocket: auth only, no middleware that wraps ResponseWriter
+			// Response wrappers prevent WebSocket upgrades (http.Hijacker interface required)
+			srv.AuthMiddleware(srv.HandleGraph)(w, r)
+		} else {
+			// Regular API: full middleware stack
+			withTraceCORSAuth(srv.HandleGraph)(w, r)
+		}
+	})
 
 	// Resource management API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/resources", withTraceCORSAuth(srv.HandleResources))
 	http.HandleFunc("/api/resources/", withTraceCORSAuth(srv.HandleResourceDetail))
 
-	// Application management API routes (with trace ID, logging, CORS, and authentication)
-	http.HandleFunc("/api/applications/", withTraceCORSAuth(srv.HandleApplicationManagement))
+	// Golden path API routes (with trace ID, logging, CORS, and authentication)
+	http.HandleFunc("/api/golden-paths", withTraceCORSAuth(srv.HandleGoldenPaths))
+
+	// Provider management API routes (with trace ID, logging, CORS, and authentication)
+	http.HandleFunc("/api/providers", withTraceCORSAuth(srv.HandleListProviders))
+	http.HandleFunc("/api/providers/stats", withTraceCORSAuth(srv.HandleProviderStats))
+	http.HandleFunc("/api/golden-paths/", withTraceCORSAuth(srv.HandleGoldenPaths))
 
 	// Golden path workflow execution API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/workflows/golden-paths/", withTraceCORSAuth(srv.HandleGoldenPathExecution))
@@ -246,22 +416,51 @@ func main() {
 	http.HandleFunc("/api/auth/config", srv.TracingMiddleware(srv.TraceIDMiddleware(srv.HandleAuthConfig)))
 
 	// Web UI (static files) - no authentication needed for static assets
-	fs := http.FileServer(http.Dir("./web-ui/out/"))
+	// Use embedded FS if available (production), otherwise use filesystem (development)
+	var staticFS http.Handler
+	var webUIBasePath string
+	webUIEmbedFS := srv.GetWebUIFS()
+
+	if webUIEmbedFS != nil {
+		// Production: use embedded filesystem
+		staticFS = http.FileServer(http.FS(webUIEmbedFS))
+		webUIBasePath = "" // embedded FS is already at the right root
+		logger.Info("Using embedded web-ui files")
+	} else {
+		// Development: use filesystem
+		staticFS = http.FileServer(http.Dir("./web-ui/out/"))
+		webUIBasePath = "./web-ui/out"
+		logger.Info("Using filesystem web-ui files")
+	}
+
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// For SPA routing, serve appropriate index.html for non-existent routes that aren't static assets
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			r.URL.Path = "/"
-		} else if !fileExists("./web-ui/out"+r.URL.Path) && !isStaticAsset(r.URL.Path) {
-			// For /graph/* routes, serve /graph/index.html
-			if strings.HasPrefix(r.URL.Path, "/graph/") {
-				r.URL.Path = "/graph/"
-			} else if strings.HasPrefix(r.URL.Path, "/goldenpaths/") {
-				r.URL.Path = "/goldenpaths/"
+		} else {
+			// Check if file exists (different logic for embedded vs filesystem)
+			fileExistsInUI := false
+			if webUIEmbedFS != nil {
+				// Check in embedded FS
+				_, err := fs.Stat(webUIEmbedFS, strings.TrimPrefix(r.URL.Path, "/"))
+				fileExistsInUI = err == nil
 			} else {
-				r.URL.Path = "/"
+				// Check in filesystem
+				fileExistsInUI = fileExists(webUIBasePath + r.URL.Path)
+			}
+
+			if !fileExistsInUI && !isStaticAsset(r.URL.Path) {
+				// For /graph/* routes, serve /graph/index.html
+				if strings.HasPrefix(r.URL.Path, "/graph/") {
+					r.URL.Path = "/graph/"
+				} else if strings.HasPrefix(r.URL.Path, "/goldenpaths/") {
+					r.URL.Path = "/goldenpaths/"
+				} else {
+					r.URL.Path = "/"
+				}
 			}
 		}
-		fs.ServeHTTP(w, r)
+		staticFS.ServeHTTP(w, r)
 	}))
 
 	// Initialize metrics pusher if PUSHGATEWAY_URL is set
@@ -290,40 +489,19 @@ func main() {
 		"tracing_enabled":  tp.IsEnabled(),
 	})
 
-	fmt.Printf("Starting Score Orchestrator server on http://localhost%s\n", addr)
-	fmt.Println("API endpoints:")
-	fmt.Println("  POST /api/specs          - Deploy Score spec with embedded workflows (simple deployments)")
-	fmt.Println("  POST /api/workflows/golden-paths/deploy-app/execute - Deploy via golden path (recommended)")
-	fmt.Println("  GET  /api/specs          - List all deployed specs")
-	fmt.Println("  GET  /api/specs/{name}   - Get specific spec details")
-	fmt.Println("  DELETE /api/specs/{name} - Delete deployed spec")
-	fmt.Println("  GET  /api/environments   - List active environments")
-	fmt.Println("  GET  /api/workflows      - List workflow executions")
-	fmt.Println("  GET  /api/workflows/{id} - Get workflow execution details")
-	fmt.Println("  GET  /api/stats          - Get dashboard statistics")
-	fmt.Println("  GET  /api/teams          - List teams")
-	fmt.Println("  POST /api/teams          - Create new team")
-	fmt.Println("  GET  /api/teams/{id}     - Get team details")
-	fmt.Println("  DELETE /api/applications/{name} - Delete application and all resources")
-	fmt.Println("  POST /api/applications/{name}/deprovision - Deprovision infrastructure")
-	fmt.Println("  DELETE /api/teams/{id}   - Delete team")
-	fmt.Println("")
-	fmt.Println("Web interface:")
-	fmt.Printf("  Dashboard: http://localhost%s/\n", addr)
-	fmt.Printf("  API Docs:  http://localhost%s/swagger\n", addr)
-	fmt.Println("")
-	fmt.Println("Health & Monitoring:")
-	fmt.Printf("  Health:    http://localhost%s/health\n", addr)
-	fmt.Printf("  Readiness: http://localhost%s/ready\n", addr)
-	fmt.Printf("  Metrics:   http://localhost%s/metrics\n", addr)
-	fmt.Println("")
-	fmt.Println("Database configuration (set via environment variables):")
-	fmt.Println("  DB_HOST (default: localhost)")
-	fmt.Println("  DB_PORT (default: 5432)")
-	fmt.Println("  DB_USER (default: postgres)")
-	fmt.Println("  DB_PASSWORD")
-	fmt.Println("  DB_NAME (default: idp_orchestrator)")
-	fmt.Println("  DB_SSLMODE (default: disable)")
+	logger.InfoWithFields("Server startup information", map[string]interface{}{
+		"address":   "http://localhost" + addr,
+		"dashboard": "http://localhost" + addr + "/",
+		"api_docs":  "http://localhost" + addr + "/swagger",
+		"health":    "http://localhost" + addr + "/health",
+		"readiness": "http://localhost" + addr + "/ready",
+		"metrics":   "http://localhost" + addr + "/metrics",
+		"key_endpoints": []string{
+			"POST /api/specs - Deploy Score spec",
+			"POST /api/workflows/golden-paths/deploy-app/execute - Deploy via golden path",
+			"GET  /api/workflows - List workflow executions",
+		},
+	})
 
 	// Create HTTP server with proper timeouts to prevent resource exhaustion
 	httpServer := &http.Server{

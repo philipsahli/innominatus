@@ -59,11 +59,11 @@ func (r *ResourceRepository) GetResourceInstance(id int64) (*ResourceInstance, e
 	query := `
 		SELECT id, application_name, resource_name, resource_type, state, health_status,
 		       configuration, provider_id, provider_metadata, type, provider, reference_url,
-		       external_state, last_sync, created_at, updated_at, last_health_check, error_message
+		       external_state, last_sync, created_at, updated_at, last_health_check, error_message, hints
 		FROM resource_instances WHERE id = $1`
 
 	var resource ResourceInstance
-	var configJSON, providerMetadataJSON []byte
+	var configJSON, providerMetadataJSON, hintsJSON []byte
 
 	err := r.db.db.QueryRow(query, id).Scan(
 		&resource.ID, &resource.ApplicationName, &resource.ResourceName,
@@ -72,7 +72,7 @@ func (r *ResourceRepository) GetResourceInstance(id int64) (*ResourceInstance, e
 		&resource.Type, &resource.Provider, &resource.ReferenceURL,
 		&resource.ExternalState, &resource.LastSync,
 		&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
-		&resource.ErrorMessage)
+		&resource.ErrorMessage, &hintsJSON)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -91,6 +91,12 @@ func (r *ResourceRepository) GetResourceInstance(id int64) (*ResourceInstance, e
 	if len(providerMetadataJSON) > 0 {
 		if err := json.Unmarshal(providerMetadataJSON, &resource.ProviderMetadata); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal provider metadata: %w", err)
+		}
+	}
+
+	if len(hintsJSON) > 0 {
+		if err := json.Unmarshal(hintsJSON, &resource.Hints); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal hints: %w", err)
 		}
 	}
 
@@ -145,7 +151,7 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 	query := `
 		SELECT id, application_name, resource_name, resource_type, state, health_status,
 		       configuration, provider_id, provider_metadata, type, provider, reference_url,
-		       external_state, last_sync, created_at, updated_at, last_health_check, error_message
+		       external_state, last_sync, created_at, updated_at, last_health_check, error_message, hints
 		FROM resource_instances WHERE application_name = $1 ORDER BY created_at ASC`
 
 	rows, err := r.db.db.Query(query, applicationName)
@@ -157,7 +163,7 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 	var resources []*ResourceInstance
 	for rows.Next() {
 		var resource ResourceInstance
-		var configJSON, providerMetadataJSON []byte
+		var configJSON, providerMetadataJSON, hintsJSON []byte
 
 		err := rows.Scan(
 			&resource.ID, &resource.ApplicationName, &resource.ResourceName,
@@ -166,7 +172,7 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 			&resource.Type, &resource.Provider, &resource.ReferenceURL,
 			&resource.ExternalState, &resource.LastSync,
 			&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
-			&resource.ErrorMessage)
+			&resource.ErrorMessage, &hintsJSON)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan resource instance: %w", err)
@@ -182,6 +188,12 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 		if len(providerMetadataJSON) > 0 {
 			if err := json.Unmarshal(providerMetadataJSON, &resource.ProviderMetadata); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal provider metadata: %w", err)
+			}
+		}
+
+		if len(hintsJSON) > 0 {
+			if err := json.Unmarshal(hintsJSON, &resource.Hints); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal hints: %w", err)
 			}
 		}
 
@@ -238,6 +250,26 @@ func (r *ResourceRepository) UpdateResourceInstanceHealth(id int64, healthStatus
 	_, err := r.db.db.Exec(query, healthStatus, errorMessage, id)
 	if err != nil {
 		return fmt.Errorf("failed to update resource health: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateResourceHints updates the hints for a resource instance
+func (r *ResourceRepository) UpdateResourceHints(id int64, hints []ResourceHint) error {
+	hintsJSON, err := json.Marshal(hints)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hints: %w", err)
+	}
+
+	query := `
+		UPDATE resource_instances
+		SET hints = $1, updated_at = NOW()
+		WHERE id = $2`
+
+	_, err = r.db.db.Exec(query, hintsJSON, id)
+	if err != nil {
+		return fmt.Errorf("failed to update resource hints: %w", err)
 	}
 
 	return nil

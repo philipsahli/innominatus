@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: storage-team
+  version: 1.2.0
+  category: infrastructure
+  description: Storage provisioners and workflows from the platform storage team
+  author: Storage Team
+  repository: https://github.com/yourorg/storage-provider
+  tags:
+    - storage
+    - s3
+    - minio
+    - object-storage
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+provisioners:
+  - name: s3-bucket
+    type: s3
+    description: S3-compatible object storage bucket (Minio-backed)
+    version: 1.2.0
+    documentation: https://docs.example.com/storage/s3-buckets
+
+  - name: s3-bucket-with-lifecycle
+    type: s3-lifecycle
+    description: S3 bucket with lifecycle policies for automatic archival
+    version: 1.1.0
+    documentation: https://docs.example.com/storage/lifecycle
+
+  - name: object-storage-access
+    type: s3-access
+    description: IAM access keys for S3 bucket access
+    version: 1.0.5
+    documentation: https://docs.example.com/storage/access
+
+goldenpaths:
+  - name: create-storage-bucket
+    description: Create a new S3 bucket with standard configuration
+    documentation: https://docs.example.com/workflows/create-bucket
+
+  - name: setup-backup-storage
+    description: Setup automated backup storage with retention policies
+    documentation: https://docs.example.com/workflows/backup-storage
+
+  - name: migrate-storage
+    description: Migrate data between storage buckets
+    documentation: https://docs.example.com/workflows/migrate-storage

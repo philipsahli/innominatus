@@ -133,6 +133,8 @@ func runStepWithSpinner(step types.Step, appName string, envType string, spinner
 		return runArgoCDAppStepWithSpinner(step, appName, envType, spinner)
 	case "git-commit-manifests":
 		return runGitCommitManifestsStepWithSpinner(step, appName, envType, spinner)
+	case "policy":
+		return runPolicyStepWithSpinner(step, appName, envType, spinner)
 	case "dummy":
 		return runDummyStepWithSpinner(step, appName, envType, spinner)
 	default:
@@ -1000,6 +1002,63 @@ func runGitCommand(dir string, args ...string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git command failed: %s: %s", strings.Join(args, " "), string(output))
+	}
+
+	return nil
+}
+
+func runPolicyStepWithSpinner(step types.Step, appName string, envType string, spinner *Spinner) error {
+	if spinner != nil {
+		spinner.Update(fmt.Sprintf("Executing policy script: %s", step.Name))
+	}
+
+	// Get script from config
+	script, ok := step.Config["script"].(string)
+	if !ok || script == "" {
+		return fmt.Errorf("policy step requires 'script' in config")
+	}
+
+	// Create temporary script file
+	tmpFile, err := os.CreateTemp("", "policy-*.sh")
+	if err != nil {
+		return fmt.Errorf("failed to create temp script file: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+
+	// Write script to file
+	if _, err := tmpFile.WriteString(script); err != nil {
+		return fmt.Errorf("failed to write script: %w", err)
+	}
+	_ = tmpFile.Close()
+
+	// Make script executable (0700 = owner only, needs execute bit for bash)
+	// #nosec G302 -- Script needs execute permissions to run
+	if err := os.Chmod(tmpFile.Name(), 0700); err != nil {
+		return fmt.Errorf("failed to make script executable: %w", err)
+	}
+
+	// Execute script
+	// #nosec G204 -- tmpFile.Name() is a controlled temporary file path
+	cmd := exec.Command("/bin/bash", tmpFile.Name())
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Set environment variables
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("APP_NAME=%s", appName),
+		fmt.Sprintf("ENVIRONMENT_TYPE=%s", envType),
+	)
+
+	if spinner != nil {
+		spinner.Update("Running policy script...")
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("policy script failed: %w", err)
+	}
+
+	if spinner != nil {
+		spinner.Update("Policy script completed successfully")
 	}
 
 	return nil

@@ -14,6 +14,7 @@ type AdminConfig struct {
 		DefaultRuntime    string `yaml:"defaultRuntime"`
 		SplunkIndex       string `yaml:"splunkIndex"`
 	} `yaml:"admin"`
+	Providers           []ProviderSource      `yaml:"providers"`
 	ResourceDefinitions map[string]string `yaml:"resourceDefinitions"`
 	Policies            struct {
 		EnforceBackups      bool     `yaml:"enforceBackups"`
@@ -31,6 +32,34 @@ type AdminConfig struct {
 		Username string `yaml:"username"`
 		Password string `yaml:"password"`
 	} `yaml:"argocd"`
+	Vault struct {
+		URL       string `yaml:"url"`
+		Token     string `yaml:"token"`
+		Namespace string `yaml:"namespace"`
+	} `yaml:"vault"`
+	Keycloak struct {
+		URL           string `yaml:"url"`
+		AdminUser     string `yaml:"adminUser"`
+		AdminPassword string `yaml:"adminPassword"`
+		Realm         string `yaml:"realm"`
+	} `yaml:"keycloak"`
+	Minio struct {
+		URL        string `yaml:"url"`
+		ConsoleURL string `yaml:"consoleURL"`
+		AccessKey  string `yaml:"accessKey"`
+		SecretKey  string `yaml:"secretKey"`
+	} `yaml:"minio"`
+	Prometheus struct {
+		URL string `yaml:"url"`
+	} `yaml:"prometheus"`
+	Grafana struct {
+		URL      string `yaml:"url"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	} `yaml:"grafana"`
+	KubernetesDashboard struct {
+		URL string `yaml:"url"`
+	} `yaml:"kubernetesDashboard"`
 	WorkflowPolicies struct {
 		WorkflowsRoot             string   `yaml:"workflowsRoot"`
 		RequiredPlatformWorkflows []string `yaml:"requiredPlatformWorkflows"`
@@ -49,6 +78,17 @@ type AdminConfig struct {
 			SecretsAccess    map[string]string `yaml:"secretsAccess"`
 		} `yaml:"security"`
 	} `yaml:"workflowPolicies"`
+}
+
+// ProviderSource defines a source for loading providers
+type ProviderSource struct {
+	Name       string `yaml:"name"`                 // Provider name
+	Type       string `yaml:"type"`                 // "filesystem" or "git"
+	Category   string `yaml:"category,omitempty"`   // "infrastructure" or "service"
+	Path       string `yaml:"path,omitempty"`       // Filesystem path
+	Repository string `yaml:"repository,omitempty"` // Git repository URL
+	Ref        string `yaml:"ref,omitempty"`        // Git tag or branch
+	Enabled    bool   `yaml:"enabled"`              // Whether this provider is enabled
 }
 
 func LoadAdminConfig(configPath string) (*AdminConfig, error) {
@@ -80,43 +120,201 @@ func LoadAdminConfig(configPath string) (*AdminConfig, error) {
 	return &config, nil
 }
 
-func (c *AdminConfig) PrintConfig() {
-	fmt.Println("Admin Configuration:")
-	fmt.Printf("  Default Cost Center: %s\n", c.Admin.DefaultCostCenter)
-	fmt.Printf("  Default Runtime: %s\n", c.Admin.DefaultRuntime)
-	fmt.Printf("  Splunk Index: %s\n", c.Admin.SplunkIndex)
+// String returns a formatted string representation of the admin configuration
+func (c *AdminConfig) String() string {
+	var result string
+	result += "Admin Configuration:\n"
+	result += fmt.Sprintf("  Default Cost Center: %s\n", c.Admin.DefaultCostCenter)
+	result += fmt.Sprintf("  Default Runtime: %s\n", c.Admin.DefaultRuntime)
+	result += fmt.Sprintf("  Splunk Index: %s\n", c.Admin.SplunkIndex)
 
-	fmt.Println("Resource Definitions:")
+	result += "Resource Definitions:\n"
 	for name, definition := range c.ResourceDefinitions {
-		fmt.Printf("  %s: %s\n", name, definition)
+		result += fmt.Sprintf("  %s: %s\n", name, definition)
 	}
 
-	fmt.Println("Policies:")
-	fmt.Printf("  Enforce Backups: %t\n", c.Policies.EnforceBackups)
-	fmt.Printf("  Allowed Environments: %v\n", c.Policies.AllowedEnvironments)
+	result += "Policies:\n"
+	result += fmt.Sprintf("  Enforce Backups: %t\n", c.Policies.EnforceBackups)
+	result += fmt.Sprintf("  Allowed Environments: %v\n", c.Policies.AllowedEnvironments)
 
-	fmt.Println("Gitea Configuration:")
-	fmt.Printf("  URL: %s\n", c.Gitea.URL)
-	fmt.Printf("  Username: %s\n", c.Gitea.Username)
-	fmt.Printf("  Password: %s\n", "***")
-	fmt.Printf("  Organization: %s\n", c.Gitea.OrgName)
+	result += "Gitea Configuration:\n"
+	result += fmt.Sprintf("  URL: %s\n", c.Gitea.URL)
+	result += fmt.Sprintf("  Username: %s\n", c.Gitea.Username)
+	result += fmt.Sprintf("  Password: %s\n", "***")
+	result += fmt.Sprintf("  Organization: %s\n", c.Gitea.OrgName)
 
-	fmt.Println("ArgoCD Configuration:")
-	fmt.Printf("  URL: %s\n", c.ArgoCD.URL)
-	fmt.Printf("  Username: %s\n", c.ArgoCD.Username)
-	fmt.Printf("  Password: %s\n", "***")
+	result += "ArgoCD Configuration:\n"
+	result += fmt.Sprintf("  URL: %s\n", c.ArgoCD.URL)
+	result += fmt.Sprintf("  Username: %s\n", c.ArgoCD.Username)
+	result += fmt.Sprintf("  Password: %s\n", "***")
 
-	fmt.Println("Workflow Policies:")
-	fmt.Printf("  Workflows Root: %s\n", c.WorkflowPolicies.WorkflowsRoot)
-	fmt.Printf("  Required Platform Workflows: %v\n", c.WorkflowPolicies.RequiredPlatformWorkflows)
-	fmt.Printf("  Allowed Product Workflows: %v\n", c.WorkflowPolicies.AllowedProductWorkflows)
-	fmt.Printf("  Max Workflow Duration: %s\n", c.WorkflowPolicies.MaxWorkflowDuration)
-	fmt.Printf("  Max Concurrent Workflows: %d\n", c.WorkflowPolicies.MaxConcurrentWorkflows)
-	fmt.Printf("  Max Steps Per Workflow: %d\n", c.WorkflowPolicies.MaxStepsPerWorkflow)
-	fmt.Printf("  Allowed Step Types: %v\n", c.WorkflowPolicies.AllowedStepTypes)
+	result += "Workflow Policies:\n"
+	result += fmt.Sprintf("  Workflows Root: %s\n", c.WorkflowPolicies.WorkflowsRoot)
+	result += fmt.Sprintf("  Required Platform Workflows: %v\n", c.WorkflowPolicies.RequiredPlatformWorkflows)
+	result += fmt.Sprintf("  Allowed Product Workflows: %v\n", c.WorkflowPolicies.AllowedProductWorkflows)
+	result += fmt.Sprintf("  Max Workflow Duration: %s\n", c.WorkflowPolicies.MaxWorkflowDuration)
+	result += fmt.Sprintf("  Max Concurrent Workflows: %d\n", c.WorkflowPolicies.MaxConcurrentWorkflows)
+	result += fmt.Sprintf("  Max Steps Per Workflow: %d\n", c.WorkflowPolicies.MaxStepsPerWorkflow)
+	result += fmt.Sprintf("  Allowed Step Types: %v\n", c.WorkflowPolicies.AllowedStepTypes)
+
+	return result
+}
+
+// PrintConfig prints the configuration to stdout (deprecated: use String() method)
+// Kept for backward compatibility
+func (c *AdminConfig) PrintConfig() {
+	fmt.Print(c.String())
 }
 
 func (c *AdminConfig) GetResourceDefinition(resourceType string) (string, bool) {
 	definition, exists := c.ResourceDefinitions[resourceType]
 	return definition, exists
+}
+
+// MaskedAdminConfig is a JSON-serializable version with sensitive data masked
+type MaskedAdminConfig struct {
+	Admin struct {
+		DefaultCostCenter string `json:"defaultCostCenter"`
+		DefaultRuntime    string `json:"defaultRuntime"`
+		SplunkIndex       string `json:"splunkIndex"`
+	} `json:"admin"`
+	ResourceDefinitions map[string]string `json:"resourceDefinitions"`
+	Policies            struct {
+		EnforceBackups      bool     `json:"enforceBackups"`
+		AllowedEnvironments []string `json:"allowedEnvironments"`
+	} `json:"policies"`
+	Gitea struct {
+		URL         string `json:"url"`
+		InternalURL string `json:"internalURL"`
+		Username    string `json:"username"`
+		Password    string `json:"password"` // Will be "****"
+		OrgName     string `json:"orgName"`
+	} `json:"gitea"`
+	ArgoCD struct {
+		URL      string `json:"url"`
+		Username string `json:"username"`
+		Password string `json:"password"` // Will be "****"
+	} `json:"argocd"`
+	Vault struct {
+		URL       string `json:"url"`
+		Token     string `json:"token"` // Will be "****"
+		Namespace string `json:"namespace"`
+	} `json:"vault"`
+	Keycloak struct {
+		URL           string `json:"url"`
+		AdminUser     string `json:"adminUser"`
+		AdminPassword string `json:"adminPassword"` // Will be "****"
+		Realm         string `json:"realm"`
+	} `json:"keycloak"`
+	Minio struct {
+		URL        string `json:"url"`
+		ConsoleURL string `json:"consoleURL"`
+		AccessKey  string `json:"accessKey"`
+		SecretKey  string `json:"secretKey"` // Will be "****"
+	} `json:"minio"`
+	Prometheus struct {
+		URL string `json:"url"`
+	} `json:"prometheus"`
+	Grafana struct {
+		URL      string `json:"url"`
+		Username string `json:"username"`
+		Password string `json:"password"` // Will be "****"
+	} `json:"grafana"`
+	KubernetesDashboard struct {
+		URL string `json:"url"`
+	} `json:"kubernetesDashboard"`
+	WorkflowPolicies struct {
+		WorkflowsRoot             string   `json:"workflowsRoot"`
+		RequiredPlatformWorkflows []string `json:"requiredPlatformWorkflows"`
+		AllowedProductWorkflows   []string `json:"allowedProductWorkflows"`
+		MaxWorkflowDuration       string   `json:"maxWorkflowDuration"`
+		MaxConcurrentWorkflows    int      `json:"maxConcurrentWorkflows"`
+		MaxStepsPerWorkflow       int      `json:"maxStepsPerWorkflow"`
+		AllowedStepTypes          []string `json:"allowedStepTypes"`
+		WorkflowOverrides         struct {
+			Platform bool `json:"platform"`
+			Product  bool `json:"product"`
+		} `json:"workflowOverrides"`
+		Security struct {
+			RequireApproval  []string          `json:"requireApproval"`
+			AllowedExecutors []string          `json:"allowedExecutors"`
+			SecretsAccess    map[string]string `json:"secretsAccess"`
+		} `json:"security"`
+	} `json:"workflowPolicies"`
+}
+
+// ToMaskedJSON returns a JSON-serializable version with sensitive data masked
+func (c *AdminConfig) ToMaskedJSON() *MaskedAdminConfig {
+	masked := &MaskedAdminConfig{
+		ResourceDefinitions: c.ResourceDefinitions,
+	}
+
+	// Copy admin settings
+	masked.Admin.DefaultCostCenter = c.Admin.DefaultCostCenter
+	masked.Admin.DefaultRuntime = c.Admin.DefaultRuntime
+	masked.Admin.SplunkIndex = c.Admin.SplunkIndex
+
+	// Copy policies
+	masked.Policies.EnforceBackups = c.Policies.EnforceBackups
+	masked.Policies.AllowedEnvironments = c.Policies.AllowedEnvironments
+
+	// Copy Gitea config with masked password
+	masked.Gitea.URL = c.Gitea.URL
+	masked.Gitea.InternalURL = c.Gitea.InternalURL
+	masked.Gitea.Username = c.Gitea.Username
+	masked.Gitea.Password = "****"
+	masked.Gitea.OrgName = c.Gitea.OrgName
+
+	// Copy ArgoCD config with masked password
+	masked.ArgoCD.URL = c.ArgoCD.URL
+	masked.ArgoCD.Username = c.ArgoCD.Username
+	masked.ArgoCD.Password = "****"
+
+	// Copy Vault config with masked token
+	masked.Vault.URL = c.Vault.URL
+	masked.Vault.Token = "****"
+	masked.Vault.Namespace = c.Vault.Namespace
+
+	// Copy Keycloak config with masked password
+	masked.Keycloak.URL = c.Keycloak.URL
+	masked.Keycloak.AdminUser = c.Keycloak.AdminUser
+	masked.Keycloak.AdminPassword = "****"
+	masked.Keycloak.Realm = c.Keycloak.Realm
+
+	// Copy Minio config with masked secret key
+	masked.Minio.URL = c.Minio.URL
+	masked.Minio.ConsoleURL = c.Minio.ConsoleURL
+	masked.Minio.AccessKey = c.Minio.AccessKey
+	masked.Minio.SecretKey = "****"
+
+	// Copy Prometheus config
+	masked.Prometheus.URL = c.Prometheus.URL
+
+	// Copy Grafana config with masked password
+	masked.Grafana.URL = c.Grafana.URL
+	masked.Grafana.Username = c.Grafana.Username
+	masked.Grafana.Password = "****"
+
+	// Copy Kubernetes Dashboard config
+	masked.KubernetesDashboard.URL = c.KubernetesDashboard.URL
+
+	// Copy workflow policies
+	masked.WorkflowPolicies.WorkflowsRoot = c.WorkflowPolicies.WorkflowsRoot
+	masked.WorkflowPolicies.RequiredPlatformWorkflows = c.WorkflowPolicies.RequiredPlatformWorkflows
+	masked.WorkflowPolicies.AllowedProductWorkflows = c.WorkflowPolicies.AllowedProductWorkflows
+	masked.WorkflowPolicies.MaxWorkflowDuration = c.WorkflowPolicies.MaxWorkflowDuration
+	masked.WorkflowPolicies.MaxConcurrentWorkflows = c.WorkflowPolicies.MaxConcurrentWorkflows
+	masked.WorkflowPolicies.MaxStepsPerWorkflow = c.WorkflowPolicies.MaxStepsPerWorkflow
+	masked.WorkflowPolicies.AllowedStepTypes = c.WorkflowPolicies.AllowedStepTypes
+
+	// Copy workflow overrides
+	masked.WorkflowPolicies.WorkflowOverrides.Platform = c.WorkflowPolicies.WorkflowOverrides.Platform
+	masked.WorkflowPolicies.WorkflowOverrides.Product = c.WorkflowPolicies.WorkflowOverrides.Product
+
+	// Copy security settings
+	masked.WorkflowPolicies.Security.RequireApproval = c.WorkflowPolicies.Security.RequireApproval
+	masked.WorkflowPolicies.Security.AllowedExecutors = c.WorkflowPolicies.Security.AllowedExecutors
+	masked.WorkflowPolicies.Security.SecretsAccess = c.WorkflowPolicies.Security.SecretsAccess
+
+	return masked
 }

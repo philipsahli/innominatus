@@ -10,16 +10,20 @@ import (
 // Workflow definitions/templates are stored as YAML files (e.g., workflows/deploy-app.yaml)
 // while executions are runtime instances stored in the database.
 type WorkflowExecution struct {
-	ID              int64      `json:"id" db:"id"`
-	ApplicationName string     `json:"application_name" db:"application_name"`
-	WorkflowName    string     `json:"workflow_name" db:"workflow_name"` // References the template name
-	Status          string     `json:"status" db:"status"`
-	StartedAt       time.Time  `json:"started_at" db:"started_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty" db:"completed_at"`
-	ErrorMessage    *string    `json:"error_message,omitempty" db:"error_message"`
-	TotalSteps      int        `json:"total_steps" db:"total_steps"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+	ID                int64      `json:"id" db:"id"`
+	ApplicationName   string     `json:"application_name" db:"application_name"`
+	WorkflowName      string     `json:"workflow_name" db:"workflow_name"` // References the template name
+	Status            string     `json:"status" db:"status"`
+	StartedAt         time.Time  `json:"started_at" db:"started_at"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty" db:"completed_at"`
+	ErrorMessage      *string    `json:"error_message,omitempty" db:"error_message"`
+	TotalSteps        int        `json:"total_steps" db:"total_steps"`
+	CreatedAt         time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at" db:"updated_at"`
+	ParentExecutionID *int64     `json:"parent_execution_id,omitempty" db:"parent_execution_id"` // References original execution when retrying
+	RetryCount        int        `json:"retry_count" db:"retry_count"`                           // Number of retry attempts
+	IsRetry           bool       `json:"is_retry" db:"is_retry"`                                 // True if this is a retry
+	ResumeFromStep    *int       `json:"resume_from_step,omitempty" db:"resume_from_step"`       // Step number to resume from (NULL = start from beginning)
 
 	// Related data (not stored in DB directly)
 	Steps []*WorkflowStepExecution `json:"steps,omitempty"`
@@ -123,6 +127,14 @@ func (c *WorkflowStepConfigJSON) Scan(value interface{}) error {
 	}
 }
 
+// ResourceHint represents a contextual hint for a resource (URL, connection string, etc.)
+type ResourceHint struct {
+	Type  string `json:"type"`            // "url", "connection_string", "dashboard", "docs", "api_endpoint", "git_clone", "command"
+	Label string `json:"label"`           // Display name: "Repository URL", "Admin Dashboard", etc.
+	Value string `json:"value"`           // Actual value: URL, connection string, command, etc.
+	Icon  string `json:"icon,omitempty"`  // Optional icon: "external-link", "database", "lock", "terminal", "git-branch"
+}
+
 // ResourceInstance represents a managed resource with lifecycle tracking
 type ResourceInstance struct {
 	ID                  int64                  `json:"id" db:"id"`
@@ -140,6 +152,7 @@ type ResourceInstance struct {
 	ExternalState       *string                `json:"external_state,omitempty" db:"external_state"` // External system state
 	LastSync            *time.Time             `json:"last_sync,omitempty" db:"last_sync"`           // Last synchronization time
 	WorkflowExecutionID *int64                 `json:"workflow_execution_id,omitempty" db:"workflow_execution_id"`
+	Hints               []ResourceHint         `json:"hints,omitempty" db:"hints"`                   // Multiple contextual hints for the resource
 	CreatedAt           time.Time              `json:"created_at" db:"created_at"`
 	UpdatedAt           time.Time              `json:"updated_at" db:"updated_at"`
 	LastHealthCheck     *time.Time             `json:"last_health_check,omitempty" db:"last_health_check"`

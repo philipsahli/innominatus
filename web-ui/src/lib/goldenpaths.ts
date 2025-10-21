@@ -148,15 +148,43 @@ export const GOLDEN_PATHS: GoldenPath[] = [
       },
     },
   },
+  {
+    name: 'team-setup',
+    description: 'Create Gitea team organization for collaborative development',
+    category: 'platform',
+    tags: ['team', 'setup', 'gitea', 'organization', 'collaboration'],
+    estimated_duration: '1-2 minutes',
+    workflow: './workflows/team-setup.yaml',
+    parameters: {
+      org_name: {
+        type: 'string',
+        default: 'platform-team',
+        description: 'Name of the Gitea team organization to create',
+        pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$',
+      },
+      org_description: {
+        type: 'string',
+        default: 'Platform engineering team organization',
+        description: 'Description for the team organization',
+      },
+      org_visibility: {
+        type: 'enum',
+        default: 'public',
+        description: 'Team organization visibility setting',
+        allowed_values: ['public', 'limited', 'private'],
+      },
+    },
+  },
 ];
 
 // Line number mappings for goldenpaths.yaml (for GitHub anchor links)
 const GOLDENPATH_LINE_RANGES: { [key: string]: { start: number; end: number } } = {
-  'deploy-app': { start: 2, end: 18 },
-  'undeploy-app': { start: 20, end: 26 },
-  'ephemeral-env': { start: 28, end: 50 },
-  'db-lifecycle': { start: 52, end: 72 },
-  'observability-setup': { start: 74, end: 98 },
+  'team-setup': { start: 2, end: 22 },
+  'deploy-app': { start: 24, end: 40 },
+  'undeploy-app': { start: 42, end: 48 },
+  'ephemeral-env': { start: 50, end: 72 },
+  'db-lifecycle': { start: 74, end: 94 },
+  'observability-setup': { start: 96, end: 120 },
 };
 
 /**
@@ -183,6 +211,7 @@ export function getCategoryColor(category: string): string {
     environment: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
     database: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
     observability: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
+    platform: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
   };
   return colors[category] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300';
 }
@@ -197,6 +226,7 @@ export function getIconColor(category: string): string {
     environment: 'text-green-500',
     database: 'text-purple-500',
     observability: 'text-orange-500',
+    platform: 'text-cyan-500',
   };
   return colors[category] || 'text-gray-500';
 }

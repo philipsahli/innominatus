@@ -14,7 +14,7 @@ type MockExecutor struct {
 	shouldFail bool
 }
 
-func (m *MockExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow) error {
+func (m *MockExecutor) ExecuteWorkflowWithName(appName, workflowName string, workflow types.Workflow, goldenPathParams ...map[string]string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.executions = append(m.executions, appName+":"+workflowName)

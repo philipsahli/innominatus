@@ -35,6 +35,7 @@ export interface WorkflowStepExecution {
   duration_ms?: number;
   error_message?: string;
   output_logs?: string;
+  step_config?: Record<string, any>;
 }
 
 export interface WorkflowExecutionDetail {
@@ -63,6 +64,15 @@ interface WorkflowExecutionApiResponse {
   duration_ms?: number;
 }
 
+// Paginated response interface
+export interface PaginatedWorkflowsResponse {
+  data: WorkflowExecution[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export interface GraphData {
   app_name: string;
   nodes: GraphNode[];
@@ -76,6 +86,14 @@ export interface GraphNode {
   type: string;
   status: string;
   description: string;
+  step_number?: number;
+  total_steps?: number;
+  workflow_id?: number;
+  duration_ms?: number;
+  execution_order?: number;
+  created_at?: string;
+  updated_at?: string;
+  metadata?: any;
 }
 
 export interface GraphEdge {
@@ -104,6 +122,13 @@ export interface DemoStatusResponse {
   timestamp: string;
 }
 
+export interface ResourceHint {
+  type: string; // "url", "connection_string", "dashboard", "docs", "api_endpoint", "git_clone", "command"
+  label: string; // Display name: "Repository URL", "Admin Dashboard", etc.
+  value: string; // Actual value: URL, connection string, command, etc.
+  icon?: string; // Optional icon: "external-link", "database", "lock", "terminal", "git-branch"
+}
+
 export interface ResourceInstance {
   id: number;
   application_name: string;
@@ -124,6 +149,7 @@ export interface ResourceInstance {
   provider_id?: string;
   provider_metadata?: Record<string, any>;
   workflow_execution_id?: number;
+  hints?: ResourceHint[]; // Multiple contextual hints for the resource
   created_at: string;
   updated_at: string;
   last_health_check?: string;
@@ -149,6 +175,77 @@ export interface APIKeyFull {
   name: string;
   created_at: string;
   expires_at: string;
+}
+
+export interface AdminConfig {
+  admin: {
+    defaultCostCenter: string;
+    defaultRuntime: string;
+    splunkIndex: string;
+  };
+  resourceDefinitions: Record<string, string>;
+  policies: {
+    enforceBackups: boolean;
+    allowedEnvironments: string[];
+  };
+  gitea: {
+    url: string;
+    internalURL: string;
+    username: string;
+    password: string; // Will be "****" from backend
+    orgName: string;
+  };
+  argocd: {
+    url: string;
+    username: string;
+    password: string; // Will be "****" from backend
+  };
+  vault: {
+    url: string;
+    token: string; // Will be "****" from backend
+    namespace: string;
+  };
+  keycloak: {
+    url: string;
+    adminUser: string;
+    adminPassword: string; // Will be "****" from backend
+    realm: string;
+  };
+  minio: {
+    url: string;
+    consoleURL: string;
+    accessKey: string;
+    secretKey: string; // Will be "****" from backend
+  };
+  prometheus: {
+    url: string;
+  };
+  grafana: {
+    url: string;
+    username: string;
+    password: string; // Will be "****" from backend
+  };
+  kubernetesDashboard: {
+    url: string;
+  };
+  workflowPolicies: {
+    workflowsRoot: string;
+    requiredPlatformWorkflows: string[];
+    allowedProductWorkflows: string[];
+    maxWorkflowDuration: string;
+    maxConcurrentWorkflows: number;
+    maxStepsPerWorkflow: number;
+    allowedStepTypes: string[];
+    workflowOverrides: {
+      platform: boolean;
+      product: boolean;
+    };
+    security: {
+      requireApproval: string[];
+      allowedExecutors: string[];
+      secretsAccess: Record<string, string>;
+    };
+  };
 }
 
 export interface AuthConfig {
@@ -182,9 +279,19 @@ class ApiClient {
 
       if (!response.ok) {
         if (response.status === 401) {
-          // Clear invalid token
-          if (typeof window !== 'undefined') {
+          // Check if this is a permission check vs authentication failure
+          // Don't redirect on endpoints that are used for status checks
+          const isStatusCheck =
+            endpoint.includes('/impersonate') ||
+            (endpoint.includes('/admin/') && options.method === 'GET');
+
+          if (!isStatusCheck && typeof window !== 'undefined') {
+            // Session expired - clear token and redirect to login
             localStorage.removeItem('auth-token');
+            // Give user feedback about session expiration
+            console.warn('Session expired - redirecting to login');
+            // Redirect to login page
+            window.location.href = '/login';
           }
         }
         return {
@@ -209,7 +316,7 @@ class ApiClient {
   // Applications
   async getApplications(): Promise<ApiResponse<Application[]>> {
     try {
-      const response = await this.request<Record<string, any>>('/specs');
+      const response = await this.request<Record<string, any>>('/applications');
 
       if (response.success && response.data) {
         // Transform specs data to Application format
@@ -243,34 +350,65 @@ class ApiClient {
   }
 
   async getSpecs(): Promise<ApiResponse<Record<string, any>>> {
-    return this.request<Record<string, any>>('/specs');
+    // Kept for backward compatibility, now calls /applications
+    return this.request<Record<string, any>>('/applications');
   }
 
   async getApplication(name: string): Promise<ApiResponse<Application>> {
-    return this.request<Application>(`/apps/${name}`);
+    return this.request<Application>(`/applications/${name}`);
   }
 
   async deployApplication(scoreSpec: string): Promise<ApiResponse<{ message: string }>> {
-    return this.request('/apps', {
+    return this.request('/applications', {
       method: 'POST',
       body: JSON.stringify({ spec: scoreSpec }),
     });
   }
 
   async deleteApplication(name: string): Promise<ApiResponse<{ message: string }>> {
-    return this.request(`/apps/${name}`, {
+    return this.request(`/applications/${name}`, {
       method: 'DELETE',
     });
   }
 
+  async deprovisionApplication(name: string): Promise<ApiResponse<{ message: string }>> {
+    return this.request(`/applications/${name}/deprovision`, {
+      method: 'POST',
+    });
+  }
+
+  // Environments
+  async getEnvironments(): Promise<ApiResponse<Record<string, any>>> {
+    return this.request<Record<string, any>>('/environments');
+  }
+
   // Workflows
-  async getWorkflows(appName?: string): Promise<ApiResponse<WorkflowExecution[]>> {
-    const query = appName ? `?app=${appName}` : '';
-    const response = await this.request<WorkflowExecutionApiResponse[]>(`/workflows${query}`);
+  async getWorkflows(
+    appName?: string,
+    search?: string,
+    status?: string,
+    page: number = 1,
+    limit: number = 50
+  ): Promise<ApiResponse<PaginatedWorkflowsResponse>> {
+    const params = new URLSearchParams();
+    if (appName) params.append('app', appName);
+    if (search) params.append('search', search);
+    if (status && status !== 'all') params.append('status', status);
+    params.append('page', page.toString());
+    params.append('limit', limit.toString());
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await this.request<{
+      data: WorkflowExecutionApiResponse[];
+      total: number;
+      page: number;
+      page_size: number;
+      total_pages: number;
+    }>(`/workflows${query}`);
 
     if (response.success && response.data) {
       // Transform backend response to frontend interface
-      const transformedData: WorkflowExecution[] = response.data.map((workflow) => {
+      const transformedData: WorkflowExecution[] = response.data.data.map((workflow) => {
         // Calculate relative timestamp
         const startTime = new Date(workflow.started_at);
         const now = new Date();
@@ -317,7 +455,13 @@ class ApiClient {
 
       return {
         success: true,
-        data: transformedData,
+        data: {
+          data: transformedData,
+          total: response.data.total,
+          page: response.data.page,
+          page_size: response.data.page_size,
+          total_pages: response.data.total_pages,
+        },
       };
     }
 
@@ -331,9 +475,33 @@ class ApiClient {
     return this.request<WorkflowExecutionDetail>(`/workflows/${id}`);
   }
 
+  async retryWorkflow(
+    id: string,
+    workflow?: any
+  ): Promise<ApiResponse<{ success: boolean; message: string }>> {
+    const options: RequestInit = {
+      method: 'POST',
+    };
+
+    // Only include body if workflow is provided (for manual retry with updated spec)
+    // If workflow is undefined/null, send empty body for automatic retry
+    if (workflow) {
+      options.body = JSON.stringify(workflow);
+    }
+
+    return this.request<{ success: boolean; message: string }>(`/workflows/${id}/retry`, options);
+  }
+
   // Resource Graph
   async getResourceGraph(appName: string): Promise<ApiResponse<GraphData>> {
     return this.request<GraphData>(`/graph/${appName}`);
+  }
+
+  async getWorkflowDetailsForGraph(
+    appName: string,
+    workflowId: string
+  ): Promise<ApiResponse<WorkflowExecutionDetail>> {
+    return this.request<WorkflowExecutionDetail>(`/graph/${appName}/workflow/${workflowId}`);
   }
 
   // Dashboard Stats
@@ -383,6 +551,24 @@ class ApiClient {
     });
   }
 
+  async runDemoReset(): Promise<
+    ApiResponse<{
+      success: boolean;
+      tables_truncated: number;
+      tasks_stopped: number;
+      message: string;
+      timestamp: string;
+    }>
+  > {
+    return this.request('/admin/demo/reset', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ confirm: true }),
+    });
+  }
+
   // Resources
   async getResources(appName?: string): Promise<ApiResponse<Record<string, ResourceInstance[]>>> {
     const query = appName ? `?app=${appName}` : '';
@@ -426,6 +612,16 @@ class ApiClient {
     });
   }
 
+  // Users Management
+  async listUsers(): Promise<ApiResponse<any>> {
+    return this.request('/users');
+  }
+
+  // Admin Configuration
+  async getAdminConfig(): Promise<ApiResponse<AdminConfig>> {
+    return this.request<AdminConfig>('/admin/config');
+  }
+
   // AI Assistant
   async getAIStatus(): Promise<ApiResponse<AIStatusResponse>> {
     return this.request<AIStatusResponse>('/ai/status');
@@ -450,6 +646,32 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ description, metadata }),
     });
+  }
+
+  // Impersonation
+  async startImpersonation(username: string): Promise<ApiResponse<any>> {
+    return this.request('/impersonate', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+  }
+
+  async stopImpersonation(): Promise<ApiResponse<any>> {
+    return this.request('/impersonate', {
+      method: 'DELETE',
+    });
+  }
+
+  async getImpersonationStatus(): Promise<ApiResponse<ImpersonationStatus>> {
+    return this.request('/impersonate');
+  }
+
+  async getProviders(): Promise<ApiResponse<ProviderSummary[]>> {
+    return this.request('/providers');
+  }
+
+  async getProviderStats(): Promise<ApiResponse<ProviderStats>> {
+    return this.request('/providers/stats');
   }
 }
 
@@ -481,6 +703,34 @@ export interface AIGenerateSpecResponse {
   explanation: string;
   citations?: string[];
   tokens_used?: number;
+}
+
+export interface ImpersonationStatus {
+  is_impersonating: boolean;
+  original_user?: {
+    username: string;
+    team: string;
+    role: string;
+  };
+  impersonated_user?: {
+    username: string;
+    team: string;
+    role: string;
+  };
+}
+
+export interface ProviderSummary {
+  name: string;
+  version: string;
+  category: string;
+  description: string;
+  provisioners: number;
+  golden_paths: number;
+}
+
+export interface ProviderStats {
+  providers: number;
+  provisioners: number;
 }
 
 export const api = new ApiClient();

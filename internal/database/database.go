@@ -3,7 +3,8 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"innominatus/internal/logging"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +16,8 @@ import (
 
 // Database wraps the SQL database connection
 type Database struct {
-	db *sql.DB
+	db           *sql.DB
+	migrationsFS fs.FS // Optional: embedded migrations filesystem
 }
 
 // Config holds database configuration
@@ -30,6 +32,8 @@ type Config struct {
 
 // NewDatabase creates a new database connection
 func NewDatabase() (*Database, error) {
+	logger := logging.NewStructuredLogger("database")
+
 	config := Config{
 		Host:     getEnvWithDefault("DB_HOST", "localhost"),
 		Port:     getEnvWithDefault("DB_PORT", "5432"),
@@ -47,7 +51,11 @@ func NewDatabase() (*Database, error) {
 			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode)
 	}
 
-	fmt.Printf("DEBUG: NewDatabase connecting to: %s (DBName=%s)\n", connStr, config.DBName)
+	logger.DebugWithFields("Initializing database connection", map[string]interface{}{
+		"host":   config.Host,
+		"port":   config.Port,
+		"dbname": config.DBName,
+	})
 
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -67,14 +75,16 @@ func NewDatabase() (*Database, error) {
 	// Verify which database we actually connected to
 	var actualDB string
 	if err := db.QueryRow("SELECT current_database()").Scan(&actualDB); err != nil {
-		fmt.Printf("WARNING: Failed to verify database connection: %v\n", err)
+		logger.WarnWithFields("Failed to verify database connection", map[string]interface{}{
+			"error": err.Error(),
+		})
 	} else {
-		fmt.Printf("DEBUG: NewDatabase - verified connection to database: %s\n", actualDB)
+		logger.InfoWithFields("Database connection established", map[string]interface{}{
+			"database": actualDB,
+		})
 	}
 
-	result := &Database{db: db}
-	fmt.Printf("DEBUG: NewDatabase - returning Database pointer: %p\n", result)
-	return result, nil
+	return &Database{db: db}, nil
 }
 
 // NewDatabaseWithConfig creates a new database connection with custom config
@@ -121,6 +131,11 @@ func (d *Database) GetDB() *sql.DB {
 // DB returns the underlying sql.DB instance (alias for GetDB)
 func (d *Database) DB() *sql.DB {
 	return d.db
+}
+
+// SetMigrationsFS sets the embedded migrations filesystem
+func (d *Database) SetMigrationsFS(fsys fs.FS) {
+	d.migrationsFS = fsys
 }
 
 // Ping tests the database connection
@@ -215,12 +230,24 @@ CREATE TABLE IF NOT EXISTS resource_instances (
     reference_url TEXT NULL,
     external_state VARCHAR(50) NULL,
     last_sync TIMESTAMP WITH TIME ZONE NULL,
+    hints JSONB DEFAULT '[]',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     last_health_check TIMESTAMP WITH TIME ZONE NULL,
     error_message TEXT NULL,
     UNIQUE(application_name, resource_name)
 );
+
+-- Add hints column if it doesn't exist (for existing databases)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='resource_instances' AND column_name='hints'
+    ) THEN
+        ALTER TABLE resource_instances ADD COLUMN hints JSONB DEFAULT '[]';
+    END IF;
+END $$;
 
 -- Resource state transitions for audit trail
 CREATE TABLE IF NOT EXISTS resource_state_transitions (
@@ -262,6 +289,7 @@ CREATE INDEX IF NOT EXISTS idx_resource_instances_state ON resource_instances(st
 CREATE INDEX IF NOT EXISTS idx_resource_instances_type ON resource_instances(resource_type);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_health ON resource_instances(health_status);
 CREATE INDEX IF NOT EXISTS idx_resource_instances_updated ON resource_instances(updated_at);
+CREATE INDEX IF NOT EXISTS idx_resource_instances_hints ON resource_instances USING GIN (hints);
 -- Note: Indexes for type, provider, external_state are created in migration 006_add_delegated_resources.sql
 
 CREATE INDEX IF NOT EXISTS idx_resource_state_transitions_resource_id ON resource_state_transitions(resource_instance_id);
@@ -308,60 +336,168 @@ ALTER TABLE resource_dependencies ADD CONSTRAINT chk_dependency_type
 	return nil
 }
 
-// RunMigrations executes SQL migration files from the migrations/ directory
+// RunMigrations executes SQL migration files from filesystem or embedded FS
 func (d *Database) RunMigrations() error {
+	logger := logging.NewStructuredLogger("database.migrations")
+
 	if d == nil || d.db == nil {
 		return fmt.Errorf("database connection is nil")
 	}
 
-	// Get migrations directory path
+	// Try filesystem first (for development), then embedded FS (for production)
 	migrationsDir := "migrations"
+	var files []string
+	var err error
+	useEmbedded := false
 
-	// Read migration files
-	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
-	if err != nil {
-		return fmt.Errorf("failed to read migrations directory: %w", err)
+	// Check if migrations directory exists on filesystem
+	if _, statErr := os.Stat(migrationsDir); statErr == nil {
+		// Use filesystem migrations
+		files, err = filepath.Glob(filepath.Join(migrationsDir, "*.sql"))
+		if err != nil {
+			return fmt.Errorf("failed to read migrations directory: %w", err)
+		}
+		logger.Info("Using filesystem migrations")
+	} else {
+		// Use embedded migrations
+		useEmbedded = true
+		logger.Info("Using embedded migrations")
+		// Import embeds package to access embedded migrations
+		// Note: This will be handled at runtime via embeds.GetMigrationsFS()
 	}
 
 	// Sort files to ensure consistent execution order
 	sort.Strings(files)
 
-	// Execute each migration file
-	for _, file := range files {
-		log.Printf("Running migration: %s", filepath.Base(file))
+	// Execute migrations from filesystem using psql
+	if !useEmbedded {
+		for _, file := range files {
+			if err := d.runFilesystemMigration(logger, file); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Execute embedded migrations
+		if err := d.runEmbeddedMigrations(logger); err != nil {
+			return err
+		}
+	}
 
-		// Execute migration using psql directly for proper multi-statement support
-		// This avoids issues with comment parsing and complex SQL statements
-		psqlCmd := fmt.Sprintf("psql -d %s -f %s",
-			getEnvWithDefault("DB_NAME", "idp_orchestrator"),
-			file,
-		)
+	if len(files) == 0 && !useEmbedded {
+		logger.InfoWithFields("No migration files found", map[string]interface{}{
+			"migrations_dir": migrationsDir,
+		})
+	} else if !useEmbedded {
+		logger.InfoWithFields("Completed migrations", map[string]interface{}{
+			"total_migrations": len(files),
+		})
+	}
 
-		// Set environment variables for psql connection
-		cmd := fmt.Sprintf("PGHOST=%s PGPORT=%s PGUSER=%s PGPASSWORD=%s %s",
-			getEnvWithDefault("DB_HOST", "localhost"),
-			getEnvWithDefault("DB_PORT", "5432"),
-			getEnvWithDefault("DB_USER", "postgres"),
-			getEnvWithDefault("DB_PASSWORD", ""),
-			psqlCmd,
-		)
+	return nil
+}
 
-		// Execute using shell
-		output, err := exec.Command("sh", "-c", cmd).CombinedOutput() // #nosec G204 - Database migration with controlled SQL files
+// runFilesystemMigration executes a single migration file from filesystem using psql
+func (d *Database) runFilesystemMigration(logger *logging.ZerologAdapter, file string) error {
+	logger.InfoWithFields("Running migration", map[string]interface{}{
+		"migration_file": filepath.Base(file),
+		"full_path":      file,
+	})
+
+	// Execute migration using psql directly for proper multi-statement support
+	psqlCmd := fmt.Sprintf("psql -d %s -f %s",
+		getEnvWithDefault("DB_NAME", "idp_orchestrator"),
+		file,
+	)
+
+	// Set environment variables for psql connection
+	cmd := fmt.Sprintf("PGHOST=%s PGPORT=%s PGUSER=%s PGPASSWORD=%s %s",
+		getEnvWithDefault("DB_HOST", "localhost"),
+		getEnvWithDefault("DB_PORT", "5432"),
+		getEnvWithDefault("DB_USER", "postgres"),
+		getEnvWithDefault("DB_PASSWORD", ""),
+		psqlCmd,
+	)
+
+	// Execute using shell
+	output, err := exec.Command("sh", "-c", cmd).CombinedOutput() // #nosec G204 - Database migration with controlled SQL files
+	if err != nil {
+		logger.ErrorWithFields("Migration execution failed", map[string]interface{}{
+			"migration_file": filepath.Base(file),
+			"output":         string(output),
+			"error":          err.Error(),
+		})
+		return fmt.Errorf("failed to execute migration %s: %w", file, err)
+	}
+
+	logger.InfoWithFields("Successfully executed migration", map[string]interface{}{
+		"migration_file": filepath.Base(file),
+	})
+	return nil
+}
+
+// runEmbeddedMigrations executes migrations from embedded filesystem
+func (d *Database) runEmbeddedMigrations(logger *logging.ZerologAdapter) error {
+	if d.migrationsFS == nil {
+		return fmt.Errorf("no embedded migrations filesystem provided")
+	}
+	migrationsFS := d.migrationsFS
+
+	// Read all .sql files from embedded FS
+	entries, err := fs.ReadDir(migrationsFS, ".")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded migrations: %w", err)
+	}
+
+	// Collect and sort migration files
+	var migrationFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" {
+			migrationFiles = append(migrationFiles, entry.Name())
+		}
+	}
+	sort.Strings(migrationFiles)
+
+	logger.InfoWithFields("Found embedded migrations", map[string]interface{}{
+		"count": len(migrationFiles),
+	})
+
+	// Execute each migration
+	for _, filename := range migrationFiles {
+		// Read migration content from embedded FS
+		content, err := fs.ReadFile(migrationsFS, filename)
 		if err != nil {
-			log.Printf("Migration output: %s", string(output))
-			log.Printf("Full error: %v", err)
-			return fmt.Errorf("failed to execute migration %s: %w", file, err)
+			return fmt.Errorf("failed to read embedded migration %s: %w", filename, err)
 		}
 
-		log.Printf("Successfully executed migration: %s", filepath.Base(file))
+		// Create temporary file for psql execution
+		tmpFile, err := os.CreateTemp("", fmt.Sprintf("migration-%s-*.sql", filename))
+		if err != nil {
+			return fmt.Errorf("failed to create temp file for migration %s: %w", filename, err)
+		}
+		tmpPath := tmpFile.Name()
+		defer func() { _ = os.Remove(tmpPath) }() // Clean up temp file
+
+		// Write content to temp file
+		if _, err := tmpFile.Write(content); err != nil {
+			_ = tmpFile.Close()
+			return fmt.Errorf("failed to write temp migration file %s: %w", filename, err)
+		}
+		_ = tmpFile.Close()
+
+		// Execute migration using existing runFilesystemMigration logic
+		logger.InfoWithFields("Running embedded migration", map[string]interface{}{
+			"migration_file": filename,
+			"temp_file":      tmpPath,
+		})
+
+		if err := d.runFilesystemMigration(logger, tmpPath); err != nil {
+			return fmt.Errorf("failed to execute embedded migration %s: %w", filename, err)
+		}
 	}
 
-	if len(files) == 0 {
-		log.Printf("No migration files found in %s", migrationsDir)
-	} else {
-		log.Printf("Successfully executed %d migration(s)", len(files))
-	}
+	logger.InfoWithFields("Completed embedded migrations", map[string]interface{}{
+		"total_migrations": len(migrationFiles),
+	})
 
 	return nil
 }
@@ -507,6 +643,74 @@ func (d *Database) GetUserByAPIKeyHash(keyHash string) (username string, team st
 	// For now, return the username and default team/role
 	// The actual user object will be reconstructed from session data
 	return username, "oidc-users", "user", nil
+}
+
+// TruncateAllTables deletes all data from all database tables (except migrations)
+// This is used for demo-reset functionality to provide a clean slate
+func (d *Database) TruncateAllTables() (int, error) {
+	if d == nil || d.db == nil {
+		return 0, fmt.Errorf("database connection is nil")
+	}
+
+	// Query all table names from information_schema
+	query := `
+		SELECT tablename
+		FROM pg_tables
+		WHERE schemaname = 'public'
+		AND tablename != 'schema_migrations'
+		ORDER BY tablename
+	`
+
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query table names: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var tables []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return 0, fmt.Errorf("failed to scan table name: %w", err)
+		}
+		tables = append(tables, tableName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating table names: %w", err)
+	}
+
+	if len(tables) == 0 {
+		return 0, nil // No tables to truncate
+	}
+
+	// Begin transaction
+	tx, err := d.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	logger := logging.NewStructuredLogger("database.truncate")
+
+	// Disable foreign key checks temporarily and truncate all tables
+	// Using RESTART IDENTITY to reset serial counters and CASCADE for dependencies
+	for _, table := range tables {
+		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s RESTART IDENTITY CASCADE", table)
+		if _, err := tx.Exec(truncateSQL); err != nil {
+			return 0, fmt.Errorf("failed to truncate table %s: %w", table, err)
+		}
+		logger.DebugWithFields("Truncated table", map[string]interface{}{
+			"table": table,
+		})
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return len(tables), nil
 }
 
 // getEnvWithDefault returns environment variable value or default if not set
