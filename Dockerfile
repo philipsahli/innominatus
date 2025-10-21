@@ -16,6 +16,7 @@ RUN go mod download
 # Copy source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY pkg/ ./pkg/
 COPY migrations/ ./cmd/server/migrations/
 
 # Build server binary
