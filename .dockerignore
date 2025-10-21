@@ -3,10 +3,9 @@
 .github
 .gitignore
 
-# Documentation
+# Documentation (but keep docs/ for Next.js docs page)
 *.md
 !README.md
-docs/
 GAP_ANALYSIS*.md
 ORPHANED_FILES.md
 TFE-WORKFLOW-README.md
