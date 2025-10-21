@@ -127,6 +127,7 @@ dockers:
     extra_files:
       - cmd/
       - internal/
+      - pkg/
       - migrations/
       - web-ui/
       - examples/
@@ -151,6 +152,7 @@ dockers:
     extra_files:
       - cmd/
       - internal/
+      - pkg/
       - migrations/
       - web-ui/
       - examples/
