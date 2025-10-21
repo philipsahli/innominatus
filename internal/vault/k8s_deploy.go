@@ -121,7 +121,7 @@ metadata:
   namespace: %s
   labels:
     app.kubernetes.io/component: vault-secrets-operator
-    app.kubernetes.io/managed-by: idp-orchestrator`, serviceAccountName, namespace)
+    app.kubernetes.io/managed-by: innominatusrchestrator`, serviceAccountName, namespace)
 
 	// Write ServiceAccount manifest to temporary file
 	tmpFile, err := os.CreateTemp("", "serviceaccount-*.yaml")

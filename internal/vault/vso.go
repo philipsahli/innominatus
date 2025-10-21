@@ -142,9 +142,9 @@ func (v *VSOManager) GenerateVaultStaticSecret(appName, appNamespace, secretName
 	secret.Spec.Destination.Name = secretName
 	secret.Spec.Destination.Create = true
 	secret.Spec.Destination.Labels = map[string]string{
-		"app":                       appName,
-		"managed-by":                "vault-secrets-operator",
-		"idp-orchestrator/app-name": appName,
+		"app":                             appName,
+		"managed-by":                      "vault-secrets-operator",
+		"innominatusrchestrator/app-name": appName,
 	}
 
 	yamlData, err := yaml.Marshal(secret)
@@ -166,9 +166,9 @@ func (v *VSOManager) GenerateServiceAccount(appName, appNamespace string) (strin
 			"name":      fmt.Sprintf("%s-vault-sa", appName),
 			"namespace": appNamespace,
 			"labels": map[string]string{
-				"app":                       appName,
-				"component":                 "vault-auth",
-				"idp-orchestrator/app-name": appName,
+				"app":                             appName,
+				"component":                       "vault-auth",
+				"innominatusrchestrator/app-name": appName,
 			},
 		},
 	}

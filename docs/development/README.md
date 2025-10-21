@@ -18,8 +18,8 @@ This guide helps you contribute to innominatus development.
 ### Clone Repository
 
 ```bash
-git clone https://github.com/philipsahli/idp-o.git
-cd idp-o
+git clone https://github.com/philipsahli/innominatus.git
+cd innominatus
 ```
 
 ### Build

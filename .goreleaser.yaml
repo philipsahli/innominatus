@@ -44,19 +44,42 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: innominatus
+  # Server archive (Linux only)
+  - id: server-archive
+    format: tar.gz
     name_template: >-
-      {{ .ProjectName }}_
+      {{ .ProjectName }}-server_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
+    # Only package the server binary (Linux builds)
+    builds:
+      - innominatus
     files:
       - README.md
       - LICENSE
-      - admin-config.yaml
-      - goldenpaths.yaml
+      - examples/admin-config.yaml
+      - examples/goldenpaths.yaml
       - workflows/**
       - docs/**
+
+  # CLI archive (all platforms)
+  - id: cli-archive
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: >-
+      {{ .ProjectName }}-ctl_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    # Only package the CLI binary (all platforms)
+    builds:
+      - innominatus-ctl
+    files:
+      - README.md
+      - LICENSE
 
 checksum:
   name_template: 'checksums.txt'
@@ -101,6 +124,15 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.source={{.GitURL}}"
     goarch: amd64
+    extra_files:
+      - cmd/
+      - internal/
+      - migrations/
+      - web-ui/
+      - examples/
+      - workflows/
+      - go.mod
+      - go.sum
 
   # ARM64 image
   - image_templates:
@@ -116,11 +148,20 @@ dockers:
       - "--label=org.opencontainers.image.version={{.Version}}"
       - "--label=org.opencontainers.image.source={{.GitURL}}"
     goarch: arm64
+    extra_files:
+      - cmd/
+      - internal/
+      - migrations/
+      - web-ui/
+      - examples/
+      - workflows/
+      - go.mod
+      - go.sum
 
 release:
   github:
     owner: philipsahli
-    name: idp-o
+    name: innominatus
   draft: false
   prerelease: auto
   mode: replace
@@ -142,7 +183,7 @@ release:
 
   footer: |
     ---
-    **Full Changelog**: https://github.com/philipsahli/idp-o/compare/{{ .PreviousTag }}...{{ .Tag }}
+    **Full Changelog**: https://github.com/philipsahli/innominatus/compare/{{ .PreviousTag }}...{{ .Tag }}
 
 announce:
   skip: true

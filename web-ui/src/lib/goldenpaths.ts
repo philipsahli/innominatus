@@ -23,7 +23,7 @@ export interface GoldenPath {
 }
 
 // GitHub repository configuration
-export const GITHUB_REPO = 'https://github.com/philipsahli/idp-o';
+export const GITHUB_REPO = 'https://github.com/philipsahli/innominatus';
 export const DEFAULT_BRANCH = 'v01';
 
 // Static golden paths data (loaded from goldenpaths.yaml)

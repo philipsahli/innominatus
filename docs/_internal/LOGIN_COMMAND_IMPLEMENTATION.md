@@ -10,7 +10,7 @@ Successfully implemented `./innominatus-ctl login` and `./innominatus-ctl logout
 
 1. **NEW: `internal/cli/credentials.go`**
    - Credentials file management
-   - Stores credentials in `$HOME/.idp-o/credentials` (JSON format)
+   - Stores credentials in `$HOME/.innominatus/credentials` (JSON format)
    - Secure file permissions (0600 - owner read/write only)
    - Functions:
      - `SaveCredentials()` - Save API key to file
@@ -23,7 +23,7 @@ Successfully implemented `./innominatus-ctl login` and `./innominatus-ctl logout
    - Updated `NewClient()` to load API keys from credentials file
    - Priority order:
      1. `IDP_API_KEY` environment variable (highest priority - for CI/CD)
-     2. `$HOME/.idp-o/credentials` file
+     2. `$HOME/.innominatus/credentials` file
      3. No API key (prompts for login)
    - Automatic expiry handling
 
@@ -36,7 +36,7 @@ Successfully implemented `./innominatus-ctl login` and `./innominatus-ctl logout
      - Default key name: `cli-<hostname>-<timestamp>`
      - Default expiry: 90 days
    - `LogoutCommand()` - Removes stored credentials
-     - Deletes `$HOME/.idp-o/credentials` file
+     - Deletes `$HOME/.innominatus/credentials` file
      - Shows confirmation message
 
 4. **MODIFIED: `cmd/cli/main.go`**
@@ -95,7 +95,7 @@ Successfully implemented `./innominatus-ctl login` and `./innominatus-ctl logout
 3. CLI authenticates with server (`POST /api/login`)
 4. CLI calls `POST /api/profile/api-keys` with session token to generate API key
 5. Server generates API key and returns it (full key only shown once)
-6. CLI saves credentials to `$HOME/.idp-o/credentials` with secure permissions (0600)
+6. CLI saves credentials to `$HOME/.innominatus/credentials` with secure permissions (0600)
 7. Future CLI commands automatically load API key from file
 8. If API key expires, user is notified and file is auto-removed
 
@@ -115,7 +115,7 @@ When running a command, the CLI checks for API keys in this order:
    - Useful for CI/CD pipelines
    - `export IDP_API_KEY=your-key-here`
 
-2. **Credentials File** (`$HOME/.idp-o/credentials`)
+2. **Credentials File** (`$HOME/.innominatus/credentials`)
    - Created by `login` command
    - Validated for expiry on load
 
@@ -170,7 +170,7 @@ Examples:
 
 4. **Verify Credentials**:
    ```bash
-   cat ~/.idp-o/credentials
+   cat ~/.innominatus/credentials
    ```
 
 5. **Test Auto-Auth**:
@@ -186,7 +186,7 @@ Examples:
 
 7. **Verify Cleanup**:
    ```bash
-   ls ~/.idp-o/
+   ls ~/.innominatus/
    # credentials file should be removed
    ```
 

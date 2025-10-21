@@ -58,12 +58,12 @@ The user requested a comprehensive gap analysis for their graph-based IDP Orches
 
 | **Current Experience** | **Pain Point** | **Improved Experience** |
 |----------------------|----------------|------------------------|
-| Manual server rebuild on changes | `go build -o idp-o cmd/server/main.go` required for every change | Hot reload with file watching |
+| Manual server rebuild on changes | `go build -o innominatus cmd/server/main.go` required for every change | Hot reload with file watching |
 | Separate CLI/server binaries | Two different binaries to manage | Unified binary with mode flags |
 | Manual web-ui development setup | `cd web-ui && npm run dev` separately | Integrated development mode |
 | No IDE integration | No language server, debugging support | VS Code extension with IntelliSense |
 
-**Recommendation**: Add `idp-o dev` command that starts all components with hot reload
+**Recommendation**: Add `innominatus dev` command that starts all components with hot reload
 
 ### **2. Debugging & Observability**
 
@@ -74,16 +74,16 @@ The user requested a comprehensive gap analysis for their graph-based IDP Orches
 | Limited error context | Stack traces, error propagation | Understand why deployment failed |
 | No performance metrics | Execution timing, bottlenecks | Optimize slow workflows |
 
-**Recommendation**: Add `idp-o debug <workflow-id>` with interactive step-through capability
+**Recommendation**: Add `innominatus debug <workflow-id>` with interactive step-through capability
 
 ### **3. Local Development Environment**
 
 | **Gap Category** | **Current Limitation** | **Developer Impact** | **Proposed Solution** |
 |-----------------|----------------------|-------------------|-------------------|
-| **Environment Parity** | Demo uses localtest.me domains | Can't test real DNS/TLS scenarios | Add `idp-o tunnel` for ngrok-like functionality |
-| **Data Persistence** | No local data seeding | Have to manually recreate test data | Add `idp-o seed` with sample applications |
-| **Service Dependencies** | All-or-nothing demo environment | Can't test individual components | Add `idp-o dev --services=vault,gitea` selective startup |
-| **Configuration Management** | Hard-coded demo configs | Can't test different configurations | Add `idp-o config profiles` for different scenarios |
+| **Environment Parity** | Demo uses localtest.me domains | Can't test real DNS/TLS scenarios | Add `innominatus tunnel` for ngrok-like functionality |
+| **Data Persistence** | No local data seeding | Have to manually recreate test data | Add `innominatus seed` with sample applications |
+| **Service Dependencies** | All-or-nothing demo environment | Can't test individual components | Add `innominatus dev --services=vault,gitea` selective startup |
+| **Configuration Management** | Hard-coded demo configs | Can't test different configurations | Add `innominatus config profiles` for different scenarios |
 
 ### **4. Error Handling & Recovery**
 
@@ -94,33 +94,33 @@ The user requested a comprehensive gap analysis for their graph-based IDP Orches
 | **Network Issues** | Timeout without context | "Is the service down?" | Health check status and retry options |
 | **Invalid Score Spec** | Validation error without location | "Where exactly is the problem?" | Line-by-line validation with suggestions |
 
-**Recommendation**: Add contextual error messages with `idp-o doctor` diagnostic tool
+**Recommendation**: Add contextual error messages with `innominatus doctor` diagnostic tool
 
 ### **5. Workflow Authoring Experience**
 
 | **Current Workflow Creation** | **Pain Points** | **Improved Experience** |
 |-----------------------------|----------------|------------------------|
 | Manual YAML editing | No validation, no autocomplete | VS Code extension with schema validation |
-| No workflow testing | Deploy to test workflow | `idp-o workflow test --dry-run` |
-| No workflow templates | Start from scratch every time | `idp-o workflow init --template=<type>` |
+| No workflow testing | Deploy to test workflow | `innominatus workflow test --dry-run` |
+| No workflow templates | Start from scratch every time | `innominatus workflow init --template=<type>` |
 | No step debugging | Can't pause mid-workflow | Interactive step execution |
 
 ### **6. Documentation & Learning**
 
 | **Gap** | **Current State** | **Developer Need** | **Solution** |
 |---------|------------------|-------------------|-------------|
-| **Interactive Tutorials** | Static README documentation | Learn by doing | `idp-o tutorial` interactive walkthrough |
-| **Best Practices** | No guidance on patterns | "Am I doing this right?" | Built-in linting with `idp-o lint` |
-| **Examples Library** | Limited example specs | More real-world patterns | `idp-o examples` with searchable catalog |
+| **Interactive Tutorials** | Static README documentation | Learn by doing | `innominatus tutorial` interactive walkthrough |
+| **Best Practices** | No guidance on patterns | "Am I doing this right?" | Built-in linting with `innominatus lint` |
+| **Examples Library** | Limited example specs | More real-world patterns | `innominatus examples` with searchable catalog |
 | **API Documentation** | Basic Swagger spec | Interactive exploration | GraphQL playground integration |
 
 ### **7. Team Collaboration**
 
 | **Collaboration Challenge** | **Current Gap** | **Team Impact** | **Proposed Feature** |
 |---------------------------|----------------|-----------------|-------------------|
-| **Shared Environments** | No environment sharing | Teams can't collaborate | `idp-o share <env> --with=<team>` |
+| **Shared Environments** | No environment sharing | Teams can't collaborate | `innominatus share <env> --with=<team>` |
 | **Change Attribution** | Basic audit logs | "Who broke staging?" | Rich commit history with blame |
-| **Approval Workflows** | No approval gates | Uncontrolled deployments | `idp-o approve <deployment>` with RBAC |
+| **Approval Workflows** | No approval gates | Uncontrolled deployments | `innominatus approve <deployment>` with RBAC |
 | **Notifications** | No alerting | Teams unaware of failures | Slack/Teams integration |
 
 ### **8. Performance & Scaling DevEx**
@@ -134,22 +134,22 @@ The user requested a comprehensive gap analysis for their graph-based IDP Orches
 ## **DevEx Improvement Roadmap**
 
 ### **Phase 1: Core Developer Workflow (Immediate)**
-- `idp-o dev` unified development mode
+- `innominatus dev` unified development mode
 - Hot reload for server changes
 - Improved error messages with context
-- `idp-o validate --explain` with suggestions
+- `innominatus validate --explain` with suggestions
 
 ### **Phase 2: Debugging & Observability (Short-term)**
 - Structured logging with trace IDs
-- `idp-o debug` interactive workflow debugging
+- `innominatus debug` interactive workflow debugging
 - Performance metrics dashboard
 - Health check endpoints
 
 ### **Phase 3: Advanced Tooling (Medium-term)**
 - VS Code extension with IntelliSense
-- `idp-o doctor` diagnostic tool
+- `innominatus doctor` diagnostic tool
 - Workflow testing framework
-- Template library with `idp-o init`
+- Template library with `innominatus init`
 
 ### **Phase 4: Team Collaboration (Long-term)**
 - Environment sharing and RBAC

@@ -47,7 +47,7 @@ If you experience or witness unacceptable behavior, please report it to the proj
 There are many ways to contribute to innominatus:
 
 ### 1. **Report Bugs**
-Found a bug? Please [create an issue](https://github.com/philipsahli/idp-o/issues/new) with:
+Found a bug? Please [create an issue](https://github.com/philipsahli/innominatus/issues/new) with:
 - Clear description of the problem
 - Steps to reproduce
 - Expected vs. actual behavior
@@ -100,14 +100,14 @@ Help improve test coverage:
 2. Clone your fork locally:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/idp-o.git
-cd idp-o
+git clone https://github.com/YOUR_USERNAME/innominatus.git
+cd innominatus
 ```
 
 3. Add the upstream repository:
 
 ```bash
-git remote add upstream https://github.com/philipsahli/idp-o.git
+git remote add upstream https://github.com/philipsahli/innominatus.git
 ```
 
 ### Build and Run

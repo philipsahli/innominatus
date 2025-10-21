@@ -4,7 +4,7 @@
 
 > A workflow orchestration component that executes multi-step deployments from Score specifications. Built for platform teams, used by developers.
 
-[![codecov](https://codecov.io/github/philipsahli/idp-o/graph/badge.svg?token=757WSWZMKD)](https://codecov.io/github/philipsahli/idp-o) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Tests](https://github.com/philipsahli/idp-o/actions/workflows/test.yml/badge.svg)](https://github.com/philipsahli/idp-o/actions/workflows/test.yml) [![Security](https://github.com/philipsahli/idp-o/actions/workflows/security.yml/badge.svg)](https://github.com/philipsahli/idp-o/actions/workflows/security.yml)
+[![codecov](https://codecov.io/github/philipsahli/innominatus/graph/badge.svg?token=757WSWZMKD)](https://codecov.io/github/philipsahli/innominatus) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Tests](https://github.com/philipsahli/innominatus/actions/workflows/test.yml/badge.svg)](https://github.com/philipsahli/innominatus/actions/workflows/test.yml) [![Security](https://github.com/philipsahli/innominatus/actions/workflows/security.yml/badge.svg)](https://github.com/philipsahli/innominatus/actions/workflows/security.yml)
 
 ---
 

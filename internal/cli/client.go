@@ -24,7 +24,7 @@ func NewClient(baseURL string) *Client {
 	token := ""
 	// Priority order for API key:
 	// 1. Environment variable (highest priority - for CI/CD)
-	// 2. Credentials file ($HOME/.idp-o/credentials)
+	// 2. Credentials file ($HOME/.innominatus/credentials)
 	// 3. No API key (will prompt for login when needed)
 
 	if apiKey := os.Getenv("IDP_API_KEY"); apiKey != "" {
@@ -130,8 +130,8 @@ type GoldenPathInfo struct {
 	EstimatedDuration string                 `json:"estimated_duration"`
 	WorkflowFile      string                 `json:"workflow_file"`
 	Parameters        map[string]interface{} `json:"parameters,omitempty"`
-	RequiredParams    []string               `json:"required_params,omitempty"`    // Deprecated
-	OptionalParams    map[string]string      `json:"optional_params,omitempty"`    // Deprecated
+	RequiredParams    []string               `json:"required_params,omitempty"` // Deprecated
+	OptionalParams    map[string]string      `json:"optional_params,omitempty"` // Deprecated
 }
 
 // Login authenticates with the server and stores the token

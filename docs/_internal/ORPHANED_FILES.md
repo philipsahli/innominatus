@@ -115,7 +115,7 @@ cookies.txt
 test-build
 test-lifecycle
 test-server
-idp-o
+innominatus
 innominatus-ctl
 main
 

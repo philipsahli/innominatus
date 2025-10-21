@@ -25,7 +25,7 @@ func GetCredentialsPath() (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	credDir := filepath.Join(homeDir, ".idp-o")
+	credDir := filepath.Join(homeDir, ".innominatus")
 	return filepath.Join(credDir, "credentials"), nil
 }
 

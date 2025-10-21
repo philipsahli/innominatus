@@ -16,6 +16,7 @@ RUN go mod download
 # Copy source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY migrations/ ./cmd/server/migrations/
 
 # Build server binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o innominatus cmd/server/main.go
@@ -55,11 +56,10 @@ COPY --from=web-builder /web-ui/.next/standalone /app/web-ui/
 COPY --from=web-builder /web-ui/.next/static /app/web-ui/.next/static
 COPY --from=web-builder /web-ui/public /app/web-ui/public
 
-# Copy configuration files
-COPY admin-config.yaml /app/admin-config.yaml
-COPY goldenpaths.yaml /app/goldenpaths.yaml
+# Copy configuration files from examples directory
+COPY examples/admin-config.yaml /app/admin-config.yaml
+COPY examples/goldenpaths.yaml /app/goldenpaths.yaml
 COPY workflows/ /app/workflows/
-COPY docs/ /app/docs/
 
 # Expose server port
 EXPOSE 8081
