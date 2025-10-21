@@ -3,273 +3,530 @@ package graph
 import (
 	"strings"
 	"testing"
-	"time"
 
 	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
 )
 
-func TestMermaidExporter_ExportGraph(t *testing.T) {
-	// Create a sample graph
-	graph := sdk.NewGraph("test-app")
+// Test helper to create a sample graph
+func createTestGraph() *sdk.Graph {
+	g := sdk.NewGraph("test-app")
 
 	// Add nodes
 	specNode := &sdk.Node{
-		ID:    "spec-1",
-		Type:  sdk.NodeTypeSpec,
-		Name:  "my-app",
-		State: sdk.NodeStateSucceeded,
-		Properties: map[string]interface{}{
-			"version": "1.0",
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:          "spec-1",
+		Type:        sdk.NodeTypeSpec,
+		Name:        "Test Spec",
+		Description: "Test spec node",
+		State:       sdk.NodeStateSucceeded,
 	}
-	if err := graph.AddNode(specNode); err != nil {
-		t.Fatalf("Failed to add spec node: %v", err)
-	}
+	_ = g.AddNode(specNode)
 
 	workflowNode := &sdk.Node{
-		ID:    "workflow-1",
-		Type:  sdk.NodeTypeWorkflow,
-		Name:  "deploy-app",
-		State: sdk.NodeStateRunning,
-		Properties: map[string]interface{}{
-			"execution_id": 123,
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:          "workflow-1",
+		Type:        sdk.NodeTypeWorkflow,
+		Name:        "Deploy Workflow",
+		Description: "Main deployment workflow",
+		State:       sdk.NodeStateRunning,
 	}
-	if err := graph.AddNode(workflowNode); err != nil {
-		t.Fatalf("Failed to add workflow node: %v", err)
-	}
+	_ = g.AddNode(workflowNode)
 
 	stepNode := &sdk.Node{
-		ID:    "step-1",
-		Type:  sdk.NodeTypeStep,
-		Name:  "provision-database",
-		State: sdk.NodeStateSucceeded,
-		Properties: map[string]interface{}{
-			"step_number": 1,
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:          "step-1",
+		Type:        sdk.NodeTypeStep,
+		Name:        "Build Step",
+		Description: "Build application",
+		State:       sdk.NodeStatePending,
 	}
-	if err := graph.AddNode(stepNode); err != nil {
-		t.Fatalf("Failed to add step node: %v", err)
-	}
+	_ = g.AddNode(stepNode)
 
 	resourceNode := &sdk.Node{
-		ID:    "resource-1",
-		Type:  sdk.NodeTypeResource,
-		Name:  "postgres-db",
-		State: sdk.NodeStateWaiting,
-		Properties: map[string]interface{}{
-			"resource_type": "postgres",
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:          "resource-1",
+		Type:        sdk.NodeTypeResource,
+		Name:        "Database",
+		Description: "PostgreSQL database",
+		State:       sdk.NodeStateWaiting,
 	}
-	if err := graph.AddNode(resourceNode); err != nil {
-		t.Fatalf("Failed to add resource node: %v", err)
-	}
+	_ = g.AddNode(resourceNode)
 
-	// Add edges (workflow contains step is the primary relationship in SDK)
-	edge1 := &sdk.Edge{
-		ID:         "edge-1",
-		FromNodeID: "workflow-1",
-		ToNodeID:   "step-1",
-		Type:       sdk.EdgeTypeContains,
-	}
-	if err := graph.AddEdge(edge1); err != nil {
-		t.Logf("Warning: failed to add edge 1: %v", err)
-	}
+	// Add edges
+	_ = g.AddEdge(&sdk.Edge{
+		ID:          "edge-1",
+		FromNodeID:  "workflow-1",
+		ToNodeID:    "step-1",
+		Type:        sdk.EdgeTypeContains,
+		Description: "Workflow contains step",
+	})
 
-	edge2 := &sdk.Edge{
+	_ = g.AddEdge(&sdk.Edge{
 		ID:          "edge-2",
 		FromNodeID:  "step-1",
 		ToNodeID:    "resource-1",
 		Type:        sdk.EdgeTypeConfigures,
 		Description: "Step configures resource",
-	}
-	if err := graph.AddEdge(edge2); err != nil {
-		t.Logf("Warning: failed to add edge 2: %v", err)
-	}
+	})
 
-	// Debug: Check graph edges
-	t.Logf("Graph has %d edges", len(graph.Edges))
-	for id, edge := range graph.Edges {
-		t.Logf("Edge %s: %s -> %s (type: %s)", id, edge.FromNodeID, edge.ToNodeID, edge.Type)
-	}
-
-	// Export to Mermaid
-	exporter := NewMermaidExporter()
-	mermaidDiagram, err := exporter.ExportGraph(graph)
-
-	// Verify export succeeded
-	if err != nil {
-		t.Fatalf("ExportGraph() failed: %v", err)
-	}
-
-	// Verify Mermaid diagram structure
-	if !strings.Contains(mermaidDiagram, "flowchart TD") {
-		t.Error("Expected Mermaid diagram to start with 'flowchart TD'")
-	}
-
-	// Verify all nodes are present
-	expectedNodes := []string{"spec_1", "workflow_1", "step_1", "resource_1"}
-	for _, nodeID := range expectedNodes {
-		if !strings.Contains(mermaidDiagram, nodeID) {
-			t.Errorf("Expected diagram to contain node '%s'", nodeID)
-		}
-	}
-
-	// Verify node names are present
-	expectedNames := []string{"my-app", "deploy-app", "provision-database", "postgres-db"}
-	for _, name := range expectedNames {
-		if !strings.Contains(mermaidDiagram, name) {
-			t.Errorf("Expected diagram to contain node name '%s'", name)
-		}
-	}
-
-	// Verify edges are present
-	if !strings.Contains(mermaidDiagram, "-->") {
-		t.Error("Expected diagram to contain edges (-->)")
-	}
-
-	// Verify styling is present
-	if !strings.Contains(mermaidDiagram, "classDef") {
-		t.Error("Expected diagram to contain styling definitions")
-	}
-
-	// Verify state indicators
-	if !strings.Contains(mermaidDiagram, "✓") || !strings.Contains(mermaidDiagram, "▶") {
-		t.Error("Expected diagram to contain state icons")
-	}
-
-	t.Log("Generated Mermaid diagram:")
-	t.Log(mermaidDiagram)
+	return g
 }
 
-func TestMermaidExporter_ExportGraphSimple(t *testing.T) {
-	// Create a sample graph
-	graph := sdk.NewGraph("test-app")
-
-	// Add minimal nodes (workflow and step)
-	if err := graph.AddNode(&sdk.Node{
-		ID:    "workflow-1",
-		Type:  sdk.NodeTypeWorkflow,
-		Name:  "Deploy Workflow",
-		State: sdk.NodeStateRunning,
-	}); err != nil {
-		t.Fatalf("Failed to add workflow node: %v", err)
-	}
-
-	if err := graph.AddNode(&sdk.Node{
-		ID:    "step-1",
-		Type:  sdk.NodeTypeStep,
-		Name:  "Provision Step",
-		State: sdk.NodeStateSucceeded,
-	}); err != nil {
-		t.Fatalf("Failed to add step node: %v", err)
-	}
-
-	// Add edge (workflow contains step)
-	if err := graph.AddEdge(&sdk.Edge{
-		ID:         "edge-1",
-		FromNodeID: "workflow-1",
-		ToNodeID:   "step-1",
-		Type:       sdk.EdgeTypeContains,
-	}); err != nil {
-		t.Logf("Warning: failed to add edge: %v", err)
-	}
-
-	// Export to simple Mermaid format
+func TestNewMermaidExporter(t *testing.T) {
 	exporter := NewMermaidExporter()
-	mermaidDiagram, err := exporter.ExportGraphSimple(graph)
-
-	// Verify export succeeded
-	if err != nil {
-		t.Fatalf("ExportGraphSimple() failed: %v", err)
+	if exporter == nil {
+		t.Fatal("NewMermaidExporter() returned nil")
 	}
-
-	// Verify it's a horizontal layout
-	if !strings.Contains(mermaidDiagram, "flowchart LR") {
-		t.Error("Expected simple diagram to use horizontal layout (LR)")
-	}
-
-	// Verify nodes are present
-	if !strings.Contains(mermaidDiagram, "workflow_1") || !strings.Contains(mermaidDiagram, "step_1") {
-		t.Error("Expected diagram to contain sanitized node IDs")
-	}
-
-	// Verify edge is present
-	if !strings.Contains(mermaidDiagram, "-->") {
-		t.Error("Expected diagram to contain edge")
-	}
-
-	// Verify it's simpler (no styling)
-	if strings.Contains(mermaidDiagram, "classDef") {
-		t.Error("Simple diagram should not contain styling definitions")
-	}
-
-	t.Log("Generated simple Mermaid diagram:")
-	t.Log(mermaidDiagram)
 }
 
-func TestMermaidExporter_SanitizeID(t *testing.T) {
-	exporter := NewMermaidExporter()
-
+func TestExportGraph(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected string
+		name      string
+		graph     *sdk.Graph
+		wantErr   bool
+		wantParts []string // Strings that should be present in output
 	}{
-		{"spec:my-app", "spec_my_app"},
-		{"workflow-123", "workflow_123"},
-		{"step.1", "step_1"},
-		{"resource:postgres:db", "resource_postgres_db"},
-		{"node with spaces", "node_with_spaces"},
+		{
+			name:    "nil graph returns error",
+			graph:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "valid graph exports successfully",
+			graph:   createTestGraph(),
+			wantErr: false,
+			wantParts: []string{
+				"flowchart TD",
+				"%% Workflow Execution Graph",
+				"%% Nodes",
+				"%% Edges",
+				"%% Styling",
+				"spec_1",
+				"workflow_1",
+				"step_1",
+				"resource_1",
+			},
+		},
+		{
+			name: "empty graph exports successfully",
+			graph: func() *sdk.Graph {
+				return sdk.NewGraph("empty-app")
+			}(),
+			wantErr: false,
+			wantParts: []string{
+				"flowchart TD",
+				"%% Nodes",
+			},
+		},
 	}
 
-	for _, test := range tests {
-		result := exporter.sanitizeID(test.input)
-		if result != test.expected {
-			t.Errorf("sanitizeID(%s) = %s, want %s", test.input, result, test.expected)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewMermaidExporter()
+			got, err := m.ExportGraph(tt.graph)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExportGraph() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if err != nil {
+				return
+			}
+
+			// Check for expected parts in output
+			for _, part := range tt.wantParts {
+				if !strings.Contains(got, part) {
+					t.Errorf("ExportGraph() output missing expected part: %q", part)
+				}
+			}
+		})
 	}
 }
 
-func TestMermaidExporter_GetStateIcon(t *testing.T) {
-	exporter := NewMermaidExporter()
-
+func TestExportGraphSimple(t *testing.T) {
 	tests := []struct {
-		state        sdk.NodeState
-		expectedIcon string
+		name      string
+		graph     *sdk.Graph
+		wantErr   bool
+		wantParts []string
 	}{
-		{sdk.NodeStateSucceeded, "✓"},
-		{sdk.NodeStateFailed, "✗"},
-		{sdk.NodeStateRunning, "▶"},
-		{sdk.NodeStateWaiting, "⏸"},
-		{sdk.NodeStatePending, "○"},
+		{
+			name:    "nil graph returns error",
+			graph:   nil,
+			wantErr: true,
+		},
+		{
+			name:    "valid graph exports successfully",
+			graph:   createTestGraph(),
+			wantErr: false,
+			wantParts: []string{
+				"flowchart LR",
+				"%% Simplified Workflow Graph",
+				"spec_1[\"Test Spec\"]",
+				"workflow_1[\"Deploy Workflow\"]",
+				"step_1[\"Build Step\"]",
+				"resource_1[\"Database\"]",
+				"-->",
+			},
+		},
+		{
+			name: "empty graph exports successfully",
+			graph: func() *sdk.Graph {
+				return sdk.NewGraph("empty-app")
+			}(),
+			wantErr: false,
+			wantParts: []string{
+				"flowchart LR",
+			},
+		},
 	}
 
-	for _, test := range tests {
-		icon := exporter.getStateIcon(test.state)
-		if icon != test.expectedIcon {
-			t.Errorf("getStateIcon(%s) = %s, want %s", test.state, icon, test.expectedIcon)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewMermaidExporter()
+			got, err := m.ExportGraphSimple(tt.graph)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExportGraphSimple() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if err != nil {
+				return
+			}
+
+			for _, part := range tt.wantParts {
+				if !strings.Contains(got, part) {
+					t.Errorf("ExportGraphSimple() output missing expected part: %q", part)
+				}
+			}
+		})
+	}
+}
+
+func TestSanitizeID(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "replace colon", input: "node:1", want: "node_1"},
+		{name: "replace hyphen", input: "node-1", want: "node_1"},
+		{name: "replace dot", input: "node.1", want: "node_1"},
+		{name: "replace space", input: "node 1", want: "node_1"},
+		{name: "multiple replacements", input: "spec:app-1.test", want: "spec_app_1_test"},
+		{name: "no replacements needed", input: "node_1", want: "node_1"},
+		{name: "empty string", input: "", want: ""},
+	}
+
+	m := NewMermaidExporter()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.sanitizeID(tt.input)
+			if got != tt.want {
+				t.Errorf("sanitizeID(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatNodeLabel(t *testing.T) {
+	tests := []struct {
+		name      string
+		nodeName  string
+		nodeType  sdk.NodeType
+		state     sdk.NodeState
+		wantParts []string // Parts that should be present in the label
+	}{
+		{
+			name:      "spec node succeeded",
+			nodeName:  "My Spec",
+			nodeType:  sdk.NodeTypeSpec,
+			state:     sdk.NodeStateSucceeded,
+			wantParts: []string{"✓", "My Spec", "spec"},
+		},
+		{
+			name:      "workflow failed",
+			nodeName:  "Deploy",
+			nodeType:  sdk.NodeTypeWorkflow,
+			state:     sdk.NodeStateFailed,
+			wantParts: []string{"✗", "Deploy", "workflow"},
+		},
+		{
+			name:      "step running",
+			nodeName:  "Build",
+			nodeType:  sdk.NodeTypeStep,
+			state:     sdk.NodeStateRunning,
+			wantParts: []string{"▶", "Build", "step"},
+		},
+		{
+			name:      "resource waiting",
+			nodeName:  "Database",
+			nodeType:  sdk.NodeTypeResource,
+			state:     sdk.NodeStateWaiting,
+			wantParts: []string{"⏸", "Database", "resource"},
+		},
+		{
+			name:      "quotes in name are escaped",
+			nodeName:  "Node \"quoted\"",
+			nodeType:  sdk.NodeTypeSpec,
+			state:     sdk.NodeStatePending,
+			wantParts: []string{"Node 'quoted'"},
+		},
+	}
+
+	m := NewMermaidExporter()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.formatNodeLabel(tt.nodeName, tt.nodeType, tt.state)
+			for _, part := range tt.wantParts {
+				if !strings.Contains(got, part) {
+					t.Errorf("formatNodeLabel() = %q, missing expected part: %q", got, part)
+				}
+			}
+		})
+	}
+}
+
+func TestGetNodeStyle(t *testing.T) {
+	tests := []struct {
+		name     string
+		nodeType sdk.NodeType
+		state    sdk.NodeState
+		want     string
+	}{
+		{name: "spec node", nodeType: sdk.NodeTypeSpec, state: sdk.NodeStateSucceeded, want: "["},
+		{name: "workflow node", nodeType: sdk.NodeTypeWorkflow, state: sdk.NodeStateRunning, want: "{"},
+		{name: "step node", nodeType: sdk.NodeTypeStep, state: sdk.NodeStatePending, want: "["},
+		{name: "resource node", nodeType: sdk.NodeTypeResource, state: sdk.NodeStateWaiting, want: "("},
+		{name: "unknown type defaults to rectangle", nodeType: sdk.NodeType("unknown"), state: sdk.NodeStateSucceeded, want: "["},
+	}
+
+	m := NewMermaidExporter()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.getNodeStyle(tt.nodeType, tt.state)
+			if got != tt.want {
+				t.Errorf("getNodeStyle(%q, %q) = %q, want %q", tt.nodeType, tt.state, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatEdgeLabel(t *testing.T) {
+	tests := []struct {
+		name        string
+		edgeType    sdk.EdgeType
+		description string
+		want        string
+	}{
+		{name: "contains edge", edgeType: sdk.EdgeTypeContains, description: "", want: "contains"},
+		{name: "depends on edge", edgeType: sdk.EdgeTypeDependsOn, description: "", want: "depends on"},
+		{name: "provisions edge", edgeType: sdk.EdgeTypeProvisions, description: "", want: "provisions"},
+		{name: "creates edge", edgeType: sdk.EdgeTypeCreates, description: "", want: "creates"},
+		{name: "binds to edge", edgeType: sdk.EdgeTypeBindsTo, description: "", want: "binds to"},
+		{name: "configures edge", edgeType: sdk.EdgeTypeConfigures, description: "", want: "configures"},
+		{name: "unknown edge type", edgeType: sdk.EdgeType("unknown"), description: "", want: "unknown"},
+	}
+
+	m := NewMermaidExporter()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.formatEdgeLabel(tt.edgeType, tt.description)
+			if got != tt.want {
+				t.Errorf("formatEdgeLabel(%q, %q) = %q, want %q", tt.edgeType, tt.description, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetStateIcon(t *testing.T) {
+	tests := []struct {
+		state sdk.NodeState
+		want  string
+	}{
+		{state: sdk.NodeStateSucceeded, want: "✓"},
+		{state: sdk.NodeStateFailed, want: "✗"},
+		{state: sdk.NodeStateRunning, want: "▶"},
+		{state: sdk.NodeStateWaiting, want: "⏸"},
+		{state: sdk.NodeStatePending, want: "○"},
+		{state: sdk.NodeState("unknown"), want: "•"},
+	}
+
+	m := NewMermaidExporter()
+	for _, tt := range tests {
+		t.Run(string(tt.state), func(t *testing.T) {
+			got := m.getStateIcon(tt.state)
+			if got != tt.want {
+				t.Errorf("getStateIcon(%q) = %q, want %q", tt.state, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetNodeClass(t *testing.T) {
+	tests := []struct {
+		name     string
+		nodeType sdk.NodeType
+		state    sdk.NodeState
+		want     string
+	}{
+		// State takes precedence
+		{name: "failed state takes precedence", nodeType: sdk.NodeTypeSpec, state: sdk.NodeStateFailed, want: "failed"},
+		{name: "running state takes precedence", nodeType: sdk.NodeTypeWorkflow, state: sdk.NodeStateRunning, want: "running"},
+		{name: "waiting state takes precedence", nodeType: sdk.NodeTypeStep, state: sdk.NodeStateWaiting, want: "waiting"},
+
+		// Type-based classes for non-failed/running/waiting states
+		{name: "spec type class", nodeType: sdk.NodeTypeSpec, state: sdk.NodeStateSucceeded, want: "spec"},
+		{name: "workflow type class", nodeType: sdk.NodeTypeWorkflow, state: sdk.NodeStatePending, want: "workflow"},
+		{name: "step type class", nodeType: sdk.NodeTypeStep, state: sdk.NodeStateSucceeded, want: "step"},
+		{name: "resource type class", nodeType: sdk.NodeTypeResource, state: sdk.NodeStatePending, want: "resource"},
+		{name: "unknown type defaults to waiting", nodeType: sdk.NodeType("unknown"), state: sdk.NodeStateSucceeded, want: "waiting"},
+	}
+
+	m := NewMermaidExporter()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.getNodeClass(tt.nodeType, tt.state)
+			if got != tt.want {
+				t.Errorf("getNodeClass(%q, %q) = %q, want %q", tt.nodeType, tt.state, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExportGraphWithAllStates(t *testing.T) {
+	// Create a graph with all possible states
+	g := sdk.NewGraph("all-states-app")
+
+	states := []sdk.NodeState{
+		sdk.NodeStateSucceeded,
+		sdk.NodeStateFailed,
+		sdk.NodeStateRunning,
+		sdk.NodeStateWaiting,
+		sdk.NodeStatePending,
+	}
+
+	for _, state := range states {
+		node := &sdk.Node{
+			ID:    string(state) + "-node",
+			Type:  sdk.NodeTypeStep,
+			Name:  string(state),
+			State: state,
+		}
+		_ = g.AddNode(node)
+	}
+
+	m := NewMermaidExporter()
+	output, err := m.ExportGraph(g)
+	if err != nil {
+		t.Fatalf("ExportGraph() error = %v", err)
+	}
+
+	// Verify all state icons are present
+	expectedIcons := []string{"✓", "✗", "▶", "⏸", "○"}
+	for _, icon := range expectedIcons {
+		if !strings.Contains(output, icon) {
+			t.Errorf("ExportGraph() missing state icon: %q", icon)
+		}
+	}
+
+	// Verify all CSS classes are present
+	expectedClasses := []string{"failed", "running", "waiting", "step"}
+	for _, class := range expectedClasses {
+		if !strings.Contains(output, class) {
+			t.Errorf("ExportGraph() missing CSS class: %q", class)
 		}
 	}
 }
 
-func TestMermaidExporter_NilGraph(t *testing.T) {
-	exporter := NewMermaidExporter()
+func TestExportGraphWithAllNodeTypes(t *testing.T) {
+	// Create a graph with all node types
+	g := sdk.NewGraph("all-types-app")
 
-	_, err := exporter.ExportGraph(nil)
-	if err == nil {
-		t.Error("Expected error when exporting nil graph")
+	nodeTypes := []sdk.NodeType{
+		sdk.NodeTypeSpec,
+		sdk.NodeTypeWorkflow,
+		sdk.NodeTypeStep,
+		sdk.NodeTypeResource,
 	}
 
-	_, err = exporter.ExportGraphSimple(nil)
-	if err == nil {
-		t.Error("Expected error when exporting nil graph (simple)")
+	for _, nodeType := range nodeTypes {
+		node := &sdk.Node{
+			ID:    string(nodeType) + "-node",
+			Type:  nodeType,
+			Name:  string(nodeType),
+			State: sdk.NodeStateSucceeded,
+		}
+		_ = g.AddNode(node)
+	}
+
+	m := NewMermaidExporter()
+	output, err := m.ExportGraph(g)
+	if err != nil {
+		t.Fatalf("ExportGraph() error = %v", err)
+	}
+
+	// Verify all node types are present
+	for _, nodeType := range nodeTypes {
+		if !strings.Contains(output, string(nodeType)) {
+			t.Errorf("ExportGraph() missing node type: %q", nodeType)
+		}
+	}
+
+	// Verify all CSS classes are present
+	expectedClasses := []string{"spec", "workflow", "step", "resource"}
+	for _, class := range expectedClasses {
+		if !strings.Contains(output, class) {
+			t.Errorf("ExportGraph() missing CSS class for node type: %q", class)
+		}
+	}
+}
+
+func TestExportGraphWithAllEdgeTypes(t *testing.T) {
+	// Create a graph with all edge types
+	g := sdk.NewGraph("all-edges-app")
+
+	// Create nodes
+	workflow := &sdk.Node{ID: "workflow-1", Type: sdk.NodeTypeWorkflow, Name: "Workflow", State: sdk.NodeStateRunning}
+	step := &sdk.Node{ID: "step-1", Type: sdk.NodeTypeStep, Name: "Step", State: sdk.NodeStatePending}
+	resource := &sdk.Node{ID: "resource-1", Type: sdk.NodeTypeResource, Name: "Resource", State: sdk.NodeStateWaiting}
+	spec := &sdk.Node{ID: "spec-1", Type: sdk.NodeTypeSpec, Name: "Spec", State: sdk.NodeStateSucceeded}
+
+	_ = g.AddNode(workflow)
+	_ = g.AddNode(step)
+	_ = g.AddNode(resource)
+	_ = g.AddNode(spec)
+
+	// Add edges with all types
+	edges := []struct {
+		id       string
+		from     string
+		to       string
+		edgeType sdk.EdgeType
+	}{
+		{"edge-1", "workflow-1", "step-1", sdk.EdgeTypeContains},
+		{"edge-2", "step-1", "resource-1", sdk.EdgeTypeConfigures},
+		{"edge-3", "workflow-1", "resource-1", sdk.EdgeTypeProvisions},
+	}
+
+	for _, e := range edges {
+		_ = g.AddEdge(&sdk.Edge{
+			ID:         e.id,
+			FromNodeID: e.from,
+			ToNodeID:   e.to,
+			Type:       e.edgeType,
+		})
+	}
+
+	m := NewMermaidExporter()
+	output, err := m.ExportGraph(g)
+	if err != nil {
+		t.Fatalf("ExportGraph() error = %v", err)
+	}
+
+	// Verify edge labels are present
+	expectedLabels := []string{"contains", "configures", "provisions"}
+	for _, label := range expectedLabels {
+		if !strings.Contains(output, label) {
+			t.Errorf("ExportGraph() missing edge label: %q", label)
+		}
 	}
 }

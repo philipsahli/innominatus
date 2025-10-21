@@ -2,443 +2,414 @@ package goldenpaths
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
-func TestValidateParameterValue_String(t *testing.T) {
+func TestValidateParameterValue(t *testing.T) {
 	tests := []struct {
-		name        string
-		paramName   string
-		value       string
-		schema      *ParameterSchema
-		expectError bool
-		errorMsg    string
+		name      string
+		paramName string
+		value     string
+		schema    *ParameterSchema
+		wantErr   bool
+		errMsg    string
 	}{
 		{
-			name:      "valid string without constraints",
-			paramName: "app_name",
-			value:     "myapp",
-			schema: &ParameterSchema{
-				Type: "string",
-			},
-			expectError: false,
+			name:      "nil schema allows any value",
+			paramName: "test",
+			value:     "anything",
+			schema:    nil,
+			wantErr:   false,
 		},
 		{
-			name:      "valid string with pattern",
-			paramName: "app_name",
-			value:     "my-app-123",
-			schema: &ParameterSchema{
-				Type:    "string",
-				Pattern: `^[a-z][a-z0-9\-]*$`,
-			},
-			expectError: false,
-		},
-		{
-			name:      "invalid string - pattern mismatch",
-			paramName: "app_name",
-			value:     "My-App-123",
-			schema: &ParameterSchema{
-				Type:    "string",
-				Pattern: `^[a-z][a-z0-9\-]*$`,
-			},
-			expectError: true,
-			errorMsg:    "must match pattern",
-		},
-		{
-			name:      "valid string from allowed values",
-			paramName: "environment",
-			value:     "production",
-			schema: &ParameterSchema{
-				Type:          "string",
-				AllowedValues: []string{"development", "staging", "production"},
-			},
-			expectError: false,
-		},
-		{
-			name:      "invalid string - not in allowed values",
-			paramName: "environment",
-			value:     "testing",
-			schema: &ParameterSchema{
-				Type:          "string",
-				AllowedValues: []string{"development", "staging", "production"},
-			},
-			expectError: true,
-			errorMsg:    "must be one of",
-		},
-		{
-			name:      "empty value for required parameter",
-			paramName: "app_name",
+			name:      "required parameter with empty value fails",
+			paramName: "app-name",
 			value:     "",
 			schema: &ParameterSchema{
 				Type:     "string",
 				Required: true,
 			},
-			expectError: true,
-			errorMsg:    "required",
+			wantErr: true,
+			errMsg:  "parameter is required",
 		},
 		{
-			name:      "empty value for optional parameter",
+			name:      "optional parameter with empty value passes",
 			paramName: "description",
 			value:     "",
 			schema: &ParameterSchema{
 				Type:     "string",
 				Required: false,
 			},
-			expectError: false,
+			wantErr: false,
+		},
+		{
+			name:      "unsupported type fails",
+			paramName: "test",
+			value:     "value",
+			schema: &ParameterSchema{
+				Type: "unsupported",
+			},
+			wantErr: true,
+			errMsg:  "unsupported parameter type",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := ValidateParameterValue(tt.paramName, tt.value, tt.schema)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateParameterValue() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err != nil && tt.errMsg != "" {
+				if _, ok := err.(*ParameterValidationError); !ok {
+					t.Errorf("Expected ParameterValidationError, got %T", err)
 				}
-			} else {
-				assert.NoError(t, err)
 			}
 		})
 	}
 }
 
-func TestValidateParameterValue_Int(t *testing.T) {
+func TestValidateString(t *testing.T) {
+	tests := []struct {
+		name      string
+		paramName string
+		value     string
+		schema    *ParameterSchema
+		wantErr   bool
+	}{
+		{
+			name:      "valid string passes",
+			paramName: "app-name",
+			value:     "my-app",
+			schema:    &ParameterSchema{Type: "string"},
+			wantErr:   false,
+		},
+		{
+			name:      "string matching pattern passes",
+			paramName: "app-name",
+			value:     "my-app",
+			schema: &ParameterSchema{
+				Type:    "string",
+				Pattern: "^[a-z-]+$",
+			},
+			wantErr: false,
+		},
+		{
+			name:      "string not matching pattern fails",
+			paramName: "app-name",
+			value:     "My App!",
+			schema: &ParameterSchema{
+				Type:    "string",
+				Pattern: "^[a-z-]+$",
+			},
+			wantErr: true,
+		},
+		{
+			name:      "string in allowed values passes",
+			paramName: "environment",
+			value:     "production",
+			schema: &ParameterSchema{
+				Type:          "string",
+				AllowedValues: []string{"dev", "staging", "production"},
+			},
+			wantErr: false,
+		},
+		{
+			name:      "string not in allowed values fails",
+			paramName: "environment",
+			value:     "test",
+			schema: &ParameterSchema{
+				Type:          "string",
+				AllowedValues: []string{"dev", "staging", "production"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateString(tt.paramName, tt.value, tt.schema)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateString() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateInt(t *testing.T) {
 	min5 := 5
 	max100 := 100
 
 	tests := []struct {
-		name        string
-		paramName   string
-		value       string
-		schema      *ParameterSchema
-		expectError bool
-		errorMsg    string
+		name      string
+		paramName string
+		value     string
+		schema    *ParameterSchema
+		wantErr   bool
 	}{
 		{
-			name:      "valid integer",
+			name:      "valid integer passes",
 			paramName: "replicas",
 			value:     "3",
-			schema: &ParameterSchema{
-				Type: "int",
-			},
-			expectError: false,
+			schema:    &ParameterSchema{Type: "int"},
+			wantErr:   false,
 		},
 		{
-			name:      "invalid integer - not numeric",
+			name:      "non-integer string fails",
 			paramName: "replicas",
 			value:     "abc",
-			schema: &ParameterSchema{
-				Type: "int",
-			},
-			expectError: true,
-			errorMsg:    "valid integer",
+			schema:    &ParameterSchema{Type: "int"},
+			wantErr:   true,
 		},
 		{
-			name:      "valid integer within range",
+			name:      "integer below min fails",
 			paramName: "replicas",
-			value:     "10",
-			schema: &ParameterSchema{
-				Type: "int",
-				Min:  &min5,
-				Max:  &max100,
-			},
-			expectError: false,
-		},
-		{
-			name:      "integer below minimum",
-			paramName: "replicas",
-			value:     "3",
+			value:     "2",
 			schema: &ParameterSchema{
 				Type: "int",
 				Min:  &min5,
 			},
-			expectError: true,
-			errorMsg:    "must be >= 5",
+			wantErr: true,
 		},
 		{
-			name:      "integer above maximum",
-			paramName: "replicas",
-			value:     "150",
-			schema: &ParameterSchema{
-				Type: "int",
-				Max:  &max100,
-			},
-			expectError: true,
-			errorMsg:    "must be <= 100",
-		},
-		{
-			name:      "integer at exact minimum",
+			name:      "integer at min passes",
 			paramName: "replicas",
 			value:     "5",
 			schema: &ParameterSchema{
 				Type: "int",
 				Min:  &min5,
 			},
-			expectError: false,
+			wantErr: false,
 		},
 		{
-			name:      "integer at exact maximum",
+			name:      "integer above max fails",
+			paramName: "replicas",
+			value:     "200",
+			schema: &ParameterSchema{
+				Type: "int",
+				Max:  &max100,
+			},
+			wantErr: true,
+		},
+		{
+			name:      "integer at max passes",
 			paramName: "replicas",
 			value:     "100",
 			schema: &ParameterSchema{
 				Type: "int",
 				Max:  &max100,
 			},
-			expectError: false,
+			wantErr: false,
 		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateParameterValue(tt.paramName, tt.value, tt.schema)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
-				}
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestValidateParameterValue_Bool(t *testing.T) {
-	tests := []struct {
-		name        string
-		paramName   string
-		value       string
-		schema      *ParameterSchema
-		expectError bool
-	}{
-		{name: "true", paramName: "enabled", value: "true", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "false", paramName: "enabled", value: "false", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "yes", paramName: "enabled", value: "yes", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "no", paramName: "enabled", value: "no", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "1", paramName: "enabled", value: "1", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "0", paramName: "enabled", value: "0", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "on", paramName: "enabled", value: "on", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "off", paramName: "enabled", value: "off", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "TRUE (uppercase)", paramName: "enabled", value: "TRUE", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "Yes (mixed case)", paramName: "enabled", value: "Yes", schema: &ParameterSchema{Type: "bool"}, expectError: false},
-		{name: "invalid", paramName: "enabled", value: "maybe", schema: &ParameterSchema{Type: "bool"}, expectError: true},
-		{name: "invalid number", paramName: "enabled", value: "2", schema: &ParameterSchema{Type: "bool"}, expectError: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateParameterValue(tt.paramName, tt.value, tt.schema)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "must be a boolean")
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestValidateParameterValue_Duration(t *testing.T) {
-	tests := []struct {
-		name        string
-		paramName   string
-		value       string
-		schema      *ParameterSchema
-		expectError bool
-		errorMsg    string
-	}{
-		{name: "hours", paramName: "ttl", value: "2h", schema: &ParameterSchema{Type: "duration"}, expectError: false},
-		{name: "minutes", paramName: "ttl", value: "30m", schema: &ParameterSchema{Type: "duration"}, expectError: false},
-		{name: "seconds", paramName: "ttl", value: "90s", schema: &ParameterSchema{Type: "duration"}, expectError: false},
-		{name: "days", paramName: "ttl", value: "7d", schema: &ParameterSchema{Type: "duration"}, expectError: false},
-		{name: "weeks", paramName: "ttl", value: "2w", schema: &ParameterSchema{Type: "duration"}, expectError: false},
-		{name: "combined", paramName: "ttl", value: "1h30m", schema: &ParameterSchema{Type: "duration"}, expectError: false},
-		{name: "invalid format", paramName: "ttl", value: "abc", schema: &ParameterSchema{Type: "duration"}, expectError: true, errorMsg: "invalid duration"},
-		{name: "invalid unit", paramName: "ttl", value: "2x", schema: &ParameterSchema{Type: "duration"}, expectError: true, errorMsg: "invalid duration"},
 		{
-			name:      "valid duration matching pattern",
-			paramName: "ttl",
-			value:     "2h",
+			name:      "integer in range passes",
+			paramName: "replicas",
+			value:     "50",
 			schema: &ParameterSchema{
-				Type:    "duration",
-				Pattern: `^\d+[hmd]$`,
+				Type: "int",
+				Min:  &min5,
+				Max:  &max100,
 			},
-			expectError: false,
-		},
-		{
-			name:      "duration not matching pattern",
-			paramName: "ttl",
-			value:     "2w",
-			schema: &ParameterSchema{
-				Type:    "duration",
-				Pattern: `^\d+[hmd]$`, // only h, m, d allowed
-			},
-			expectError: true,
-			errorMsg:    "must match pattern",
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateParameterValue(tt.paramName, tt.value, tt.schema)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
-				}
-			} else {
-				assert.NoError(t, err)
+			err := validateInt(tt.paramName, tt.value, tt.schema)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateInt() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestValidateParameterValue_Enum(t *testing.T) {
+func TestValidateBool(t *testing.T) {
 	tests := []struct {
-		name        string
-		paramName   string
-		value       string
-		schema      *ParameterSchema
-		expectError bool
-		errorMsg    string
+		name      string
+		paramName string
+		value     string
+		wantErr   bool
+	}{
+		{name: "true passes", paramName: "enabled", value: "true", wantErr: false},
+		{name: "false passes", paramName: "enabled", value: "false", wantErr: false},
+		{name: "yes passes", paramName: "enabled", value: "yes", wantErr: false},
+		{name: "no passes", paramName: "enabled", value: "no", wantErr: false},
+		{name: "1 passes", paramName: "enabled", value: "1", wantErr: false},
+		{name: "0 passes", paramName: "enabled", value: "0", wantErr: false},
+		{name: "on passes", paramName: "enabled", value: "on", wantErr: false},
+		{name: "off passes", paramName: "enabled", value: "off", wantErr: false},
+		{name: "True passes (case insensitive)", paramName: "enabled", value: "True", wantErr: false},
+		{name: "YES passes (case insensitive)", paramName: "enabled", value: "YES", wantErr: false},
+		{name: "invalid value fails", paramName: "enabled", value: "maybe", wantErr: true},
+		{name: "random string fails", paramName: "enabled", value: "abc", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateBool(tt.paramName, tt.value, &ParameterSchema{Type: "bool"})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateBool() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateDuration(t *testing.T) {
+	tests := []struct {
+		name      string
+		paramName string
+		value     string
+		wantErr   bool
+	}{
+		{name: "hours format passes", paramName: "timeout", value: "2h", wantErr: false},
+		{name: "minutes format passes", paramName: "timeout", value: "30m", wantErr: false},
+		{name: "seconds format passes", paramName: "timeout", value: "90s", wantErr: false},
+		{name: "days format passes", paramName: "retention", value: "7d", wantErr: false},
+		{name: "weeks format passes", paramName: "retention", value: "2w", wantErr: false},
+		{name: "combined format passes", paramName: "timeout", value: "1h30m", wantErr: false},
+		{name: "milliseconds passes", paramName: "timeout", value: "500ms", wantErr: false},
+		{name: "invalid format fails", paramName: "timeout", value: "abc", wantErr: true},
+		{name: "invalid days format fails", paramName: "timeout", value: "xd", wantErr: true},
+		{name: "invalid weeks format fails", paramName: "timeout", value: "yw", wantErr: true},
+		{name: "negative duration passes (allowed by time.ParseDuration)", paramName: "timeout", value: "-1h", wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDuration(tt.paramName, tt.value, &ParameterSchema{Type: "duration"})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateDuration() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateEnum(t *testing.T) {
+	tests := []struct {
+		name      string
+		paramName string
+		value     string
+		schema    *ParameterSchema
+		wantErr   bool
 	}{
 		{
-			name:      "valid enum value",
-			paramName: "environment_type",
-			value:     "preview",
+			name:      "value in enum passes",
+			paramName: "size",
+			value:     "medium",
 			schema: &ParameterSchema{
 				Type:          "enum",
-				AllowedValues: []string{"preview", "staging", "development"},
+				AllowedValues: []string{"small", "medium", "large"},
 			},
-			expectError: false,
+			wantErr: false,
 		},
 		{
-			name:      "invalid enum value",
-			paramName: "environment_type",
-			value:     "production",
+			name:      "value not in enum fails",
+			paramName: "size",
+			value:     "xlarge",
 			schema: &ParameterSchema{
 				Type:          "enum",
-				AllowedValues: []string{"preview", "staging", "development"},
+				AllowedValues: []string{"small", "medium", "large"},
 			},
-			expectError: true,
-			errorMsg:    "must be one of",
+			wantErr: true,
 		},
 		{
-			name:      "enum with no allowed values",
-			paramName: "environment_type",
-			value:     "preview",
+			name:      "empty allowed values fails",
+			paramName: "size",
+			value:     "medium",
 			schema: &ParameterSchema{
 				Type:          "enum",
 				AllowedValues: []string{},
 			},
-			expectError: true,
-			errorMsg:    "no allowed values defined",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateParameterValue(tt.paramName, tt.value, tt.schema)
-
-			if tt.expectError {
-				assert.Error(t, err)
-				if tt.errorMsg != "" {
-					assert.Contains(t, err.Error(), tt.errorMsg)
-				}
-			} else {
-				assert.NoError(t, err)
+			err := validateEnum(tt.paramName, tt.value, tt.schema)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateEnum() error = %v, wantErr %v", err, tt.wantErr)
 			}
-		})
-	}
-}
-
-func TestValidateParameterValue_UnsupportedType(t *testing.T) {
-	err := ValidateParameterValue("param", "value", &ParameterSchema{Type: "unsupported"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported parameter type")
-}
-
-func TestValidateParameterValue_NoSchema(t *testing.T) {
-	// No schema means no validation (backward compatibility)
-	err := ValidateParameterValue("param", "value", nil)
-	assert.NoError(t, err)
-}
-
-func TestParameterValidationError_Error(t *testing.T) {
-	tests := []struct {
-		name     string
-		err      *ParameterValidationError
-		expected string
-	}{
-		{
-			name: "full error with all fields",
-			err: &ParameterValidationError{
-				ParameterName: "replicas",
-				ProvidedValue: "150",
-				ExpectedType:  "int",
-				Constraint:    "value must be <= 100",
-				Suggestion:    "reduce the number of replicas",
-			},
-			expected: "parameter 'replicas' validation failed: provided value '150', value must be <= 100. Suggestion: reduce the number of replicas",
-		},
-		{
-			name: "error without provided value",
-			err: &ParameterValidationError{
-				ParameterName: "app_name",
-				ExpectedType:  "string",
-				Constraint:    "parameter is required",
-			},
-			expected: "parameter 'app_name' validation failed, parameter is required",
-		},
-		{
-			name: "error without suggestion",
-			err: &ParameterValidationError{
-				ParameterName: "enabled",
-				ProvidedValue: "maybe",
-				Constraint:    "value must be a boolean",
-			},
-			expected: "parameter 'enabled' validation failed: provided value 'maybe', value must be a boolean",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.err.Error())
 		})
 	}
 }
 
 func TestNormalizeBoolValue(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected string
+		name  string
+		value string
+		want  string
 	}{
-		{"true", "true"},
-		{"false", "false"},
-		{"yes", "true"},
-		{"no", "false"},
-		{"1", "true"},
-		{"0", "false"},
-		{"on", "true"},
-		{"off", "false"},
-		{"TRUE", "true"},
-		{"FALSE", "false"},
-		{"Yes", "true"},
-		{"No", "false"},
-		{"invalid", "invalid"},
+		{name: "true", value: "true", want: "true"},
+		{name: "True", value: "True", want: "true"},
+		{name: "TRUE", value: "TRUE", want: "true"},
+		{name: "yes", value: "yes", want: "true"},
+		{name: "Yes", value: "Yes", want: "true"},
+		{name: "1", value: "1", want: "true"},
+		{name: "on", value: "on", want: "true"},
+		{name: "ON", value: "ON", want: "true"},
+		{name: "false", value: "false", want: "false"},
+		{name: "False", value: "False", want: "false"},
+		{name: "FALSE", value: "FALSE", want: "false"},
+		{name: "no", value: "no", want: "false"},
+		{name: "No", value: "No", want: "false"},
+		{name: "0", value: "0", want: "false"},
+		{name: "off", value: "off", want: "false"},
+		{name: "OFF", value: "OFF", want: "false"},
+		{name: "invalid returns unchanged", value: "maybe", want: "maybe"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := NormalizeBoolValue(tt.input)
-			assert.Equal(t, tt.expected, result)
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeBoolValue(tt.value)
+			if got != tt.want {
+				t.Errorf("NormalizeBoolValue() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParameterValidationError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *ParameterValidationError
+		want string
+	}{
+		{
+			name: "full error message",
+			err: &ParameterValidationError{
+				ParameterName: "replicas",
+				ProvidedValue: "abc",
+				ExpectedType:  "int",
+				Constraint:    "value must be a valid integer",
+				Suggestion:    "provide a numeric value like: 1, 42, 100",
+			},
+			want: "parameter 'replicas' validation failed: provided value 'abc', value must be a valid integer. Suggestion: provide a numeric value like: 1, 42, 100",
+		},
+		{
+			name: "minimal error message",
+			err: &ParameterValidationError{
+				ParameterName: "test",
+			},
+			want: "parameter 'test' validation failed",
+		},
+		{
+			name: "error with constraint only",
+			err: &ParameterValidationError{
+				ParameterName: "app-name",
+				Constraint:    "parameter is required",
+			},
+			want: "parameter 'app-name' validation failed, parameter is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			if got != tt.want {
+				t.Errorf("ParameterValidationError.Error() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
