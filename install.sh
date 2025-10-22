@@ -73,9 +73,9 @@ log_error() {
 # Detect OS
 detect_os() {
   case "$(uname -s)" in
-    Linux*)     echo "Linux";;
-    Darwin*)    echo "Darwin";;
-    MINGW*|MSYS*|CYGWIN*) echo "Windows";;
+    Linux*)     echo "linux";;
+    Darwin*)    echo "darwin";;
+    MINGW*|MSYS*|CYGWIN*) echo "windows";;
     *)          echo "unknown";;
   esac
 }
@@ -83,7 +83,7 @@ detect_os() {
 # Detect architecture
 detect_arch() {
   case "$(uname -m)" in
-    x86_64|amd64) echo "x86_64";;
+    x86_64|amd64) echo "amd64";;
     aarch64|arm64) echo "arm64";;
     armv7l)       echo "armv7";;
     i386|i686)    echo "i386";;
