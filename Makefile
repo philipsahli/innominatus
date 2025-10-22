@@ -219,6 +219,29 @@ test-db-only: ## Run only database tests with Docker PostgreSQL
 	export DB_SSLMODE=disable && \
 	$(GO_CMD) test ./internal/database/... -v -race
 
+.PHONY: test-sqlite
+test-sqlite: ## Run tests with SQLite (no Docker required)
+	@echo "$(GREEN)Running tests with SQLite...$(NC)"
+	@export TEST_DB_DRIVER=sqlite && \
+	$(GO_CMD) test ./... -v -race -coverprofile=$(COVERAGE_FILE)
+	@echo "$(GREEN)All tests passed with SQLite!$(NC)"
+
+.PHONY: test-sqlite-only
+test-sqlite-only: ## Run only database tests with SQLite
+	@echo "$(GREEN)Running database tests with SQLite...$(NC)"
+	@export TEST_DB_DRIVER=sqlite && \
+	$(GO_CMD) test ./internal/database/... -v -race
+	@echo "$(GREEN)Database tests passed with SQLite!$(NC)"
+
+.PHONY: test-both
+test-both: ## Run tests with both PostgreSQL and SQLite
+	@echo "$(GREEN)Running tests with both PostgreSQL and SQLite...$(NC)"
+	@echo "$(YELLOW)1/2 Testing with PostgreSQL (testcontainers)...$(NC)"
+	@export TEST_DB_DRIVER=postgres && $(GO_CMD) test ./internal/database/... -v -short
+	@echo "$(YELLOW)2/2 Testing with SQLite (in-memory)...$(NC)"
+	@export TEST_DB_DRIVER=sqlite && $(GO_CMD) test ./internal/database/... -v -short
+	@echo "$(GREEN)All database tests passed with both drivers!$(NC)"
+
 ##@ Code Quality
 
 .PHONY: lint

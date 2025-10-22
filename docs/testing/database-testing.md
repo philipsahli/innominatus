@@ -1,12 +1,18 @@
 # Database Testing with Testcontainers
 
-This document explains how database persistence is handled in Go tests using **testcontainers-go**.
+This document explains how database persistence is handled in Go tests using **testcontainers-go** and **SQLite**.
 
 ## Overview
 
-All database tests now use [testcontainers-go](https://golang.testcontainers.org/) to automatically spin up PostgreSQL containers during test execution. This provides:
+Database tests support two drivers:
+
+1. **PostgreSQL** (default) - Production-like testing with testcontainers
+2. **SQLite** (optional) - Fast, zero-dependency testing
+
+Benefits:
 
 - **Zero manual setup**: No need to install PostgreSQL locally
+- **Multiple options**: Choose PostgreSQL (accuracy) or SQLite (speed)
 - **Isolation**: Each test gets a fresh database
 - **Portability**: Tests run consistently across all environments
 - **CI/CD ready**: Works seamlessly in GitHub Actions
@@ -50,23 +56,56 @@ func TestMyDatabaseFeature(t *testing.T) {
 
 ## Running Tests
 
+### Choose Your Database Driver
+
+**Option 1: SQLite (fastest, no Docker required)**
+```bash
+# All tests with SQLite
+TEST_DB_DRIVER=sqlite go test ./...
+
+# Or using Make
+make test-sqlite
+```
+
+**Option 2: PostgreSQL (default, production-like)**
+```bash
+# All tests with PostgreSQL testcontainers
+go test ./...
+
+# Or using Make
+make test
+```
+
+**Option 3: Both (comprehensive validation)**
+```bash
+# Run tests against both databases
+make test-both
+```
+
 ### Prerequisites
 
-**Docker must be installed and running**:
-- **Linux**: Docker Engine
-- **macOS**: Docker Desktop
-- **Windows**: Docker Desktop (WSL2 backend)
+**For PostgreSQL tests** (default):
+- **Docker must be installed and running**:
+  - **Linux**: Docker Engine
+  - **macOS**: Docker Desktop
+  - **Windows**: Docker Desktop (WSL2 backend)
 
 Check Docker is running:
 ```bash
 docker ps
 ```
 
+**For SQLite tests**:
+- No prerequisites! Works out of the box.
+
 ### Run All Tests
 
 ```bash
-# Run all tests (including database tests)
+# PostgreSQL (default) - Uses testcontainers
 go test ./...
+
+# SQLite (faster) - In-memory database
+TEST_DB_DRIVER=sqlite go test ./...
 
 # Run with coverage
 go test ./... -race -coverprofile=coverage.out
@@ -78,11 +117,18 @@ go test ./internal/database/... -v
 ### Using Make Commands
 
 ```bash
-# Run all local tests
+# Run all local tests (PostgreSQL default)
 make test
 
 # Run unit tests only
 make test-unit
+
+# Run with SQLite (no Docker)
+make test-sqlite
+make test-sqlite-only
+
+# Run with both databases
+make test-both
 
 # Run tests with Docker Compose database (alternative approach)
 make test-with-db
@@ -379,13 +425,28 @@ docker pull postgres:15-alpine
 - [Testcontainers Go Documentation](https://golang.testcontainers.org/)
 - [PostgreSQL Module Documentation](https://golang.testcontainers.org/modules/postgres/)
 - [Docker Desktop Downloads](https://www.docker.com/products/docker-desktop/)
+- [SQLite Support Guide](../development/sqlite-support.md)
 
 ## Questions?
 
 - **Why testcontainers instead of mocks?** Real database catches SQL bugs and migration issues
 - **Why PostgreSQL 15 Alpine?** Fast startup, small image size (40MB compressed)
-- **Can I use SQLite for tests?** Yes, but won't catch PostgreSQL-specific issues
+- **Can I use SQLite for tests?** Yes! Set `TEST_DB_DRIVER=sqlite` - fastest option, no Docker required
+- **When should I use SQLite vs PostgreSQL?** SQLite for speed/convenience, PostgreSQL for production-like testing
 - **Do I need to clean up containers?** No, testcontainers handles cleanup automatically
+- **Can I use both databases?** Yes! Run `make test-both` to validate against both
+
+## Database Driver Comparison
+
+| Feature | PostgreSQL | SQLite |
+|---------|-----------|--------|
+| **Setup** | Docker required | Zero setup |
+| **Speed** | ~30s first run, ~1.5s after | ~1.2s always |
+| **Accuracy** | Production-like | Good enough for dev |
+| **CI/CD** | Full validation | Fast feedback |
+| **Recommended for** | Pre-commit, CI/CD | Local dev, quick tests |
+
+**Recommendation**: Use SQLite for rapid iteration, PostgreSQL before committing.
 
 ---
 

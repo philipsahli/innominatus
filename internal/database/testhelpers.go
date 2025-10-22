@@ -7,6 +7,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -22,9 +23,67 @@ type TestDatabase struct {
 	cleanup   func()
 }
 
-// SetupTestDatabase creates a PostgreSQL testcontainer and returns a connected Database
-// The container is automatically cleaned up when the test completes via t.Cleanup()
+// SetupTestDatabase creates a test database based on TEST_DB_DRIVER environment variable
+//
+// Supported drivers:
+//   - TEST_DB_DRIVER=postgres (default) - PostgreSQL testcontainer
+//   - TEST_DB_DRIVER=sqlite - In-memory SQLite (fastest, no Docker required)
+//
+// The database is automatically cleaned up when the test completes via t.Cleanup()
 func SetupTestDatabase(t *testing.T) *TestDatabase {
+	t.Helper()
+
+	driver := os.Getenv("TEST_DB_DRIVER")
+	if driver == "" {
+		driver = "postgres" // Default to PostgreSQL for production-like testing
+	}
+
+	switch driver {
+	case "sqlite":
+		return setupTestDatabaseSQLite(t)
+	case "postgres":
+		return setupTestDatabasePostgres(t)
+	default:
+		t.Fatalf("Unsupported TEST_DB_DRIVER: %s (supported: postgres, sqlite)", driver)
+		return nil
+	}
+}
+
+// setupTestDatabaseSQLite creates an in-memory SQLite database for testing
+func setupTestDatabaseSQLite(t *testing.T) *TestDatabase {
+	t.Helper()
+
+	// Create in-memory SQLite database
+	db, err := NewSQLiteDatabase(":memory:")
+	if err != nil {
+		t.Skipf("Failed to create SQLite database: %v", err)
+		return nil
+	}
+
+	// Initialize schema
+	if err := db.InitSchema(); err != nil {
+		db.Close()
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	// Create test database wrapper
+	testDB := &TestDatabase{
+		Database:  db,
+		container: nil, // No container for SQLite
+		cleanup: func() {
+			db.Close()
+		},
+	}
+
+	// Register cleanup
+	t.Cleanup(testDB.cleanup)
+
+	t.Logf("Test database ready (SQLite in-memory)")
+	return testDB
+}
+
+// setupTestDatabasePostgres creates a PostgreSQL testcontainer for testing
+func setupTestDatabasePostgres(t *testing.T) *TestDatabase {
 	t.Helper()
 
 	ctx := context.Background()
@@ -182,3 +241,4 @@ func (td *TestDatabase) CleanupTestData(t *testing.T) {
 		t.Fatalf("Failed to cleanup test data: %v", err)
 	}
 }
+
