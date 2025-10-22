@@ -546,6 +546,266 @@ func (g *GrafanaManager) InstallInnominatusDashboard() error {
 						},
 					},
 				},
+				// Row 5: Enhanced Workflow Metrics
+				{
+					"id":    15,
+					"title": "Currently Running Workflows",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflows_running",
+							"legendFormat": "Running",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 0,
+						"y": 36,
+					},
+				},
+				{
+					"id":    16,
+					"title": "Workflow Executions by Name",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflows_by_name_total",
+							"legendFormat": "{{workflow_name}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 9,
+						"x": 6,
+						"y": 36,
+					},
+				},
+				{
+					"id":    17,
+					"title": "Workflow Failure Rate by Name",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "(innominatus_workflows_failures_by_name_total / innominatus_workflows_by_name_total) * 100",
+							"legendFormat": "{{workflow_name}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 9,
+						"x": 15,
+						"y": 36,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "percent",
+							"min":  0,
+							"max":  100,
+						},
+					},
+				},
+				// Row 6: Workflow Step Metrics
+				{
+					"id":    18,
+					"title": "Workflow Steps by Type",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflow_steps_total",
+							"legendFormat": "{{step_type}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 8,
+						"x": 0,
+						"y": 44,
+					},
+				},
+				{
+					"id":    19,
+					"title": "Step Failure Rate by Type",
+					"type":  "bargauge",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "(innominatus_workflow_steps_failed_total / innominatus_workflow_steps_total) * 100",
+							"legendFormat": "{{step_type}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 8,
+						"x": 8,
+						"y": 44,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "percent",
+							"min":  0,
+							"max":  100,
+						},
+					},
+				},
+				{
+					"id":    20,
+					"title": "Average Step Duration by Type",
+					"type":  "bargauge",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_workflow_step_duration_seconds_avg",
+							"legendFormat": "{{step_type}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 8,
+						"x": 16,
+						"y": 44,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "s",
+						},
+					},
+				},
+				// Row 7: Resource Metrics
+				{
+					"id":    21,
+					"title": "Resources by Lifecycle State",
+					"type":  "piechart",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_resources_by_state",
+							"legendFormat": "{{state}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 8,
+						"x": 0,
+						"y": 52,
+					},
+				},
+				{
+					"id":    22,
+					"title": "Resources by Type",
+					"type":  "bargauge",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_resources_by_type",
+							"legendFormat": "{{resource_type}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 8,
+						"x": 8,
+						"y": 52,
+					},
+				},
+				{
+					"id":    23,
+					"title": "Resource State Transitions",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_resource_state_transitions_total",
+							"legendFormat": "{{transition}}",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 8,
+						"w": 8,
+						"x": 16,
+						"y": 52,
+					},
+				},
+				// Row 8: Resource Health Metrics
+				{
+					"id":    24,
+					"title": "Resource Health Checks",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_resource_health_checks_total",
+							"legendFormat": "Total Checks",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 0,
+						"y": 60,
+					},
+				},
+				{
+					"id":    25,
+					"title": "Health Check Success Rate",
+					"type":  "gauge",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "((innominatus_resource_health_checks_total - innominatus_resource_health_checks_failed_total) / innominatus_resource_health_checks_total) * 100",
+							"legendFormat": "Success Rate",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 6,
+						"y": 60,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "percent",
+							"min":  0,
+							"max":  100,
+						},
+					},
+				},
+				{
+					"id":    26,
+					"title": "Average Health Check Response Time",
+					"type":  "stat",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "innominatus_resource_health_check_duration_ms_avg",
+							"legendFormat": "Avg Response Time",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 12,
+						"y": 60,
+					},
+					"fieldConfig": map[string]interface{}{
+						"defaults": map[string]interface{}{
+							"unit": "ms",
+						},
+					},
+				},
+				{
+					"id":    27,
+					"title": "Health Check Trends",
+					"type":  "timeseries",
+					"targets": []map[string]interface{}{
+						{
+							"expr":         "rate(innominatus_resource_health_checks_total[5m])",
+							"legendFormat": "Check Rate",
+						},
+						{
+							"expr":         "rate(innominatus_resource_health_checks_failed_total[5m])",
+							"legendFormat": "Failure Rate",
+						},
+					},
+					"gridPos": map[string]interface{}{
+						"h": 6,
+						"w": 6,
+						"x": 18,
+						"y": 60,
+					},
+				},
 			},
 			"time": map[string]interface{}{
 				"from": "now-1h",
