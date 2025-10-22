@@ -237,7 +237,7 @@ func SetupTestDatabaseShared() (*Database, func(), error) {
 func (td *TestDatabase) CleanupTestData(t *testing.T) {
 	t.Helper()
 
-	if err := td.TruncateAllTables(); err != nil {
+	if _, err := td.TruncateAllTables(); err != nil {
 		t.Fatalf("Failed to cleanup test data: %v", err)
 	}
 }

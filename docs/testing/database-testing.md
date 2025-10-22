@@ -183,7 +183,7 @@ func TestWithSharedDB(t *testing.T) {
     repo := NewWorkflowRepository(sharedDB)
 
     // Clean data between tests if needed
-    if err := sharedDB.TruncateAllTables(); err != nil {
+    if _, err := sharedDB.TruncateAllTables(); err != nil {
         t.Fatalf("Failed to cleanup: %v", err)
     }
 
