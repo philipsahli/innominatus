@@ -17,6 +17,7 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
+COPY examples/ ./examples/
 COPY migrations/ ./cmd/server/migrations/
 
 # Build server binary
@@ -39,6 +40,9 @@ RUN npm ci
 # Copy web-ui source
 COPY web-ui/ ./
 
+# Copy docs directory to parent level (required by Next.js docs lib)
+COPY docs/ /docs/
+
 # Build Next.js for production with standalone output (for Docker)
 ENV DOCKER_BUILD=true
 RUN npm run build
@@ -52,10 +56,8 @@ WORKDIR /app
 COPY --from=go-builder /build/innominatus /app/innominatus
 COPY --from=go-builder /build/innominatus-ctl /app/innominatus-ctl
 
-# Copy Next.js static export from web-builder
-COPY --from=web-builder /web-ui/.next/standalone /app/web-ui/
-COPY --from=web-builder /web-ui/.next/static /app/web-ui/.next/static
-COPY --from=web-builder /web-ui/public /app/web-ui/public
+# Copy Next.js static export from web-builder (uses 'export' mode)
+COPY --from=web-builder /web-ui/out /app/web-ui/out
 
 # Copy configuration files from examples directory
 COPY examples/admin-config.yaml /app/admin-config.yaml
@@ -67,7 +69,7 @@ EXPOSE 8081
 
 # Set environment variables
 ENV PORT=8081
-ENV WEB_UI_PATH=/app/web-ui
+ENV WEB_UI_PATH=/app/web-ui/out
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
