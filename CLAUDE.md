@@ -4,6 +4,19 @@ Score-based platform orchestration component for enterprise Internal Developer P
 
 ## Quick Start
 
+### Fast Start with SQLite (2 minutes, zero dependencies)
+
+```bash
+make build                                 # Build server
+./scripts/add-sqlite-dependency.sh         # Add SQLite driver
+DB_DRIVER=sqlite ./innominatus             # Start server (http://localhost:8081)
+```
+
+**Perfect for:** New developers, quick prototyping, demos
+**See:** [SQLite Development Guide](docs/quick-start/sqlite-development.md)
+
+### Full Start with PostgreSQL (production-like)
+
 **Build (using Makefile):**
 ```bash
 make install          # Install dependencies
@@ -22,7 +35,7 @@ go build -o innominatus-ctl cmd/cli/main.go         # CLI
 ```bash
 make dev              # Start server + web UI (http://localhost:8081 & http://localhost:3000)
 # Or separately:
-./innominatus                                        # Start server only
+./innominatus                                        # Start server only (PostgreSQL)
 ./innominatus-ctl list                               # List applications
 ./innominatus-ctl run deploy-app score-spec.yaml    # Deploy via golden path
 ```
@@ -33,11 +46,16 @@ make dev              # Start both server + web UI
 # Or separately:
 go run cmd/server/main.go                            # Dev server
 cd web-ui && npm run dev                             # Dev web UI (http://localhost:3000)
+
+# With SQLite (faster):
+DB_DRIVER=sqlite go run cmd/server/main.go           # SQLite dev server
 ```
 
 **Testing:**
 ```bash
-make test             # Run all local tests
+make test             # Run all local tests (PostgreSQL)
+make test-sqlite      # Run tests with SQLite (faster, no Docker)
+make test-both        # Run tests with both databases
 make test-unit        # Go unit tests only
 make test-e2e         # Go E2E tests (no K8s)
 make test-ui          # Web UI Playwright tests
@@ -122,6 +140,41 @@ export OIDC_CLIENT_SECRET="your-secret"
 ```
 
 Users can generate API keys via Web UI Profile page for CLI/API access.
+
+### Database Options
+
+Innominatus supports two database drivers for different use cases:
+
+**SQLite (Development):**
+```bash
+DB_DRIVER=sqlite ./innominatus                 # File-based (default: ./data/innominatus.db)
+DB_DRIVER=sqlite DB_PATH=:memory: ./innominatus # In-memory (fastest)
+```
+
+**Benefits:**
+- Zero setup (no Docker, no PostgreSQL)
+- Fast startup (~1s vs ~5s)
+- Perfect for onboarding, prototyping, demos
+- File-based or in-memory options
+
+**PostgreSQL (Production):**
+```bash
+./innominatus  # Uses default PostgreSQL config
+# Or with custom config:
+DB_DRIVER=postgres DB_HOST=localhost DB_PORT=5432 DB_USER=postgres DB_NAME=idp_orchestrator ./innominatus
+```
+
+**Benefits:**
+- Production-ready
+- Full concurrency support
+- Advanced features (JSONB, full-text search)
+- Required for production deployments
+
+**Configuration Files:**
+- SQLite: Copy [.env.sqlite.example](.env.sqlite.example) to `.env`
+- PostgreSQL: Copy [.env.postgres.example](.env.postgres.example) to `.env`
+
+**See:** [Database Options Documentation](docs/quick-start/README.md)
 
 ## Kubernetes Deployment
 

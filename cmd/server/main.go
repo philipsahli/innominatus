@@ -186,8 +186,8 @@ func main() {
 	var srv *server.Server
 
 	if !*disableDB {
-		// Try to initialize database
-		db, err := database.NewDatabase()
+		// Try to initialize database (auto-detects PostgreSQL or SQLite based on DB_DRIVER)
+		db, err := database.NewDatabaseAuto()
 		if err != nil {
 			logger.WarnWithFields("Failed to connect to database, starting without database features", map[string]interface{}{
 				"error": err.Error(),
