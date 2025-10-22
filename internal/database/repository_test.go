@@ -8,31 +8,27 @@ import (
 // ===== WorkflowRepository Tests =====
 
 func setupTestRepo(t *testing.T) *WorkflowRepository {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
+	t.Helper()
+
+	// Use testcontainers to spin up PostgreSQL automatically
+	testDB := SetupTestDatabase(t)
+	if testDB == nil {
+		// Test was skipped (Docker not available)
+		t.Skip("Database setup failed, test skipped")
+		return nil
 	}
 
-	// Initialize schema (creates tables)
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewWorkflowRepository(db)
+	repo := NewWorkflowRepository(testDB.Database)
 	return repo
 }
 
 func TestNewWorkflowRepository(t *testing.T) {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
+	testDB := SetupTestDatabase(t)
+	if testDB == nil {
+		t.Skip("Database setup failed, test skipped")
 	}
 
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewWorkflowRepository(db)
+	repo := NewWorkflowRepository(testDB.Database)
 	if repo == nil {
 		t.Fatal("NewWorkflowRepository() returned nil")
 	}

@@ -9,17 +9,17 @@ import (
 // ===== ResourceRepository Tests =====
 
 func setupTestResourceRepo(t *testing.T) *ResourceRepository {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
+	t.Helper()
+
+	// Use testcontainers to spin up PostgreSQL automatically
+	testDB := SetupTestDatabase(t)
+	if testDB == nil {
+		// Test was skipped (Docker not available)
+		t.Skip("Database setup failed, test skipped")
+		return nil
 	}
 
-	// Initialize schema (creates tables including hints column)
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewResourceRepository(db)
+	repo := NewResourceRepository(testDB.Database)
 	return repo
 }
 
@@ -44,16 +44,12 @@ func createTestResource(t *testing.T, repo *ResourceRepository, appName, resourc
 }
 
 func TestNewResourceRepository(t *testing.T) {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
+	testDB := SetupTestDatabase(t)
+	if testDB == nil {
+		t.Skip("Database setup failed, test skipped")
 	}
 
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewResourceRepository(db)
+	repo := NewResourceRepository(testDB.Database)
 	if repo == nil {
 		t.Fatal("NewResourceRepository() returned nil")
 	}
