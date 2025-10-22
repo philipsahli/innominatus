@@ -5,6 +5,8 @@ before:
     # Ensure dependencies are up to date
     - go mod tidy
     - go mod download
+    # Prepare static files for embedding (web-ui, swagger, migrations)
+    - ./scripts/prepare-embed.sh
 
 builds:
   # Server binary
