@@ -45,15 +45,13 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  # Server archive (Linux only)
+  # Server archive
   - id: server-archive
-    format: tar.gz
     name_template: >-
       {{ .ProjectName }}-server_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
-    # Only package the server binary (Linux builds)
     builds:
       - innominatus
     files:
@@ -66,18 +64,16 @@ archives:
 
   # CLI archive (all platforms)
   - id: cli-archive
-    format: tar.gz
-    format_overrides:
-      - goos: windows
-        format: zip
     name_template: >-
       {{ .ProjectName }}-ctl_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
-    # Only package the CLI binary (all platforms)
     builds:
       - innominatus-ctl
+    format_overrides:
+      - goos: windows
+        format: zip
     files:
       - README.md
       - LICENSE
