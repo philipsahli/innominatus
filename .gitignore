@@ -97,3 +97,6 @@ docs/TODO's
 cmd/server/migrations/
 cmd/server/swagger-*.yaml
 cmd/server/web-ui-out/
+
+# GoReleaser build artifacts
+dist/
