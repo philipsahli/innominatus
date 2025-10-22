@@ -16,10 +16,13 @@ import {
   Play,
   FileText,
   Network,
+  GitGraph,
 } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 import { useWorkflow } from '@/hooks/use-api';
 import { useRouter } from 'next/navigation';
+import { WorkflowDiagram } from '@/components/workflow-diagram';
+import { WorkflowStep } from '@/lib/workflow-types';
 
 function getStatusBadge(status: string) {
   switch (status) {
@@ -258,6 +261,29 @@ export function WorkflowDetailView({ workflowId }: { workflowId: string }) {
 
           {/* Main Content */}
           <div className="grid gap-6">
+            {/* Workflow Visualization */}
+            {workflowDetail.steps.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <GitGraph className="w-4 h-4" />
+                    Workflow Visualization
+                  </CardTitle>
+                  <CardDescription>Visual representation of the workflow execution flow</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <WorkflowDiagram
+                    steps={workflowDetail.steps.map((step) => ({
+                      name: step.step_name,
+                      type: step.step_type,
+                      config: step.step_config,
+                      condition: step.step_config?.if || step.step_config?.condition,
+                    }))}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Workflow Steps */}
             <Card>
               <CardHeader>
