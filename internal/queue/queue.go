@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"innominatus/internal/database"
 	"innominatus/internal/logging"
+	"innominatus/internal/metrics"
 	"innominatus/internal/types"
 	"sync"
 	"time"
@@ -225,6 +226,9 @@ func (q *Queue) processTask(workerID int, task *WorkflowTask) {
 		"queue_time_ms": queueTime.Milliseconds(),
 	})
 
+	// Record workflow started
+	metrics.GetGlobal().RecordWorkflowRunning(1)
+
 	// Execute workflow with golden path parameters if provided
 	var err error
 	if len(task.Parameters) > 0 {
@@ -235,6 +239,10 @@ func (q *Queue) processTask(workerID int, task *WorkflowTask) {
 
 	// Calculate execution time
 	executionTime := time.Since(startTime)
+
+	// Record workflow completed
+	metrics.GetGlobal().RecordWorkflowRunning(-1)
+	metrics.GetGlobal().RecordWorkflowExecutionByName(task.WorkflowName, err == nil, executionTime)
 
 	// Update metrics
 	q.metricsCollector.recordTaskCompletion(queueTime, executionTime, err == nil)
