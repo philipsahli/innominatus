@@ -47,7 +47,7 @@ jobs:
       run: .\scripts\prepare-embed.ps1
       shell: powershell
 
-    - name: Run tests
+    - name: Run tests (testcontainers will manage database)
       run: go test -v -race -coverprofile=coverage ./...
 
     - name: Upload coverage to Codecov

@@ -39,14 +39,15 @@ jobs:
       - name: Prepare static files for embedding
         run: ./scripts/prepare-embed.sh
 
-      - name: Run Go unit tests
+      - name: Run Go unit tests (testcontainers manages database)
         run: go test ./... -v -race -coverprofile=coverage.out -short
 
       - name: Run Go E2E tests (no Kubernetes)
+        env:
+          SKIP_DEMO_TESTS: 1
+          SKIP_INTEGRATION_TESTS: 1
         run: |
           # Run E2E tests that don't require Kubernetes
-          export SKIP_DEMO_TESTS=1
-          export SKIP_INTEGRATION_TESTS=1
           go test ./tests/e2e -v -run "TestValidate|TestAnalyze|TestGoldenPaths"
 
       - name: Upload Go coverage

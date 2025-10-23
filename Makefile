@@ -153,6 +153,95 @@ test-ci: ## Simulate CI test run (matches GitHub Actions)
 	@echo "$(YELLOW)3/3 Web UI tests...$(NC)"
 	@cd $(WEB_UI_DIR) && CI=true $(NPM_CMD) run test:e2e
 
+##@ Database Testing
+
+.PHONY: db-test-up
+db-test-up: ## Start PostgreSQL test database (Docker Compose)
+	@echo "$(GREEN)Starting PostgreSQL test database...$(NC)"
+	@docker-compose -f docker-compose.test.yml up -d postgres-test
+	@echo "$(YELLOW)Waiting for database to be ready...$(NC)"
+	@until docker-compose -f docker-compose.test.yml exec -T postgres-test pg_isready -U postgres > /dev/null 2>&1; do \
+		sleep 1; \
+	done
+	@echo "$(GREEN)Database is ready!$(NC)"
+	@echo ""
+	@echo "$(CYAN)Database connection details:$(NC)"
+	@echo "  Host:     localhost"
+	@echo "  Port:     5432"
+	@echo "  User:     postgres"
+	@echo "  Password: postgres"
+	@echo "  Database: idp_orchestrator_test"
+	@echo ""
+	@echo "$(CYAN)Run tests with:$(NC) make test-with-db"
+
+.PHONY: db-test-down
+db-test-down: ## Stop PostgreSQL test database
+	@echo "$(GREEN)Stopping PostgreSQL test database...$(NC)"
+	@docker-compose -f docker-compose.test.yml down -v
+
+.PHONY: db-test-logs
+db-test-logs: ## Show PostgreSQL test database logs
+	@docker-compose -f docker-compose.test.yml logs -f postgres-test
+
+.PHONY: db-test-psql
+db-test-psql: ## Connect to PostgreSQL test database with psql
+	@docker-compose -f docker-compose.test.yml exec postgres-test psql -U postgres -d idp_orchestrator_test
+
+.PHONY: test-with-db
+test-with-db: ## Run all tests with Docker PostgreSQL database
+	@echo "$(GREEN)Running tests with PostgreSQL database...$(NC)"
+	@if ! docker-compose -f docker-compose.test.yml ps | grep -q postgres-test.*Up; then \
+		echo "$(YELLOW)Database not running, starting it...$(NC)"; \
+		$(MAKE) db-test-up; \
+	fi
+	@echo "$(GREEN)Running unit tests...$(NC)"
+	@export DB_HOST=localhost && \
+	export DB_PORT=5432 && \
+	export DB_USER=postgres && \
+	export DB_PASSWORD=postgres && \
+	export DB_NAME=idp_orchestrator_test && \
+	export DB_SSLMODE=disable && \
+	$(GO_CMD) test ./... -v -race -coverprofile=$(COVERAGE_FILE)
+	@echo "$(GREEN)All tests passed with database!$(NC)"
+
+.PHONY: test-db-only
+test-db-only: ## Run only database tests with Docker PostgreSQL
+	@echo "$(GREEN)Running database tests only...$(NC)"
+	@if ! docker-compose -f docker-compose.test.yml ps | grep -q postgres-test.*Up; then \
+		echo "$(YELLOW)Database not running, starting it...$(NC)"; \
+		$(MAKE) db-test-up; \
+	fi
+	@export DB_HOST=localhost && \
+	export DB_PORT=5432 && \
+	export DB_USER=postgres && \
+	export DB_PASSWORD=postgres && \
+	export DB_NAME=idp_orchestrator_test && \
+	export DB_SSLMODE=disable && \
+	$(GO_CMD) test ./internal/database/... -v -race
+
+.PHONY: test-sqlite
+test-sqlite: ## Run tests with SQLite (no Docker required)
+	@echo "$(GREEN)Running tests with SQLite...$(NC)"
+	@export TEST_DB_DRIVER=sqlite && \
+	$(GO_CMD) test ./... -v -race -coverprofile=$(COVERAGE_FILE)
+	@echo "$(GREEN)All tests passed with SQLite!$(NC)"
+
+.PHONY: test-sqlite-only
+test-sqlite-only: ## Run only database tests with SQLite
+	@echo "$(GREEN)Running database tests with SQLite...$(NC)"
+	@export TEST_DB_DRIVER=sqlite && \
+	$(GO_CMD) test ./internal/database/... -v -race
+	@echo "$(GREEN)Database tests passed with SQLite!$(NC)"
+
+.PHONY: test-both
+test-both: ## Run tests with both PostgreSQL and SQLite
+	@echo "$(GREEN)Running tests with both PostgreSQL and SQLite...$(NC)"
+	@echo "$(YELLOW)1/2 Testing with PostgreSQL (testcontainers)...$(NC)"
+	@export TEST_DB_DRIVER=postgres && $(GO_CMD) test ./internal/database/... -v -short
+	@echo "$(YELLOW)2/2 Testing with SQLite (in-memory)...$(NC)"
+	@export TEST_DB_DRIVER=sqlite && $(GO_CMD) test ./internal/database/... -v -short
+	@echo "$(GREEN)All database tests passed with both drivers!$(NC)"
+
 ##@ Code Quality
 
 .PHONY: lint
