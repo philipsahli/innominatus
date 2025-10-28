@@ -55,6 +55,21 @@ func isStaticAsset(path string) bool {
 		strings.HasSuffix(path, ".ico")
 }
 
+// shouldReturn404 checks if a path should return 404 instead of SPA fallback
+func shouldReturn404(path string) bool {
+	// Browser-specific paths that should return 404
+	// These are paths that browsers request but shouldn't fall through to SPA routing
+	if strings.HasPrefix(path, "/.well-known/") {
+		return true
+	}
+
+	// Note: We don't check for file extensions like .txt, .json, etc.
+	// because Next.js uses these for React Server Components (RSC) and other features.
+	// Those requests should fall through to SPA routing to serve index.html.
+
+	return false
+}
+
 // loggingResponseWriter wraps http.ResponseWriter to capture response details for logging
 type loggingResponseWriter struct {
 	http.ResponseWriter
@@ -477,15 +492,44 @@ func main() {
 				// Check in embedded FS
 				_, err := fs.Stat(webUIEmbedFS, strings.TrimPrefix(r.URL.Path, "/"))
 				fileExistsInUI = err == nil
+
+				// Next.js static export: /dashboard.txt -> /dashboard/index.txt
+				if !fileExistsInUI && strings.HasSuffix(r.URL.Path, ".txt") {
+					altPath := strings.TrimSuffix(r.URL.Path, ".txt") + "/index.txt"
+					_, err := fs.Stat(webUIEmbedFS, strings.TrimPrefix(altPath, "/"))
+					if err == nil {
+						r.URL.Path = altPath
+						fileExistsInUI = true
+					}
+				}
 			} else {
 				// Check in filesystem
 				fileExistsInUI = fileExists(webUIBasePath + r.URL.Path)
+
+				// Next.js static export: /dashboard.txt -> /dashboard/index.txt
+				if !fileExistsInUI && strings.HasSuffix(r.URL.Path, ".txt") {
+					altPath := strings.TrimSuffix(r.URL.Path, ".txt") + "/index.txt"
+					if fileExists(webUIBasePath + altPath) {
+						r.URL.Path = altPath
+						fileExistsInUI = true
+					}
+				}
 			}
 
 			isStatic := isStaticAsset(r.URL.Path)
 			routingDecision := "serve_file"
 
 			if !fileExistsInUI && !isStatic {
+				// Check if this path should return 404 instead of SPA fallback
+				if shouldReturn404(r.URL.Path) {
+					http.NotFound(w, r)
+					logger.InfoWithFields("[WEB] 404 Not Found", map[string]interface{}{
+						"method": r.Method,
+						"path":   originalPath,
+					})
+					return
+				}
+
 				// For /graph/* routes, serve /graph/index.html
 				if strings.HasPrefix(r.URL.Path, "/graph/") {
 					r.URL.Path = "/graph/"
