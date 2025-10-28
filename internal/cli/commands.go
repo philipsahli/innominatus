@@ -1065,7 +1065,7 @@ func (c *Client) DemoTimeCommand(componentFilter string) error {
 	healthChecker := demo.NewHealthChecker(30 * time.Second)
 
 	// Create git manager
-	gitManager := demo.NewGitManager("gitea.localtest.me", "giteaadmin", "admin", "platform-config")
+	gitManager := demo.NewGitManager("gitea.localtest.me", "giteaadmin", "admin123", "platform-config")
 
 	// Create Grafana manager
 	grafanaManager := demo.NewGrafanaManager("http://grafana.localtest.me", "admin", "admin")

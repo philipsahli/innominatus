@@ -524,7 +524,7 @@ func NewDemoEnvironment() *DemoEnvironment {
 									{
 										"host":     "gitea-http.gitea.svc.cluster.local:3000",
 										"username": "giteaadmin",
-										"password": "admin",
+										"password": "admin123",
 									},
 								},
 							},
