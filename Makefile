@@ -68,7 +68,12 @@ build-ui: ## Build the web UI
 	@echo "$(GREEN)✓ Web UI built$(NC)"
 
 .PHONY: run
-run: ## Run the server
+run: build-ui prepare-embed ## Run the server (build web-ui first)
+	@echo "$(GREEN)Starting server...$(NC)"
+	@$(GO_CMD) run cmd/server/main.go
+
+.PHONY: run-server
+run-server: ## Run the server only (assumes files already prepared)
 	@echo "$(GREEN)Starting server...$(NC)"
 	@$(GO_CMD) run cmd/server/main.go
 
@@ -85,7 +90,8 @@ dev: ## Start server + web UI in development mode (parallel)
 	@$(MAKE) -j2 dev-server dev-ui
 
 .PHONY: dev-server
-dev-server: ## Start server in development mode
+dev-server: build-ui prepare-embed ## Start server in development mode (with embedded files)
+	@echo "$(GREEN)Starting server with embedded web-ui...$(NC)"
 	@$(GO_CMD) run cmd/server/main.go
 
 .PHONY: dev-ui
