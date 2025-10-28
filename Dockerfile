@@ -65,6 +65,7 @@ COPY --from=web-builder /web-ui/out /app/web-ui/out
 COPY examples/admin-config.yaml /app/admin-config.yaml
 COPY examples/goldenpaths.yaml /app/goldenpaths.yaml
 COPY workflows/ /app/workflows/
+COPY providers/ /app/providers/
 
 # Expose server port
 EXPOSE 8081

@@ -131,6 +131,7 @@ dockers:
       - web-ui/
       - examples/
       - workflows/
+      - providers/
       - docs/
       - swagger-admin.yaml
       - swagger-user.yaml
@@ -159,6 +160,7 @@ dockers:
       - web-ui/
       - examples/
       - workflows/
+      - providers/
       - docs/
       - swagger-admin.yaml
       - swagger-user.yaml
