@@ -19,6 +19,8 @@ COPY internal/ ./internal/
 COPY pkg/ ./pkg/
 COPY examples/ ./examples/
 COPY migrations/ ./cmd/server/migrations/
+COPY swagger-admin.yaml ./cmd/server/swagger-admin.yaml
+COPY swagger-user.yaml ./cmd/server/swagger-user.yaml
 
 # Build server binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o innominatus cmd/server/main.go

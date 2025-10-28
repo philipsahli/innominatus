@@ -130,7 +130,22 @@ innominatus-ctl deploy my-app.yaml
 
 ### For Developers
 
-Your Platform Team has already set up innominatus. To get started:
+**1. Install the CLI:**
+
+```bash
+# Quick install (macOS/Linux)
+curl -fsSL https://raw.githubusercontent.com/philipsahli/innominatus/main/install.sh | bash
+
+# Or install just the CLI
+curl -fsSL https://raw.githubusercontent.com/philipsahli/innominatus/main/install.sh | bash -s -- --component cli
+
+# Or download from releases
+# Visit: https://github.com/philipsahli/innominatus/releases/latest
+```
+
+**2. Get Started:**
+
+Your Platform Team has already set up innominatus. To use it:
 
 ```bash
 # 1. Get credentials from your Platform Team
@@ -167,16 +182,29 @@ innominatus-ctl list-workflows my-app
 
 ### For Platform Teams
 
-Install innominatus on your Kubernetes cluster:
+**Installation Options:**
 
 ```bash
-# 1. Pull Docker image
+# Option 1: Quick install script (server + CLI)
+curl -fsSL https://raw.githubusercontent.com/philipsahli/innominatus/main/install.sh | bash
+
+# Option 2: Docker (recommended for production)
 docker pull ghcr.io/philipsahli/innominatus:latest
+docker run -p 8081:8081 ghcr.io/philipsahli/innominatus:latest
 
-# 2. Deploy to Kubernetes
-kubectl apply -f deployment.yaml
+# Option 3: Kubernetes (Helm)
+helm install innominatus ./charts/innominatus \
+  --namespace innominatus-system \
+  --create-namespace
 
-# 3. Configure database
+# Option 4: Download binaries manually
+# Visit: https://github.com/philipsahli/innominatus/releases/latest
+```
+
+**Configuration:**
+
+```bash
+# Configure database
 export DB_HOST=postgres.production.internal
 export DB_NAME=idp_orchestrator
 export DB_USER=orchestrator_service

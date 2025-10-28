@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"flag"
+	"fmt"
 	"innominatus/internal/admin"
 	"innominatus/internal/ai"
 	"innominatus/internal/database"
@@ -28,7 +29,7 @@ var migrationsFS embed.FS
 //go:embed swagger-admin.yaml swagger-user.yaml
 var swaggerFilesFS embed.FS
 
-//go:embed web-ui-out
+//go:embed all:web-ui-out
 var webUIFS embed.FS
 
 // Build information - set via ldflags during release builds
@@ -52,6 +53,29 @@ func isStaticAsset(path string) bool {
 		strings.HasSuffix(path, ".jpg") ||
 		strings.HasSuffix(path, ".svg") ||
 		strings.HasSuffix(path, ".ico")
+}
+
+// loggingResponseWriter wraps http.ResponseWriter to capture response details for logging
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode  int
+	size        int
+	contentType string
+}
+
+func (w *loggingResponseWriter) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.contentType = w.Header().Get("Content-Type")
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *loggingResponseWriter) Write(b []byte) (int, error) {
+	if w.contentType == "" {
+		w.contentType = w.Header().Get("Content-Type")
+	}
+	size, err := w.ResponseWriter.Write(b)
+	w.size += size
+	return size, err
 }
 
 func main() {
@@ -434,9 +458,18 @@ func main() {
 	}
 
 	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		originalPath := r.URL.Path
+
 		// For SPA routing, serve appropriate index.html for non-existent routes that aren't static assets
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			r.URL.Path = "/"
+			logger.InfoWithFields("[WEB] Root request", map[string]interface{}{
+				"method":       r.Method,
+				"path":         originalPath,
+				"rewritten_to": r.URL.Path,
+				"type":         "root",
+			})
 		} else {
 			// Check if file exists (different logic for embedded vs filesystem)
 			fileExistsInUI := false
@@ -449,18 +482,61 @@ func main() {
 				fileExistsInUI = fileExists(webUIBasePath + r.URL.Path)
 			}
 
-			if !fileExistsInUI && !isStaticAsset(r.URL.Path) {
+			isStatic := isStaticAsset(r.URL.Path)
+			routingDecision := "serve_file"
+
+			if !fileExistsInUI && !isStatic {
 				// For /graph/* routes, serve /graph/index.html
 				if strings.HasPrefix(r.URL.Path, "/graph/") {
 					r.URL.Path = "/graph/"
+					routingDecision = "spa_graph"
 				} else if strings.HasPrefix(r.URL.Path, "/goldenpaths/") {
 					r.URL.Path = "/goldenpaths/"
+					routingDecision = "spa_goldenpaths"
 				} else {
 					r.URL.Path = "/"
+					routingDecision = "spa_fallback"
 				}
 			}
+
+			// Log the routing decision
+			logger.InfoWithFields("[WEB] Request routing", map[string]interface{}{
+				"method":       r.Method,
+				"path":         originalPath,
+				"rewritten_to": r.URL.Path,
+				"file_exists":  fileExistsInUI,
+				"is_static":    isStatic,
+				"decision":     routingDecision,
+				"embedded_fs":  webUIEmbedFS != nil,
+			})
 		}
-		staticFS.ServeHTTP(w, r)
+
+		// Wrap response writer to capture status and content type
+		rw := &loggingResponseWriter{
+			ResponseWriter: w,
+			statusCode:     200,
+		}
+
+		staticFS.ServeHTTP(rw, r)
+
+		// Log response details
+		duration := time.Since(start)
+		statusColor := "\033[32m" // green for 2xx
+		if rw.statusCode >= 400 {
+			statusColor = "\033[31m" // red for 4xx/5xx
+		} else if rw.statusCode >= 300 {
+			statusColor = "\033[33m" // yellow for 3xx
+		}
+		resetColor := "\033[0m"
+
+		logger.InfoWithFields(fmt.Sprintf("[WEB] %s%d%s Response", statusColor, rw.statusCode, resetColor), map[string]interface{}{
+			"method":       r.Method,
+			"path":         originalPath,
+			"status":       rw.statusCode,
+			"content_type": rw.contentType,
+			"size":         rw.size,
+			"duration_ms":  duration.Milliseconds(),
+		})
 	}))
 
 	// Initialize metrics pusher if PUSHGATEWAY_URL is set
