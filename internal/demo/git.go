@@ -245,6 +245,8 @@ func (g *GitManager) createManifests() error {
 		"apps/demo",
 		"backstage-templates",
 		"backstage-templates/skeleton",
+		"providers",
+		"providers/builtin",
 	}
 
 	for _, dir := range dirs {
@@ -270,6 +272,11 @@ func (g *GitManager) createManifests() error {
 
 	// Create Backstage templates
 	if err := g.createBackstageTemplates(); err != nil {
+		return err
+	}
+
+	// Create provider manifests
+	if err := g.createProviderManifests(); err != nil {
 		return err
 	}
 
@@ -511,6 +518,70 @@ spec:
 	}
 
 	fmt.Printf("✅ Backstage templates added to repository\n")
+	return nil
+}
+
+// createProviderManifests creates provider files in the repository
+func (g *GitManager) createProviderManifests() error {
+	fmt.Printf("📦 Creating provider manifests...\n")
+
+	// Copy builtin provider files from local filesystem
+	providerFiles := map[string]string{
+		"providers/builtin/provider.yaml": "providers/builtin/provider.yaml",
+	}
+
+	for dest, src := range providerFiles {
+		// #nosec G304 - Reading provider files from known local paths
+		content, err := os.ReadFile(src)
+		if err != nil {
+			// If files don't exist locally, skip
+			fmt.Printf("⚠️  Could not read %s: %v\n", src, err)
+			continue
+		}
+
+		if err := g.writeFile(dest, string(content)); err != nil {
+			return fmt.Errorf("failed to write provider file %s: %v", dest, err)
+		}
+	}
+
+	// Create README explaining provider loading
+	readme := "# Innominatus Providers\n\n" +
+		"This directory contains provider definitions for the Innominatus platform.\n\n" +
+		"## Provider Types\n\n" +
+		"### Filesystem Providers (Development)\n" +
+		"- **Location**: Local filesystem (e.g., `./providers/builtin`)\n" +
+		"- **Use case**: Local development and testing\n" +
+		"- **Configuration**: Set `type: filesystem` in admin-config.yaml\n\n" +
+		"### Git-based Providers (Production)\n" +
+		"- **Location**: Git repository (e.g., this platform-config repo)\n" +
+		"- **Use case**: Production deployments with version control\n" +
+		"- **Configuration**: Set `type: git` in admin-config.yaml\n\n" +
+		"## Example: Storage Team Provider\n\n" +
+		"The storage-team provider is available as a Git-based example:\n\n" +
+		"```yaml\n" +
+		"providers:\n" +
+		"  - name: storage-team\n" +
+		"    type: git\n" +
+		"    repository: http://gitea.localtest.me/giteaadmin/platform-config\n" +
+		"    ref: main\n" +
+		"    path: providers/storage-team\n" +
+		"    enabled: true\n" +
+		"```\n\n" +
+		"To use this provider:\n" +
+		"1. Copy `providers/builtin` to `providers/storage-team`\n" +
+		"2. Customize the provider.yaml for your storage team's needs\n" +
+		"3. Commit and push changes\n" +
+		"4. Update admin-config.yaml to reference the git provider\n\n" +
+		"## Available Providers\n\n" +
+		"- **builtin**: Core platform provider with common resources (PostgreSQL, Redis, volumes, etc.)\n" +
+		"- **storage-team**: Example git-based provider (copy from builtin to customize)\n\n" +
+		"For more information, see: https://docs.innominatus.io/providers\n"
+
+	if err := g.writeFile("providers/README.md", readme); err != nil {
+		return fmt.Errorf("failed to write providers README: %v", err)
+	}
+
+	fmt.Printf("✅ Provider manifests added to repository\n")
 	return nil
 }
 

@@ -1173,6 +1173,13 @@ func (c *Client) DemoTimeCommand(componentFilter string) error {
 		}
 	}
 
+	// Create admin configuration file with provider settings
+	cheatSheet.PrintProgress("Creating admin configuration...")
+	if err := demo.CreateAdminConfig("admin-config.yaml"); err != nil {
+		cheatSheet.PrintError("Admin Config Creation", err)
+		return err
+	}
+
 	// Install Grafana dashboards (if Grafana is installed)
 	if env.IsComponentRequested("grafana", filter) {
 		cheatSheet.PrintProgress("Installing Grafana dashboards...")
@@ -1196,6 +1203,7 @@ func (c *Client) DemoTimeCommand(componentFilter string) error {
 	cheatSheet.PrintStatus(healthResults)
 	cheatSheet.PrintCredentials()
 	cheatSheet.PrintQuickStart()
+	cheatSheet.PrintProviderInfo()
 	cheatSheet.PrintCommands()
 	cheatSheet.PrintFooter()
 

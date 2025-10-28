@@ -40,7 +40,18 @@ type UserInfo struct {
 }
 
 // LoadOIDCConfig loads OIDC configuration from environment variables
+// with auto-detection for demo-time environments
 func LoadOIDCConfig() OIDCConfig {
+	// Use auto-detection which will:
+	// 1. Load config from environment variables
+	// 2. If OIDC_ENABLED is not set, check for Keycloak (demo-time)
+	// 3. Auto-enable if Keycloak is detected
+	return AutoConfigureOIDC()
+}
+
+// LoadOIDCConfigManual loads OIDC configuration from environment variables only
+// without auto-detection (used for testing)
+func LoadOIDCConfigManual() OIDCConfig {
 	return OIDCConfig{
 		Enabled:      os.Getenv("OIDC_ENABLED") == "true",
 		IssuerURL:    getEnvOrDefault("OIDC_ISSUER_URL", "http://keycloak.localtest.me/realms/demo-realm"),
