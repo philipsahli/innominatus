@@ -132,6 +132,8 @@ dockers:
       - examples/
       - workflows/
       - docs/
+      - swagger-admin.yaml
+      - swagger-user.yaml
       - go.mod
       - go.sum
 
@@ -158,6 +160,8 @@ dockers:
       - examples/
       - workflows/
       - docs/
+      - swagger-admin.yaml
+      - swagger-user.yaml
       - go.mod
       - go.sum
 
