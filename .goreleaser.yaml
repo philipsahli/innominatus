@@ -5,8 +5,8 @@ before:
     # Ensure dependencies are up to date
     - go mod tidy
     - go mod download
-    # Prepare static files for embedding (web-ui, swagger, migrations)
-    - ./scripts/prepare-embed.sh
+    # Note: prepare-embed.sh is run by GitHub Actions workflow before goreleaser
+    # to avoid re-running and potentially clearing the embedded files
 
 builds:
   # Server binary
