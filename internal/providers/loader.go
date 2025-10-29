@@ -37,6 +37,9 @@ func (l *Loader) LoadFromFile(path string) (*sdk.Provider, error) {
 		return nil, fmt.Errorf("failed to parse provider YAML: %w", err)
 	}
 
+	// Migrate old format to new (backward compatibility)
+	l.migrateProvider(&provider)
+
 	// Validate provider
 	if err := provider.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid provider manifest: %w", err)
@@ -167,4 +170,29 @@ func (l *Loader) LoadBuiltinProvider() (*sdk.Provider, error) {
 	}
 
 	return nil, fmt.Errorf("builtin provider.yaml not found in current directory, providers/builtin/, or platforms/builtin/")
+}
+
+// migrateProvider migrates old provider format to new unified workflows format
+// This provides backward compatibility for providers using provisioners[] and goldenpaths[] fields
+func (l *Loader) migrateProvider(provider *sdk.Provider) {
+	// If workflows are already populated, no migration needed
+	if len(provider.Workflows) > 0 {
+		return
+	}
+
+	// Migrate goldenpaths to workflows with category="goldenpath"
+	if len(provider.GoldenPaths) > 0 {
+		for _, gp := range provider.GoldenPaths {
+			workflow := gp // GoldenPathMetadata is now an alias for WorkflowMetadata
+			if workflow.Category == "" {
+				workflow.Category = "goldenpath"
+			}
+			provider.Workflows = append(provider.Workflows, workflow)
+		}
+	}
+
+	// Note: We don't automatically migrate provisioners to workflows because
+	// provisioners don't have a workflow file reference. Product teams should
+	// manually add workflow files and update their provider.yaml to use workflows.
+	// The old provisioners[] field will continue to work for backward compatibility.
 }

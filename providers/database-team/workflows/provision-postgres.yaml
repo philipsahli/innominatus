@@ -1,0 +1,145 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-postgres
+  description: Create PostgreSQL database using Zalando operator
+
+parameters:
+  - name: db_name
+    type: string
+    required: true
+    description: Database cluster name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace to create database in
+
+  - name: team_id
+    type: string
+    required: true
+    description: Team identifier (used in cluster name)
+
+  - name: size
+    type: string
+    required: false
+    default: "small"
+    description: Database size (small/medium/large)
+
+  - name: replicas
+    type: number
+    required: false
+    default: 2
+    description: Number of replicas
+
+  - name: version
+    type: string
+    required: false
+    default: "15"
+    description: PostgreSQL version
+
+steps:
+  - name: create-postgres-cluster
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: "acid.zalan.do/v1"
+        kind: postgresql
+        metadata:
+          name: {{ .parameters.team_id }}-{{ .parameters.db_name }}
+          namespace: {{ .parameters.namespace }}
+          labels:
+            managed-by: innominatus
+            team: {{ .parameters.team_id }}
+        spec:
+          teamId: {{ .parameters.team_id }}
+          numberOfInstances: {{ .parameters.replicas }}
+          postgresql:
+            version: "{{ .parameters.version }}"
+          volume:
+            size: {{ if eq .parameters.size "small" }}5Gi{{ else if eq .parameters.size "medium" }}20Gi{{ else }}100Gi{{ end }}
+          resources:
+            requests:
+              cpu: {{ if eq .parameters.size "small" }}100m{{ else if eq .parameters.size "medium" }}500m{{ else }}2000m{{ end }}
+              memory: {{ if eq .parameters.size "small" }}256Mi{{ else if eq .parameters.size "medium" }}1Gi{{ else }}4Gi{{ end }}
+            limits:
+              cpu: {{ if eq .parameters.size "small" }}500m{{ else if eq .parameters.size "medium" }}2000m{{ else }}4000m{{ end }}
+              memory: {{ if eq .parameters.size "small" }}512Mi{{ else if eq .parameters.size "medium" }}2Gi{{ else }}8Gi{{ end }}
+          users:
+            {{ .parameters.db_name }}_owner:
+            - superuser
+            - createdb
+            {{ .parameters.db_name }}_app:
+            - login
+          databases:
+            {{ .parameters.db_name }}: {{ .parameters.db_name }}_owner
+
+  - name: wait-for-database
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+        echo "Waiting for PostgreSQL cluster to be ready..."
+        for i in {1..60}; do
+          if kubectl get postgresql {{ .parameters.team_id }}-{{ .parameters.db_name }} -n {{ .parameters.namespace }} -o jsonpath='{.status.PostgresClusterStatus}' 2>/dev/null | grep -q "Running"; then
+            echo "PostgreSQL cluster is running"
+            exit 0
+          fi
+          echo "Waiting... attempt $i/60"
+          sleep 10
+        done
+        echo "Timeout waiting for PostgreSQL cluster"
+        exit 1
+
+  - name: get-credentials
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        # Wait for secret to be created
+        sleep 5
+
+        # Get database credentials from secret
+        DB_SECRET="{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.db_name }}-app.credentials"
+
+        # Wait for secret to exist
+        for i in {1..30}; do
+          if kubectl get secret $DB_SECRET -n {{ .parameters.namespace }} >/dev/null 2>&1; then
+            break
+          fi
+          echo "Waiting for credentials secret... attempt $i/30"
+          sleep 2
+        done
+
+        DB_USER=$(kubectl get secret $DB_SECRET -n {{ .parameters.namespace }} -o jsonpath='{.data.username}' | base64 -d)
+        DB_PASSWORD=$(kubectl get secret $DB_SECRET -n {{ .parameters.namespace }} -o jsonpath='{.data.password}' | base64 -d)
+        DB_HOST="{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.namespace }}.svc.cluster.local"
+        DB_PORT="5432"
+        DB_NAME="{{ .parameters.db_name }}"
+
+        # Output as JSON for next steps
+        cat <<EOF
+        {
+          "username": "$DB_USER",
+          "password": "$DB_PASSWORD",
+          "host": "$DB_HOST",
+          "port": "$DB_PORT",
+          "database": "$DB_NAME",
+          "connection_string": "postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+        }
+        EOF
+
+outputs:
+  database_name: "{{ .parameters.db_name }}"
+  cluster_name: "{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  host: "{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.namespace }}.svc.cluster.local"
+  port: "5432"
+  credentials_secret: "{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.db_name }}-app.credentials"
+  username: "{{ .steps.get-credentials.output.username }}"
+  password: "{{ .steps.get-credentials.output.password }}"
+  connection_string: "{{ .steps.get-credentials.output.connection_string }}"

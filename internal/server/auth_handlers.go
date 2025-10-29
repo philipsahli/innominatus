@@ -976,7 +976,8 @@ func (s *Server) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("OIDC login successful for user: %s (role: %s)\n", username, user.Role)
 
 	// Redirect to callback page with session ID so frontend can store it
-	redirectURL := fmt.Sprintf("/auth/oidc/callback?token=%s", session.ID)
+	// IMPORTANT: Trailing slash prevents 301 redirect that strips query params
+	redirectURL := fmt.Sprintf("/auth/oidc/callback/?token=%s", session.ID)
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 

@@ -1,0 +1,74 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: onboard-dev-team-kubectl
+  description: Onboarding using kubectl commands directly
+
+spec:
+  parameters:
+    - name: app_name
+      type: string
+      required: true
+
+    - name: environment
+      type: string
+      required: false
+      default: development
+
+  variables:
+    namespace_name: ${parameters.app_name}-${parameters.environment}
+
+  steps:
+    # Step 1: Create Namespace with kubectl
+    - name: create-namespace
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          NAMESPACE="{{.parameters.app_name}}-{{.parameters.environment}}"
+          APP_NAME="{{.parameters.app_name}}"
+          ENV="{{.parameters.environment}}"
+
+          echo "Creating namespace: $NAMESPACE"
+
+          # Create namespace YAML
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: $NAMESPACE
+            labels:
+              app: $APP_NAME
+              environment: $ENV
+              managed-by: innominatus
+          ---
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata:
+            name: ${NAMESPACE}-quota
+            namespace: $NAMESPACE
+          spec:
+            hard:
+              requests.cpu: "4"
+              requests.memory: "8Gi"
+              pods: "20"
+          EOF
+
+          echo "✓ Namespace $NAMESPACE created successfully"
+
+    # Step 2: Verify namespace created
+    - name: verify-namespace
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          NAMESPACE="{{.parameters.app_name}}-{{.parameters.environment}}"
+
+          echo "Verifying namespace $NAMESPACE..."
+          kubectl get namespace $NAMESPACE || exit 1
+          kubectl get resourcequota -n $NAMESPACE || exit 1
+          echo "✓ Namespace and resource quota verified successfully"

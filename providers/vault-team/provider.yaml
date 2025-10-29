@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: vault-team
+  version: 1.0.0
+  category: security
+  description: HashiCorp Vault secret space provisioners with VSO integration
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+workflows:
+  - name: provision-vault-space
+    file: ./workflows/provision-vault-space.yaml
+    description: Create Vault namespace with KV engine and Kubernetes auth for VSO
+    category: provisioner
+    version: 1.0.0
+    tags: [vault, secrets, vso, kubernetes-auth]

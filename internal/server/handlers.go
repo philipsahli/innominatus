@@ -125,26 +125,30 @@ type StepExecutionContext struct {
 	WorkflowRepo *database.WorkflowRepository
 }
 
+// ProvidersReloadFunc is a callback function type for reloading providers
+type ProvidersReloadFunc func() error
+
 type Server struct {
-	db                *database.Database
-	workflowRepo      *database.WorkflowRepository
-	workflowExecutor  *workflow.WorkflowExecutor
-	workflowAnalyzer  *workflow.WorkflowAnalyzer
-	workflowQueue     *queue.Queue // Async workflow execution queue
-	resourceManager   *resources.Manager
-	teamManager       *teams.TeamManager
-	sessionManager    auth.ISessionManager
-	oidcAuthenticator *auth.OIDCAuthenticator
-	healthChecker     *health.HealthChecker
-	rateLimiter       *RateLimiter
-	graphAdapter      *graph.Adapter
-	wsHub             *GraphWebSocketHub // WebSocket hub for real-time graph updates
-	aiService         AIService          // AI assistant service (optional)
-	providerRegistry  ProviderRegistry   // Provider registry (optional)
-	swaggerFS         fs.FS              // Optional: embedded swagger files
-	webUIFS           fs.FS              // Optional: embedded web-ui files
-	loginAttempts     map[string][]time.Time
-	loginMutex        sync.Mutex
+	db                  *database.Database
+	workflowRepo        *database.WorkflowRepository
+	workflowExecutor    *workflow.WorkflowExecutor
+	workflowAnalyzer    *workflow.WorkflowAnalyzer
+	workflowQueue       *queue.Queue // Async workflow execution queue
+	resourceManager     *resources.Manager
+	teamManager         *teams.TeamManager
+	sessionManager      auth.ISessionManager
+	oidcAuthenticator   *auth.OIDCAuthenticator
+	healthChecker       *health.HealthChecker
+	rateLimiter         *RateLimiter
+	graphAdapter        *graph.Adapter
+	wsHub               *GraphWebSocketHub  // WebSocket hub for real-time graph updates
+	aiService           AIService           // AI assistant service (optional)
+	providerRegistry    ProviderRegistry    // Provider registry (optional)
+	providersReloadFunc ProvidersReloadFunc // Callback to reload providers from admin-config.yaml
+	swaggerFS           fs.FS               // Optional: embedded swagger files
+	webUIFS             fs.FS               // Optional: embedded web-ui files
+	loginAttempts       map[string][]time.Time
+	loginMutex          sync.Mutex
 	// In-memory workflow tracking (when database is not available)
 	memoryWorkflows map[int64]*MemoryWorkflowExecution
 	workflowCounter int64
@@ -162,6 +166,11 @@ func (s *Server) SetAIService(aiSvc AIService) {
 // SetProviderRegistry sets the provider registry for the server
 func (s *Server) SetProviderRegistry(registry ProviderRegistry) {
 	s.providerRegistry = registry
+}
+
+// SetProvidersReloadFunc sets the callback function for reloading providers
+func (s *Server) SetProvidersReloadFunc(reloadFunc ProvidersReloadFunc) {
+	s.providersReloadFunc = reloadFunc
 }
 
 // SetSwaggerFS sets the embedded swagger files filesystem
@@ -347,7 +356,8 @@ func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{
 	}
 
 	// Start the workflow scheduler only when database is available
-	server.startWorkflowScheduler()
+	// DISABLED: Dummy workflow scheduler (triggers test workflow every minute)
+	// server.startWorkflowScheduler()
 
 	return server
 }
@@ -2121,6 +2131,50 @@ func (s *Server) HandleAdminConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleAdminReload handles POST /api/admin/reload - Reloads admin-config.yaml and providers
+func (s *Server) HandleAdminReload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// This endpoint requires provider registry and reload function
+	if s.providerRegistry == nil || s.providersReloadFunc == nil {
+		http.Error(w, "Provider reload not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Verify admin config exists and is loadable before attempting reload
+	_, err := admin.LoadAdminConfig("admin-config.yaml")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load admin config: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Trigger provider reload
+	if err := s.providersReloadFunc(); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to reload providers: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get updated provider counts
+	providerCount, provisionerCount := s.providerRegistry.Count()
+
+	response := map[string]interface{}{
+		"success":      true,
+		"message":      "Providers reloaded successfully",
+		"providers":    providerCount,
+		"provisioners": provisionerCount,
+		"timestamp":    time.Now(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
 // HandleStats handles GET /api/stats - Returns dashboard statistics
 func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -2733,10 +2787,19 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Enqueue workflow for async execution
+	// TEMPORARY FIX: Force synchronous execution to ensure resources are provisioned after workflow completes
+	// Execute workflow synchronously (disabled async queue for golden paths)
 	var taskID string
-	if s.workflowQueue != nil {
-		// Enqueue workflow for async execution with queue
+	_ = taskID // Unused for now
+	if s.workflowExecutor != nil {
+		// Execute workflow synchronously with golden path parameters
+		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, goldenPathParams)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else if s.workflowQueue != nil {
+		// Fallback: Enqueue workflow for async execution with queue (not recommended for golden paths)
 		metadata := map[string]interface{}{
 			"user":        user.Username,
 			"golden_path": goldenPathName,
@@ -2746,13 +2809,6 @@ func (s *Server) HandleGoldenPathExecution(w http.ResponseWriter, r *http.Reques
 		taskID, err = s.workflowQueue.Enqueue(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, metadata)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to enqueue workflow: %v", err), http.StatusInternalServerError)
-			return
-		}
-	} else if s.workflowExecutor != nil {
-		// Fallback: Execute workflow synchronously if queue is not available with golden path parameters
-		err = s.workflowExecutor.ExecuteWorkflowWithName(spec.Metadata.Name, fmt.Sprintf("golden-path-%s", goldenPathName), workflow, goldenPathParams)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Workflow execution failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 	} else {

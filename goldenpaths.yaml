@@ -21,6 +21,23 @@ goldenpaths:
         description: Team organization visibility setting
         allowed_values: [public, limited, private]
 
+  keycloak-team-setup:
+    workflow: ./workflows/keycloak-team-setup.yaml
+    description: Create Keycloak team/group for identity and access management
+    category: platform
+    tags: [team, setup, keycloak, identity, access-management]
+    estimated_duration: 1-2 minutes
+    parameters:
+      group_name:
+        type: string
+        default: dev-team
+        description: Name of the Keycloak group/team to create
+        pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
+      realm:
+        type: string
+        default: demo-realm
+        description: Keycloak realm where the group will be created
+
   deploy-app:
     workflow: ./workflows/deploy-app.yaml
     description: Deploy application with full GitOps pipeline including Git repository and ArgoCD onboarding
@@ -120,11 +137,11 @@ goldenpaths:
         max: 365
 
   onboard-dev-team:
-    workflow: ./workflows/onboard-dev-team.yaml
-    description: Complete platform onboarding for development team
+    workflow: ./workflows/onboard-dev-team-hardcoded.yaml
+    description: Complete platform onboarding for development team (simplified for demo)
     category: onboarding
     tags: [onboarding, dev-team, full-stack, multi-team]
-    estimated_duration: 8-12 minutes
+    estimated_duration: 2-3 minutes
     parameters:
       app_name:
         type: string
@@ -137,14 +154,41 @@ goldenpaths:
         default: development
         allowed_values: [development, staging, production]
         description: Environment type
-      db_size:
+
+  onboard-team:
+    workflow: ./workflows/onboard-team-simple.yaml
+    description: Simple team onboarding with Gitea and namespace (provider-based architecture demo)
+    category: onboarding
+    tags: [onboarding, providers, gitea, namespace, multi-team-idp]
+    estimated_duration: 1-2 minutes
+    parameters:
+      app_name:
+        type: string
+        required: true
+        pattern: '^[a-z0-9\-]+$'
+        description: Application name (lowercase, alphanumeric, hyphens)
+      environment:
         type: enum
         required: false
-        default: small
-        allowed_values: [small, medium, large]
-        description: Database size
-      enable_backup:
-        type: bool
+        default: development
+        allowed_values: [development, staging, production]
+        description: Environment type
+
+  deploy-with-database:
+    workflow: ./workflows/deploy-app-with-db.yaml
+    description: Deploy application with database provisioning and resource hints injection
+    category: deployment
+    tags: [deployment, database, resource-hints, provider-based, multi-team-idp]
+    estimated_duration: 3-5 minutes
+    parameters:
+      app_name:
+        type: string
+        required: true
+        pattern: '^[a-z0-9\-]+$'
+        description: Application name (lowercase, alphanumeric, hyphens)
+      environment:
+        type: enum
         required: false
-        default: "false"
-        description: Enable automated backups to S3
+        default: development
+        allowed_values: [development, staging, production]
+        description: Environment type

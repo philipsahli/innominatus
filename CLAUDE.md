@@ -123,6 +123,106 @@ export OIDC_CLIENT_SECRET="your-secret"
 
 Users can generate API keys via Web UI Profile page for CLI/API access.
 
+## Provider Architecture
+
+### Three-Layer System
+
+**1. Core (Go Engine)**
+- Workflow execution engine
+- Step executors: terraform, kubernetes, ansible, policy, gitea-repo, argocd-app
+- API server and authentication
+- Database persistence
+
+**2. Built-in Provider (Filesystem)**
+- Standard workflows shipped with innominatus
+- Located in `providers/builtin/`
+- Example: postgres-cluster, redis-cache, deploy-database
+
+**3. Extension Providers (Git Repositories)**
+- Custom workflows from product/platform teams
+- Loaded dynamically from Git with version pinning
+- Configured in `admin-config.yaml`
+- Supports hot-reload for rapid iteration
+
+### Workflow Types
+
+**Provisioners (Single-Resource)**
+- Create individual resources (database, namespace, bucket, repository)
+- Simple, composable building blocks
+- Example: `postgres-cluster.yaml`, `gitea-repo.yaml`
+
+**Golden Paths (Multi-Resource Orchestration)**
+- Combine multiple provisioners into end-to-end flows
+- Opinionated "happy path" for common scenarios
+- Example: `onboard-dev-team.yaml` (creates namespace + repo + ArgoCD app)
+
+### Creating a Provider
+
+**1. Directory Structure:**
+```
+my-provider/
+├── provider.yaml          # Manifest
+└── workflows/
+    ├── postgres.yaml      # Provisioner workflow
+    └── onboard-team.yaml  # Golden path workflow
+```
+
+**2. Provider Manifest (provider.yaml):**
+```yaml
+apiVersion: v1
+kind: Provider
+metadata:
+  name: my-provider
+  version: 1.0.0
+  category: infrastructure  # or "service"
+  description: Custom workflows for my team
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+workflows:
+  - name: postgres-cluster
+    file: ./workflows/postgres.yaml
+    description: PostgreSQL cluster provisioner
+    category: provisioner
+    tags: [database, postgres]
+
+  - name: onboard-team
+    file: ./workflows/onboard-team.yaml
+    description: Complete team onboarding
+    category: goldenpath
+    tags: [onboarding, team]
+```
+
+**3. Register Provider (admin-config.yaml):**
+```yaml
+providers:
+  - source: git
+    url: https://github.com/my-org/my-provider
+    ref: v1.0.0  # Tag, branch, or commit
+```
+
+**4. Use Workflows:**
+```bash
+./innominatus-ctl list-goldenpaths           # List available
+./innominatus-ctl run onboard-team inputs.yaml
+```
+
+### Provider Categories
+
+**Infrastructure Providers (Platform Teams)**
+- AWS, Azure, GCP resources
+- Kubernetes primitives
+- Storage, databases, messaging
+- Example: `aws-rds`, `azure-cosmosdb`, `k8s-namespace`
+
+**Service Providers (Product Teams)**
+- Business domain resources
+- Application-specific workflows
+- ML pipelines, analytics, ecommerce
+- Example: `ml-model-registry`, `analytics-dashboard`
+
 ## Kubernetes Deployment
 
 **Quick Install:**
@@ -243,4 +343,4 @@ git push origin v0.1.0
 
 ---
 
-*Updated: 2025-10-19* - Compacted for readability and essential information only
+*Updated: 2025-10-29* - Added Provider Architecture documentation with unified workflows concept

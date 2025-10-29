@@ -1,0 +1,219 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: keycloak-team-setup
+  description: Create Keycloak team/group for identity and access management
+spec:
+  steps:
+    - name: create-keycloak-group
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "🔧 Platform Setup: Creating Keycloak Team/Group"
+          echo "================================================"
+          echo ""
+
+          # Load admin configuration
+          KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak.localtest.me}"
+          KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+          KEYCLOAK_PASSWORD="${KEYCLOAK_PASSWORD:-adminpassword}"
+          REALM="${KEYCLOAK_REALM:-demo-realm}"
+          GROUP_NAME="${GROUP_NAME:-dev-team}"
+          GROUP_PATH="/${GROUP_NAME}"
+
+          echo "📋 Configuration:"
+          echo "  Keycloak URL: $KEYCLOAK_URL"
+          echo "  Admin User: $KEYCLOAK_ADMIN"
+          echo "  Realm: $REALM"
+          echo "  Group Name: $GROUP_NAME"
+          echo ""
+
+          # Get admin access token
+          echo "🔐 Authenticating with Keycloak..."
+          TOKEN_RESPONSE=$(curl -s -X POST \
+            "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=$KEYCLOAK_ADMIN" \
+            -d "password=$KEYCLOAK_PASSWORD" \
+            -d "grant_type=password" \
+            -d "client_id=admin-cli")
+
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "❌ Failed to authenticate with Keycloak"
+            echo "Response: $TOKEN_RESPONSE"
+            exit 1
+          fi
+
+          echo "✅ Authentication successful"
+          echo ""
+
+          # Check if group already exists
+          echo "🔍 Checking if group '$GROUP_NAME' exists in realm '$REALM'..."
+          GROUPS_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+          HTTP_CODE=$(echo "$GROUPS_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          GROUPS_BODY=$(echo "$GROUPS_RESPONSE" | sed '/HTTP_CODE:/d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Failed to query groups (HTTP $HTTP_CODE)"
+            echo "Response: $GROUPS_BODY"
+            exit 1
+          fi
+
+          # Check if group exists in response
+          GROUP_EXISTS=$(echo "$GROUPS_BODY" | grep -o "\"name\":\"$GROUP_NAME\"" || echo "")
+
+          if [ -n "$GROUP_EXISTS" ]; then
+            echo "✅ Group '$GROUP_NAME' already exists in realm '$REALM'"
+
+            # Get group details
+            GROUP_ID=$(echo "$GROUPS_BODY" | grep -B5 "\"name\":\"$GROUP_NAME\"" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+            echo ""
+            echo "Group details:"
+            echo "  Name: $GROUP_NAME"
+            echo "  ID: $GROUP_ID"
+            echo "  Path: $GROUP_PATH"
+            echo ""
+            echo "⏭️  Skipping creation (idempotent)"
+            exit 0
+          fi
+
+          echo "📝 Group does not exist, creating..."
+
+          # Create group
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"name\": \"$GROUP_NAME\",
+              \"path\": \"$GROUP_PATH\"
+            }" \
+            "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '/HTTP_CODE:/d')
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ Successfully created group '$GROUP_NAME'"
+            echo ""
+
+            # Verify group was created by fetching it
+            echo "🔍 Verifying group creation..."
+            VERIFY_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+            VERIFY_CODE=$(echo "$VERIFY_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+            VERIFY_BODY=$(echo "$VERIFY_RESPONSE" | sed '/HTTP_CODE:/d')
+
+            if [ "$VERIFY_CODE" = "200" ]; then
+              GROUP_ID=$(echo "$VERIFY_BODY" | grep -B5 "\"name\":\"$GROUP_NAME\"" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+              if [ -n "$GROUP_ID" ]; then
+                echo "✅ Group verified successfully"
+                echo ""
+                echo "Group details:"
+                echo "  Name: $GROUP_NAME"
+                echo "  ID: $GROUP_ID"
+                echo "  Path: $GROUP_PATH"
+                echo "  Realm: $REALM"
+              else
+                echo "⚠️  Warning: Could not extract group ID"
+              fi
+            else
+              echo "⚠️  Warning: Could not verify group (HTTP $VERIFY_CODE)"
+            fi
+          else
+            echo "❌ Failed to create group (HTTP $HTTP_CODE)"
+            echo "Response:"
+            echo "$RESPONSE_BODY"
+            exit 1
+          fi
+
+          echo ""
+          echo "🎉 Keycloak team setup completed successfully!"
+          echo ""
+          echo "Next steps:"
+          echo "  1. Group '$GROUP_NAME' is now available in realm '$REALM'"
+          echo "  2. Add users to this group via Keycloak UI: $KEYCLOAK_URL/admin/$REALM/console/#/groups"
+          echo "  3. Assign roles and permissions to the group"
+
+    - name: verify-keycloak-readiness
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "🔍 Verifying Keycloak Readiness"
+          echo "================================"
+          echo ""
+
+          KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak.localtest.me}"
+          KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+          KEYCLOAK_PASSWORD="${KEYCLOAK_PASSWORD:-adminpassword}"
+          REALM="${KEYCLOAK_REALM:-demo-realm}"
+          GROUP_NAME="${GROUP_NAME:-dev-team}"
+
+          # Check Keycloak service
+          echo "📡 Checking Keycloak service..."
+          if curl -s -f "$KEYCLOAK_URL/realms/$REALM" > /dev/null; then
+            echo "  ✅ Keycloak realm '$REALM' is accessible"
+          else
+            echo "  ❌ Keycloak realm '$REALM' is not accessible"
+            exit 1
+          fi
+
+          # Get access token
+          echo "🔐 Checking authentication..."
+          TOKEN_RESPONSE=$(curl -s -X POST \
+            "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=$KEYCLOAK_ADMIN" \
+            -d "password=$KEYCLOAK_PASSWORD" \
+            -d "grant_type=password" \
+            -d "client_id=admin-cli")
+
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+          if [ -n "$ACCESS_TOKEN" ]; then
+            echo "  ✅ Authentication successful"
+          else
+            echo "  ❌ Authentication failed"
+            exit 1
+          fi
+
+          # Check group exists
+          echo "👥 Checking group '$GROUP_NAME'..."
+          GROUPS_RESPONSE=$(curl -s \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+          GROUP_EXISTS=$(echo "$GROUPS_RESPONSE" | grep -o "\"name\":\"$GROUP_NAME\"" || echo "")
+
+          if [ -n "$GROUP_EXISTS" ]; then
+            echo "  ✅ Group exists and is accessible"
+          else
+            echo "  ❌ Group not found"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Keycloak is ready for team identity management!"
+          echo ""
+          echo "Summary:"
+          echo "  • Keycloak: Running and accessible"
+          echo "  • Realm '$REALM': Available"
+          echo "  • Authentication: Working"
+          echo "  • Group '$GROUP_NAME': Created"
+          echo ""
+          echo "You can now assign users to the '$GROUP_NAME' group and configure permissions."

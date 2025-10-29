@@ -1,0 +1,104 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-gitea-org
+  description: Create Gitea organization for team collaboration
+
+parameters:
+  - name: org_name
+    type: string
+    required: true
+    description: Name of the organization to create
+
+  - name: description
+    type: string
+    required: false
+    default: "Team organization"
+    description: Organization description
+
+  - name: visibility
+    type: string
+    required: false
+    default: "public"
+    description: Organization visibility (public, limited, private)
+
+steps:
+  - name: create-organization
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        echo "🏢 Creating Gitea organization: {{ .parameters.org_name }}"
+
+        GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+        GITEA_USER="${GITEA_USER:-giteaadmin}"
+        GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+
+        # Check if organization already exists
+        HTTP_CODE=$(curl -s -o /tmp/gitea_org_check.json -w "%{http_code}" \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          "$GITEA_URL/api/v1/orgs/{{ .parameters.org_name }}")
+
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ Organization '{{ .parameters.org_name }}' already exists"
+          ORG_ID=$(cat /tmp/gitea_org_check.json | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+          echo "   Organization ID: $ORG_ID"
+
+          # Output existing org details
+          cat <<EOF
+        {
+          "org_id": "$ORG_ID",
+          "org_name": "{{ .parameters.org_name }}",
+          "org_url": "$GITEA_URL/{{ .parameters.org_name }}",
+          "status": "exists"
+        }
+        EOF
+          exit 0
+        fi
+
+        # Create organization
+        echo "📝 Creating new organization..."
+        CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"username\": \"{{ .parameters.org_name }}\",
+            \"full_name\": \"{{ .parameters.org_name }}\",
+            \"description\": \"{{ .parameters.description }}\",
+            \"visibility\": \"{{ .parameters.visibility }}\",
+            \"repo_admin_change_team_access\": true
+          }" \
+          "$GITEA_URL/api/v1/orgs")
+
+        HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+        RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '/HTTP_CODE:/d')
+
+        if [ "$HTTP_CODE" = "201" ]; then
+          ORG_ID=$(echo "$RESPONSE_BODY" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+          echo "✅ Organization created successfully"
+          echo "   Organization ID: $ORG_ID"
+          echo "   URL: $GITEA_URL/{{ .parameters.org_name }}"
+
+          # Output org details
+          cat <<EOF
+        {
+          "org_id": "$ORG_ID",
+          "org_name": "{{ .parameters.org_name }}",
+          "org_url": "$GITEA_URL/{{ .parameters.org_name }}",
+          "status": "created"
+        }
+        EOF
+        else
+          echo "❌ Failed to create organization (HTTP $HTTP_CODE)"
+          echo "Response: $RESPONSE_BODY"
+          exit 1
+        fi
+
+outputs:
+  org_name: "{{ .parameters.org_name }}"
+  org_url: "${GITEA_URL:-http://gitea.localtest.me}/{{ .parameters.org_name }}"
+  org_id: "{{ .steps.create-organization.output.org_id }}"
+  status: "{{ .steps.create-organization.output.status }}"

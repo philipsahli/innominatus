@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: identity-team
+  version: 1.0.0
+  category: identity-management
+  description: Identity and access management provisioners for Gitea and Keycloak
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+workflows:
+  - name: provision-gitea-org
+    file: ./workflows/provision-gitea-org.yaml
+    description: Create Gitea organization for team collaboration
+    category: provisioner
+    version: 1.0.0
+    tags: [gitea, organization, git, collaboration]
+
+  - name: provision-keycloak-group
+    file: ./workflows/provision-keycloak-group.yaml
+    description: Create Keycloak group/team for identity and access management
+    category: provisioner
+    version: 1.0.0
+    tags: [keycloak, identity, access-management, iam, group]

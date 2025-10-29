@@ -1,0 +1,105 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-s3-bucket
+  description: Create S3 bucket on Minio with access credentials
+
+parameters:
+  - name: bucket_name
+    type: string
+    required: true
+    description: Name of S3 bucket
+
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace to store credentials
+
+  - name: versioning
+    type: boolean
+    required: false
+    default: true
+    description: Enable versioning
+
+  - name: public_access
+    type: boolean
+    required: false
+    default: false
+    description: Allow public access
+
+steps:
+  - name: create-minio-bucket
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        # Configure Minio client (mc)
+        mc alias set minio http://minio.minio.svc.cluster.local:9000 minioadmin minioadmin
+
+        # Create bucket
+        mc mb minio/{{ .parameters.bucket_name }} || echo "Bucket may already exist"
+
+        # Enable versioning if requested
+        {{ if .parameters.versioning }}
+        mc version enable minio/{{ .parameters.bucket_name }}
+        {{ end }}
+
+        # Set public access policy if requested
+        {{ if .parameters.public_access }}
+        mc anonymous set download minio/{{ .parameters.bucket_name }}
+        {{ else }}
+        mc anonymous set none minio/{{ .parameters.bucket_name }}
+        {{ end }}
+
+        echo "Bucket created successfully"
+
+  - name: generate-credentials
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        # For demo purposes, use simple static credentials
+        # In production, you'd create proper Minio service accounts
+        ACCESS_KEY="minioadmin"
+        SECRET_KEY="minioadmin"
+
+        cat <<EOF
+        {
+          "access_key": "$ACCESS_KEY",
+          "secret_key": "$SECRET_KEY"
+        }
+        EOF
+
+  - name: store-credentials-in-namespace
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: {{ .parameters.bucket_name }}-s3-credentials
+          namespace: {{ .parameters.namespace }}
+          labels:
+            managed-by: innominatus
+            bucket: {{ .parameters.bucket_name }}
+        type: Opaque
+        stringData:
+          access-key: "{{ .steps.generate-credentials.output.access_key }}"
+          secret-key: "{{ .steps.generate-credentials.output.secret_key }}"
+          endpoint: "http://minio.minio.svc.cluster.local:9000"
+          bucket: "{{ .parameters.bucket_name }}"
+          s3-url: "s3://{{ .parameters.bucket_name }}"
+
+outputs:
+  bucket_name: "{{ .parameters.bucket_name }}"
+  endpoint: "http://minio.minio.svc.cluster.local:9000"
+  external_endpoint: "http://minio.localtest.me"
+  access_key: "{{ .steps.generate-credentials.output.access_key }}"
+  secret_key: "{{ .steps.generate-credentials.output.secret_key }}"
+  credentials_secret: "{{ .parameters.bucket_name }}-s3-credentials"
+  s3_url: "s3://{{ .parameters.bucket_name }}"

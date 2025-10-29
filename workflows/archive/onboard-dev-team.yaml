@@ -1,0 +1,378 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: onboard-dev-team
+  description: Complete platform onboarding orchestrating all product teams
+
+spec:
+  parameters:
+    - name: app_name
+      type: string
+      required: true
+
+    - name: environment
+      type: string
+      required: false
+      default: development
+
+    - name: db_size
+      type: string
+      required: false
+      default: small
+
+    - name: enable_backup
+      type: boolean
+      required: false
+      default: false
+
+  variables:
+    namespace_name: ${parameters.app_name}-${parameters.environment}
+    team_id: dev-team
+
+  steps:
+    # Step 1: Container Team - Create Namespace
+    - name: provision-namespace
+      type: workflow
+      workflow: container-team/provision-namespace
+      parameters:
+        namespace_name: ${variables.namespace_name}
+        resource_quota:
+          cpu: "4"
+          memory: "8Gi"
+          pods: "20"
+        labels:
+          app: ${parameters.app_name}
+          environment: ${parameters.environment}
+          managed-by: innominatus
+
+    # Step 2: Vault Team - Create Vault Space
+    - name: provision-vault-space
+      type: workflow
+      workflow: vault-team/provision-vault-space
+      parameters:
+        app_name: ${parameters.app_name}
+        namespace: ${variables.namespace_name}
+        service_account: ${parameters.app_name}-sa
+      dependsOn:
+        - provision-namespace
+
+    # Step 3: Database Team - Create PostgreSQL Database
+    - name: provision-database
+      type: workflow
+      workflow: database-team/provision-postgres
+      parameters:
+        db_name: ${parameters.app_name}
+        namespace: ${variables.namespace_name}
+        team_id: ${variables.team_id}
+        size: ${parameters.db_size}
+        replicas: 2
+        version: "15"
+      dependsOn:
+        - provision-namespace
+
+    # Step 4: Storage Team - Create S3 Bucket
+    - name: provision-storage
+      type: workflow
+      workflow: storage-team/provision-s3-bucket
+      parameters:
+        bucket_name: ${parameters.app_name}-${parameters.environment}
+        namespace: ${variables.namespace_name}
+        versioning: true
+        public_access: false
+      dependsOn:
+        - provision-namespace
+
+    # Step 5: Store DB Credentials in Vault
+    - name: store-db-credentials-in-vault
+      type: policy
+      config:
+        command: |
+          #!/bin/bash
+          set -e
+
+          export VAULT_ADDR=http://vault.localtest.me
+          export VAULT_TOKEN=root
+          export VAULT_NAMESPACE=applications/${parameters.app_name}
+
+          # Store database credentials in Vault
+          vault kv put secret/database \
+            username="${provision-database.username}" \
+            password="${provision-database.password}" \
+            host="${provision-database.host}" \
+            port="${provision-database.port}" \
+            database="${provision-database.database_name}" \
+            connection_string="${provision-database.connection_string}"
+      dependsOn:
+        - provision-database
+        - provision-vault-space
+
+    # Step 6: Store S3 Credentials in Vault
+    - name: store-s3-credentials-in-vault
+      type: policy
+      config:
+        command: |
+          #!/bin/bash
+          set -e
+
+          export VAULT_ADDR=http://vault.localtest.me
+          export VAULT_TOKEN=root
+          export VAULT_NAMESPACE=applications/${parameters.app_name}
+
+          # Store S3 credentials in Vault
+          vault kv put secret/storage \
+            access_key="${provision-storage.access_key}" \
+            secret_key="${provision-storage.secret_key}" \
+            bucket="${provision-storage.bucket_name}" \
+            endpoint="${provision-storage.endpoint}" \
+            s3_url="${provision-storage.s3_url}"
+      dependsOn:
+        - provision-storage
+        - provision-vault-space
+
+    # Step 7: Setup VSO to sync DB credentials to K8s Secret
+    - name: sync-db-secret-to-k8s
+      type: kubernetes
+      config:
+        action: create
+        namespace: ${variables.namespace_name}
+        manifest: |
+          apiVersion: secrets.hashicorp.com/v1beta1
+          kind: VaultStaticSecret
+          metadata:
+            name: ${parameters.app_name}-database-credentials
+            namespace: ${variables.namespace_name}
+          spec:
+            vaultAuthRef: ${provision-vault-space.vso_auth_ref}
+            mount: secret
+            type: kv-v2
+            path: database
+            refreshAfter: 30s
+            destination:
+              name: database-credentials
+              create: true
+              labels:
+                managed-by: innominatus
+                type: database
+      dependsOn:
+        - store-db-credentials-in-vault
+
+    # Step 8: Create Git Repository for App
+    - name: create-git-repo
+      type: gitea-repo
+      config:
+        repoName: ${parameters.app_name}
+        owner: dev-team
+        description: Application repository for ${parameters.app_name}
+        private: false
+        autoInit: true
+
+    # Step 9: Create Kubernetes Manifests
+    - name: create-k8s-manifests
+      type: policy
+      config:
+        command: |
+          #!/bin/bash
+          set -e
+
+          mkdir -p /tmp/${parameters.app_name}/k8s
+
+          # Create ServiceAccount
+          cat > /tmp/${parameters.app_name}/k8s/serviceaccount.yaml <<EOF
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ${parameters.app_name}-sa
+            namespace: ${variables.namespace_name}
+          EOF
+
+          # Create Deployment
+          cat > /tmp/${parameters.app_name}/k8s/deployment.yaml <<EOF
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: ${parameters.app_name}
+            namespace: ${variables.namespace_name}
+            labels:
+              app: ${parameters.app_name}
+              environment: ${parameters.environment}
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: ${parameters.app_name}
+            template:
+              metadata:
+                labels:
+                  app: ${parameters.app_name}
+              spec:
+                serviceAccountName: ${parameters.app_name}-sa
+                containers:
+                - name: app
+                  image: nginx:latest  # Replace with actual app image
+                  ports:
+                  - containerPort: 8080
+                  env:
+                  # Database connection from Vault secret
+                  - name: DATABASE_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: database-credentials
+                        key: connection_string
+                  - name: DB_HOST
+                    valueFrom:
+                      secretKeyRef:
+                        name: database-credentials
+                        key: host
+                  - name: DB_PORT
+                    valueFrom:
+                      secretKeyRef:
+                        name: database-credentials
+                        key: port
+                  - name: DB_NAME
+                    valueFrom:
+                      secretKeyRef:
+                        name: database-credentials
+                        key: database
+                  - name: DB_USER
+                    valueFrom:
+                      secretKeyRef:
+                        name: database-credentials
+                        key: username
+                  - name: DB_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: database-credentials
+                        key: password
+
+                  # S3 storage configuration
+                  - name: S3_ENDPOINT
+                    value: "${provision-storage.endpoint}"
+                  - name: S3_BUCKET
+                    value: "${provision-storage.bucket_name}"
+                  - name: S3_ACCESS_KEY
+                    value: "${provision-storage.access_key}"
+                  - name: S3_SECRET_KEY
+                    value: "${provision-storage.secret_key}"
+                  - name: S3_URL
+                    value: "${provision-storage.s3_url}"
+
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 128Mi
+                    limits:
+                      cpu: 500m
+                      memory: 512Mi
+          EOF
+
+          # Create Service
+          cat > /tmp/${parameters.app_name}/k8s/service.yaml <<EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: ${parameters.app_name}
+            namespace: ${variables.namespace_name}
+          spec:
+            selector:
+              app: ${parameters.app_name}
+            ports:
+            - port: 80
+              targetPort: 8080
+            type: ClusterIP
+          EOF
+
+          echo "Manifests created successfully"
+      dependsOn:
+        - create-git-repo
+
+    # Step 10: Commit Manifests to Git
+    - name: commit-manifests
+      type: git-commit-manifests
+      config:
+        repoName: ${parameters.app_name}
+        owner: dev-team
+        sourcePath: /tmp/${parameters.app_name}/k8s
+        targetPath: k8s
+        commitMessage: "feat: initial Kubernetes manifests"
+      dependsOn:
+        - create-k8s-manifests
+
+    # Step 11: Container Team - Create ArgoCD Application
+    - name: provision-argocd-app
+      type: workflow
+      workflow: container-team/provision-argocd-app
+      parameters:
+        app_name: ${parameters.app_name}
+        namespace: ${variables.namespace_name}
+        repo_url: http://gitea-http.gitea.svc.cluster.local:3000/dev-team/${parameters.app_name}
+        path: k8s
+        sync_policy: auto
+      dependsOn:
+        - commit-manifests
+
+    # Step 12: Wait for Application to be Healthy
+    - name: wait-for-app-health
+      type: policy
+      config:
+        command: |
+          #!/bin/bash
+          set -e
+
+          echo "Waiting for application to be healthy..."
+          kubectl wait --for=condition=Available \
+            deployment/${parameters.app_name} \
+            -n ${variables.namespace_name} \
+            --timeout=600s
+
+          echo "Application is healthy!"
+      dependsOn:
+        - provision-argocd-app
+
+    # Step 13: Verify Secret Sync
+    - name: verify-secret-sync
+      type: policy
+      config:
+        command: |
+          #!/bin/bash
+          set -e
+
+          echo "Verifying secret sync from Vault to Kubernetes..."
+
+          # Check if secret exists
+          kubectl get secret database-credentials -n ${variables.namespace_name}
+
+          # Verify secret has correct keys
+          kubectl get secret database-credentials -n ${variables.namespace_name} -o json | \
+            jq -e '.data | has("username") and has("password") and has("connection_string")'
+
+          echo "Secret sync verified successfully!"
+      dependsOn:
+        - wait-for-app-health
+
+  outputs:
+    app_name: ${parameters.app_name}
+    namespace: ${variables.namespace_name}
+    environment: ${parameters.environment}
+
+    # Database outputs
+    database_host: ${provision-database.host}
+    database_port: ${provision-database.port}
+    database_name: ${provision-database.database_name}
+    database_secret: database-credentials
+
+    # Storage outputs
+    s3_bucket: ${provision-storage.bucket_name}
+    s3_endpoint: ${provision-storage.endpoint}
+
+    # Vault outputs
+    vault_namespace: ${provision-vault-space.vault_namespace}
+
+    # Git outputs
+    git_repo_url: http://gitea.localtest.me/dev-team/${parameters.app_name}
+
+    # ArgoCD outputs
+    argocd_app_url: ${provision-argocd-app.app_url}
+
+    # Status
+    deployment_status: healthy
+    secret_sync_status: active

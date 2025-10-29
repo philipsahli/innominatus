@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: container-team
+  version: 1.0.0
+  category: infrastructure
+  description: Container platform provisioners - namespace and ArgoCD applications
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+workflows:
+  - name: provision-namespace
+    file: ./workflows/provision-namespace.yaml
+    description: Create Kubernetes namespace with resource quotas
+    category: provisioner
+    version: 1.0.0
+    tags: [kubernetes, namespace, quotas]
+
+  - name: provision-gitea-repo
+    file: ./workflows/provision-gitea-repo.yaml
+    description: Create Git repository in Gitea organization
+    category: provisioner
+    version: 1.0.0
+    tags: [gitea, git, repository, source-control]
+
+  - name: provision-argocd-app
+    file: ./workflows/provision-argocd-app.yaml
+    description: Create ArgoCD application for GitOps deployment
+    category: provisioner
+    version: 1.0.0
+    tags: [argocd, gitops, deployment]

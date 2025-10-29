@@ -1,0 +1,143 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: onboard-team-simple
+  description: Simple team onboarding with Gitea org and namespace (provider-based)
+
+spec:
+  parameters:
+    - name: app_name
+      type: string
+      required: true
+
+    - name: environment
+      type: string
+      required: false
+      default: development
+
+  steps:
+    # Step 1: Create team identity in Gitea (uses identity-team provider logic)
+    - name: setup-gitea-org
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "📦 Creating Gitea organization for team: dev-team"
+
+          GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+          GITEA_USER="${GITEA_USER:-giteaadmin}"
+          GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+          ORG_NAME="dev-team"
+
+          # Check if organization already exists
+          HTTP_CODE=$(curl -s -o /tmp/gitea_org_check.json -w "%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            "$GITEA_URL/api/v1/orgs/$ORG_NAME")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Organization '$ORG_NAME' already exists"
+            ORG_ID=$(cat /tmp/gitea_org_check.json | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+            echo "   Organization ID: $ORG_ID"
+            echo "   URL: $GITEA_URL/$ORG_NAME"
+            exit 0
+          fi
+
+          # Create organization
+          echo "📝 Creating new organization '$ORG_NAME'..."
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"username\": \"$ORG_NAME\",
+              \"full_name\": \"Development Team\",
+              \"description\": \"Development team organization\",
+              \"visibility\": \"public\"
+            }" \
+            "$GITEA_URL/api/v1/orgs")
+
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '/HTTP_CODE:/d')
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            ORG_ID=$(echo "$RESPONSE_BODY" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+            echo "✅ Organization created successfully"
+            echo "   Organization ID: $ORG_ID"
+            echo "   URL: $GITEA_URL/$ORG_NAME"
+          else
+            echo "❌ Failed to create organization (HTTP $HTTP_CODE)"
+            echo "Response: $RESPONSE_BODY"
+            exit 1
+          fi
+
+    # Step 2: Create initial namespace for team (uses container-team provider logic)
+    - name: create-namespace
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          NAMESPACE="my-awesome-app-development"
+          APP_NAME="my-awesome-app"
+          ENV="development"
+
+          echo "🔧 Creating namespace: $NAMESPACE"
+
+          # Create namespace YAML
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: $NAMESPACE
+            labels:
+              app: $APP_NAME
+              environment: $ENV
+              managed-by: innominatus
+          ---
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata:
+            name: ${NAMESPACE}-quota
+            namespace: $NAMESPACE
+          spec:
+            hard:
+              requests.cpu: "4"
+              requests.memory: "8Gi"
+              pods: "20"
+          EOF
+
+          echo "✅ Namespace $NAMESPACE created successfully"
+
+    # Step 3: Verify resources created
+    - name: verify-onboarding
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          NAMESPACE="my-awesome-app-development"
+
+          echo "🔍 Verifying onboarding..."
+
+          # Verify Gitea org
+          GITEA_CHECK=$(curl -s -u "giteaadmin:admin123" http://gitea.localtest.me/api/v1/orgs/dev-team | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+          echo "✅ Gitea org 'dev-team' exists (ID: $GITEA_CHECK)"
+          echo "   URL: http://gitea.localtest.me/dev-team"
+
+          # Verify namespace
+          kubectl get namespace $NAMESPACE || exit 1
+          echo "✅ Namespace '$NAMESPACE' exists"
+
+          # Verify quota
+          kubectl get resourcequota ${NAMESPACE}-quota -n $NAMESPACE || exit 1
+          echo "✅ Resource quota configured"
+
+          echo ""
+          echo "🎉 Team onboarding complete!"
+          echo "   - Gitea organization: dev-team"
+          echo "   - Kubernetes namespace: $NAMESPACE"
+          echo "   - Team can now request resources from providers"

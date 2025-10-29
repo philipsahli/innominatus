@@ -1,20 +1,22 @@
-# Product Workflows Activation Guide
+# Product Team Provider Activation Guide
 
 **Audience:** Platform Teams
-**Status:** ✅ Implementation Complete (US-005)
-**Last Updated:** 2025-10-19
+**Status:** ✅ Available
+**Last Updated:** 2025-10-29
 
 ---
 
 ## Overview
 
-This guide explains how to **activate product workflow capabilities** in your innominatus deployment. As of **US-005**, the multi-tier workflow executor is implemented and ready to use.
+This guide explains how to **activate product team provider capabilities** in your innominatus deployment. Product team providers enable internal teams to offer services (databases, storage, secrets) to application developers through automated workflows.
 
 **What You Get:**
-- Product teams can create workflows that run automatically
-- Platform workflows run for all deployments (security, compliance)
-- Application workflows continue to work as before
-- Clear separation of concerns between teams
+- Git-based provider loading from remote repositories
+- Multi-provider architecture with demo providers included
+- Golden path workflows for developer onboarding
+- PostgreSQL Operator integration for database provisioning
+- Vault Secrets Operator (VSO) for secret synchronization
+- Complete demo environment for testing
 
 ---
 
@@ -22,258 +24,237 @@ This guide explains how to **activate product workflow capabilities** in your in
 
 Before activation, ensure:
 
-✅ innominatus version with US-005 (commit hash: TBD)
-✅ `admin-config.yaml` file exists and is valid
-✅ Product workflow files in `workflows/products/` directory
-✅ Database connection working (required for workflow persistence)
+✅ **innominatus server** installed and running
+✅ **Docker Desktop with Kubernetes** enabled (for demo environment)
+✅ **Database connection** working (PostgreSQL or SQLite)
+✅ **kubectl** access to Kubernetes cluster (for demo)
+✅ **Admin permissions** for server configuration
 
 ---
 
-## Activation Steps
+## Activation Options
 
-### Step 1: Verify Code Version
+### Option 1: Demo Environment (Recommended for Testing)
 
-Check that your innominatus build includes US-005:
-
-```bash
-# Check for multi-tier executor function
-grep -n "NewServerWithDBAndAdminConfig" internal/server/handlers.go
-
-# Expected: Line ~216
-# func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{}) *Server
-```
-
-If not found, pull latest code or rebuild:
+The fastest way to explore provider capabilities:
 
 ```bash
-git pull origin main
-go build -o innominatus cmd/server/main.go
+# Install complete demo environment
+./innominatus-ctl demo-time
+
+# This automatically installs:
+# - Gitea (Git repository)
+# - Vault (Secret management)
+# - MinIO (Object storage)
+# - PostgreSQL Operator (Database provisioning)
+# - Vault Secrets Operator (Secret synchronization)
+# - ArgoCD (GitOps deployment)
+# - 4 demo providers (database, storage, vault, container teams)
+
+# Check status
+./innominatus-ctl demo-status
+
+# Expected output:
+# ✅ Gitea: http://gitea.localtest.me
+# ✅ Vault: http://vault.localtest.me
+# ✅ MinIO: http://minio.localtest.me
+# ✅ ArgoCD: http://argocd.localtest.me
+# ✅ PostgreSQL Operator: Running
+# ✅ Vault Secrets Operator: Running
 ```
 
-### Step 2: Configure admin-config.yaml
+**Demo Providers Location:** `providers/`
+- `database-team/` - PostgreSQL via operator
+- `storage-team/` - MinIO buckets
+- `vault-team/` - Secret management
+- `container-team/` - Container registry
 
-Create or update `admin-config.yaml` with workflow policies:
+**Try the onboarding workflow:**
+```bash
+./innominatus-ctl run onboard-dev-team examples/dev-team-app.yaml
+```
+
+### Option 2: Local Provider Setup (Production)
+
+Set up provider structure for your organization:
+
+#### Step 1: Create Provider Directory Structure
+
+```bash
+# Create provider directories
+mkdir -p providers/database-team/workflows
+mkdir -p providers/storage-team/workflows
+mkdir -p providers/vault-team/workflows
+
+# Directory structure:
+# providers/
+# ├── database-team/
+# │   ├── provider.yaml
+# │   └── workflows/
+# │       ├── create-postgres.yaml
+# │       └── delete-postgres.yaml
+# ├── storage-team/
+# │   ├── provider.yaml
+# │   └── workflows/
+# │       ├── create-bucket.yaml
+# │       └── delete-bucket.yaml
+# └── vault-team/
+#     ├── provider.yaml
+#     └── workflows/
+#         ├── create-secrets.yaml
+#         └── sync-secrets.yaml
+```
+
+#### Step 2: Create Provider Metadata
+
+**Example:** `providers/database-team/provider.yaml`
 
 ```yaml
-# admin-config.yaml
-admin:
-  defaultCostCenter: "engineering"
-  defaultRuntime: "kubernetes"
-
-workflowPolicies:
-  # Root directory for workflows
-  workflowsRoot: "./workflows"
-
-  # Platform workflows that MUST run for all deployments
-  requiredPlatformWorkflows:
-    - security-scan
-    - cost-monitoring
-
-  # Product workflows that are ALLOWED to run
-  # Add product teams here after review
-  allowedProductWorkflows:
-    - ecommerce/database-setup
-    - ecommerce/payment-integration
-    - analytics/data-pipeline
-
-  # Override permissions
-  workflowOverrides:
-    platform: true   # Platform workflows can override product workflows
-    product: true    # Product workflows can override application workflows
-
-  # Execution constraints
-  maxWorkflowDuration: "30m"
-  maxConcurrentWorkflows: 10
-  maxStepsPerWorkflow: 50
-
-  # Security policies
-  security:
-    requireApproval:
-      - production
-    allowedExecutors:
-      - platform-team
-      - infrastructure-teams
-    secretsAccess:
-      vault: "read-only"
-      kubernetes: "namespace-scoped"
-
-  # Allowed step types (security control)
-  allowedStepTypes:
-    - terraform
-    - kubernetes
-    - ansible
-    - database-migration
-    - vault-setup
-    - monitoring
-    - validation
-    - security
-    - policy
-    - tagging
-    - cost-analysis
-    - resource-provisioning
+name: database-team
+description: PostgreSQL database provisioning via operator
+version: 1.0.0
+owner: database-team@company.com
+workflows_dir: workflows
+supported_resources:
+  - postgres
+  - postgresql
+tags:
+  - database
+  - postgres
+  - operator
 ```
 
-### Step 3: Create Workflow Directory Structure
+#### Step 3: Create Provider Workflows
 
-```bash
-# Create directory structure
-mkdir -p workflows/platform
-mkdir -p workflows/products/ecommerce
-mkdir -p workflows/products/analytics
-
-# Verify structure
-tree workflows/
-# workflows/
-# ├── platform/
-# │   ├── security-scan.yaml
-# │   └── cost-monitoring.yaml
-# └── products/
-#     ├── ecommerce/
-#     │   ├── database-setup.yaml
-#     │   └── payment-integration.yaml
-#     └── analytics/
-#         └── data-pipeline.yaml
-```
-
-### Step 4: Add Example Platform Workflows
-
-Create basic platform workflows:
-
-**File:** `workflows/platform/security-scan.yaml`
+**Example:** `providers/database-team/workflows/create-postgres.yaml`
 
 ```yaml
-apiVersion: workflow.dev/v1
-kind: PlatformWorkflow
-metadata:
-  name: security-scan
-  description: Security scanning for all deployments
-  owner: platform-security-team
-  phase: pre-deployment
-spec:
-  triggers:
-    - all_deployments
-  steps:
-    - name: scan-containers
-      type: security
-      config:
-        scanner: trivy
-        severity: ["HIGH", "CRITICAL"]
-        failOnVulnerabilities: true
+name: create-postgres
+description: Create PostgreSQL database via operator
+steps:
+  - name: create-postgres-cr
+    type: kubernetes
+    config:
+      manifest: |
+        apiVersion: postgresql.cnpg.io/v1
+        kind: Cluster
+        metadata:
+          name: ${APP_NAME}-db
+          namespace: ${NAMESPACE}
+        spec:
+          instances: 1
+          storage:
+            size: 1Gi
+
+  - name: wait-for-ready
+    type: shell
+    config:
+      command: |
+        kubectl wait --for=condition=Ready \
+          cluster/${APP_NAME}-db \
+          -n ${NAMESPACE} \
+          --timeout=300s
+
+  - name: get-credentials
+    type: shell
+    config:
+      command: |
+        kubectl get secret ${APP_NAME}-db-app \
+          -n ${NAMESPACE} \
+          -o json
 ```
 
-**File:** `workflows/platform/cost-monitoring.yaml`
-
-```yaml
-apiVersion: workflow.dev/v1
-kind: PlatformWorkflow
-metadata:
-  name: cost-monitoring
-  description: Cost tracking and tagging
-  owner: platform-finops-team
-  phase: deployment
-spec:
-  triggers:
-    - all_deployments
-  steps:
-    - name: tag-resources
-      type: tagging
-      config:
-        tags:
-          managed_by: innominatus
-          cost_center: "${application.metadata.costCenter}"
-          team: "${application.metadata.team}"
-
-    - name: estimate-cost
-      type: cost-analysis
-      config:
-        estimateMonthly: true
-        alertThreshold: 1000  # Alert if >$1000/month
-```
-
-### Step 5: Start Server
+#### Step 4: Start Server with Providers
 
 ```bash
-# Stop existing server if running
-pkill innominatus
-
-# Start with multi-tier executor
+# Server automatically loads providers from ./providers/ directory
 ./innominatus
 
-# Watch for activation message
+# Or build and run:
+make build
+./innominatus
+
 # Expected output:
-# Admin configuration loaded:
-#   Workflows Root: ./workflows
-#   Required Platform Workflows: [security-scan cost-monitoring]
-#   Allowed Product Workflows: [ecommerce/database-setup ecommerce/payment-integration]
-# ...
-# Database connected successfully
-# ✅ Multi-tier workflow executor enabled (platform + product + application workflows)
+# Loading providers from: ./providers
+# ✅ Loaded provider: database-team (3 workflows)
+# ✅ Loaded provider: storage-team (2 workflows)
+# ✅ Loaded provider: vault-team (2 workflows)
+# Server listening on :8081
 ```
 
-**Success Indicators:**
-- ✅ Admin configuration loaded without errors
-- ✅ "Multi-tier workflow executor enabled" message appears
-- ✅ Server starts without warnings
+### Option 3: Git-Based Provider Loading
 
-### Step 6: Verify Activation
+Load providers from remote Git repositories:
 
-Test with a sample deployment:
+#### Step 1: Prepare Git Repository
 
 ```bash
-# Create test Score spec
-cat > test-app.yaml <<EOF
-apiVersion: score.dev/v1b1
-metadata:
-  name: activation-test
-  product: ecommerce
-  team: platform-team
-  costCenter: engineering
-containers:
-  web:
-    image: nginx:latest
-resources:
-  database:
-    type: postgres
-EOF
+# Structure in your Git repository:
+# providers/
+# ├── database-team/
+# │   ├── provider.yaml
+# │   └── workflows/
+# └── storage-team/
+#     ├── provider.yaml
+#     └── workflows/
 
-# Deploy
-curl -X POST http://localhost:8081/api/specs \
-  -H "Content-Type: application/yaml" \
-  -H "Authorization: Bearer $API_TOKEN" \
-  --data-binary @test-app.yaml
+git add providers/
+git commit -m "Add product team providers"
+git push origin main
 ```
 
-**Expected:** Multiple workflow executions:
-1. `platform-security-scan` (platform workflow)
-2. `platform-cost-monitoring` (platform workflow)
-3. `product-ecommerce-database-setup` (product workflow)
-4. `product-ecommerce-payment-integration` (product workflow)
-5. `app-deployment-activation-test` (application workflow)
-
-### Step 7: Check Workflow Executions
+#### Step 2: Register Provider via Admin API
 
 ```bash
-# Via API
-curl http://localhost:8081/api/workflows?app=activation-test | jq
+# Register database-team provider from Git
+curl -X POST http://localhost:8081/api/admin/providers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "database-team",
+    "git_url": "https://github.com/yourorg/providers",
+    "path": "providers/database-team",
+    "ref": "main"
+  }'
 
-# Via Database
-psql -d idp_orchestrator -c "
-SELECT id, app_name, workflow_name, status
-FROM workflow_executions
-WHERE app_name = 'activation-test'
-ORDER BY created_at;
-"
+# Response:
+# {
+#   "message": "Provider registered successfully",
+#   "provider": {
+#     "name": "database-team",
+#     "version": "1.0.0",
+#     "workflows": 3
+#   }
+# }
 ```
 
-**Expected Results:**
+#### Step 3: Verify Provider Registration
 
-| ID | App Name | Workflow Name | Status |
-|----|----------|---------------|--------|
-| 1 | activation-test | platform-security-scan | completed |
-| 2 | activation-test | platform-cost-monitoring | completed |
-| 3 | activation-test | product-ecommerce-database-setup | completed |
-| 4 | activation-test | product-ecommerce-payment-integration | completed |
-| 5 | activation-test | app-deployment-activation-test | completed |
+```bash
+# List registered providers
+curl http://localhost:8081/api/providers \
+  -H "Authorization: Bearer $API_TOKEN" | jq
+
+# Expected output:
+# [
+#   {
+#     "name": "database-team",
+#     "description": "PostgreSQL database provisioning",
+#     "version": "1.0.0",
+#     "workflows": ["create-postgres", "delete-postgres"],
+#     "source": "git"
+#   }
+# ]
+```
+
+#### Step 4: Update Provider from Git
+
+```bash
+# Provider automatically reloads on server restart
+# Or use API to reload:
+curl -X POST http://localhost:8081/api/admin/providers/database-team/reload \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
 
 ---
 
@@ -281,73 +262,96 @@ ORDER BY created_at;
 
 ### Process
 
-1. **Product team creates workflow files**
-   - Location: `workflows/products/{product-name}/`
-   - File format: `{workflow-name}.yaml`
-   - Kind: `ProductWorkflow`
+1. **Product team creates provider structure**
+   - Location: `providers/{team-name}/`
+   - Files: `provider.yaml` + `workflows/` directory
+   - Follow demo provider examples
 
-2. **Product team submits PR**
-   - Add workflow files
-   - Update `admin-config.yaml` → `allowedProductWorkflows`
-   - Include: Owner, description, testing results
+2. **Product team develops workflows**
+   - Create workflow YAML files in `workflows/` subdirectory
+   - Test locally with `innominatus-ctl run`
+   - Use demo environment for integration testing
 
 3. **Platform team reviews**
-   - Check workflow structure
-   - Verify allowed step types
-   - Review security implications
-   - Test in staging environment
+   - Review provider metadata (`provider.yaml`)
+   - Check workflow security (no hardcoded secrets)
+   - Test workflows in staging environment
+   - Verify resource cleanup
 
-4. **Merge and activate**
-   - Merge PR
-   - Restart innominatus (picks up new config)
-   - Monitor first few executions
+4. **Deployment options**
+   - **Option A (Git):** Register provider via admin API with Git URL
+   - **Option B (Local):** Add provider to `providers/` directory and restart server
+   - **Option C (Both):** Use both for development/production separation
 
 ### Review Checklist
 
-When reviewing product workflow PRs:
+When reviewing product team providers:
 
-- [ ] Workflow file location: `workflows/products/{product}/`
-- [ ] Valid YAML structure
-- [ ] Kind: `ProductWorkflow`
-- [ ] Owner specified
-- [ ] Phase specified (pre-deployment, deployment, post-deployment)
-- [ ] Only allowed step types used
-- [ ] No hardcoded secrets (use Vault references)
-- [ ] Reasonable timeout/duration
-- [ ] Tested in staging
-- [ ] Added to `allowedProductWorkflows` in admin-config.yaml
+- [ ] Provider structure: `providers/{team-name}/provider.yaml` + `workflows/`
+- [ ] Valid YAML structure in all files
+- [ ] Provider metadata complete (name, version, owner, description)
+- [ ] Owner contact information provided
+- [ ] Workflows use supported step types (kubernetes, shell, terraform, ansible)
+- [ ] No hardcoded secrets (use Vault or Kubernetes secrets)
+- [ ] Resource names use variables (`${APP_NAME}`, `${NAMESPACE}`)
+- [ ] Cleanup/deletion workflows provided
+- [ ] Tested in demo or staging environment
+- [ ] Documentation for app developers included
 
 ---
 
 ## Monitoring
+
+### Health Endpoints
+
+Monitor innominatus server health:
+
+```bash
+# Health check
+curl http://localhost:8081/health
+
+# Readiness probe
+curl http://localhost:8081/ready
+
+# Prometheus metrics
+curl http://localhost:8081/metrics
+```
 
 ### Key Metrics
 
 Monitor these after activation:
 
 ```promql
-# Total workflow executions by tier
-sum by (tier) (innominatus_workflows_total)
+# Total workflow executions
+sum(innominatus_workflows_total)
 
-# Product workflow success rate
-sum by (product) (innominatus_product_workflows_success_total) /
-sum by (product) (innominatus_product_workflows_total)
+# Workflow success rate
+sum(innominatus_workflows_success_total) / sum(innominatus_workflows_total)
 
-# Platform workflow duration (should be fast)
-histogram_quantile(0.95, innominatus_platform_workflow_duration_seconds)
+# Provider workflow duration
+histogram_quantile(0.95, innominatus_provider_workflow_duration_seconds)
+
+# Demo environment health
+sum(innominatus_demo_components_healthy) / sum(innominatus_demo_components_total)
 ```
 
 ### Logs to Watch
 
 ```bash
-# Multi-tier executor logs
-tail -f innominatus.log | grep "Multi-tier"
+# Provider loading
+tail -f innominatus.log | grep "provider"
 
-# Product workflow loading
-tail -f innominatus.log | grep "product-.*workflow"
+# Workflow execution
+tail -f innominatus.log | grep "workflow"
 
-# Policy validation (after US-006)
-tail -f innominatus.log | grep "policy"
+# Demo environment status
+./innominatus-ctl demo-status
+
+# PostgreSQL Operator
+kubectl logs -n postgres-operator -l app=postgres-operator
+
+# Vault Secrets Operator
+kubectl logs -n vault-secrets-operator -l app=vault-secrets-operator
 ```
 
 ### Alerts to Set Up
@@ -355,182 +359,308 @@ tail -f innominatus.log | grep "policy"
 ```yaml
 # Prometheus alerts
 groups:
-  - name: product_workflows
+  - name: innominatus_providers
     rules:
-      - alert: ProductWorkflowFailureRate
-        expr: sum by (product) (rate(innominatus_product_workflows_failed_total[5m])) > 0.1
+      - alert: ProviderWorkflowFailureRate
+        expr: sum by (provider) (rate(innominatus_provider_workflows_failed_total[5m])) > 0.1
         annotations:
-          summary: "Product {{ $labels.product }} workflow failure rate >10%"
+          summary: "Provider {{ $labels.provider }} workflow failure rate >10%"
 
-      - alert: PlatformWorkflowBlocked
-        expr: innominatus_platform_workflows_blocked_total > 0
+      - alert: PostgresOperatorDown
+        expr: up{job="postgres-operator"} == 0
         annotations:
-          summary: "Platform workflow blocked - may impact all deployments"
+          summary: "PostgreSQL Operator is down - database provisioning unavailable"
+
+      - alert: VaultSecretsOperatorDown
+        expr: up{job="vault-secrets-operator"} == 0
+        annotations:
+          summary: "Vault Secrets Operator is down - secret sync failing"
 ```
 
 ---
 
 ## Troubleshooting
 
-### Issue: "Single-tier workflow executor" Message
+### Issue: Providers Not Loading
 
-**Symptom:**
-```
-ℹ️  Single-tier workflow executor (use admin-config.yaml for product workflows)
-```
-
-**Cause:** admin-config.yaml failed to load
-
-**Fix:**
-1. Check file exists: `ls -la admin-config.yaml`
-2. Check YAML syntax: `yamllint admin-config.yaml`
-3. Check server logs for error: `grep "admin config" innominatus.log`
-
-### Issue: Product Workflows Not Executing
-
-**Symptom:** Only platform and application workflows execute
+**Symptom:** Server starts but providers aren't listed
 
 **Debug Steps:**
 
-1. **Check product metadata in Score spec:**
-   ```yaml
-   metadata:
-     product: ecommerce  # Must match product directory name
-   ```
-
-2. **Check workflow files exist:**
+1. **Check provider directory structure:**
    ```bash
-   ls -la workflows/products/ecommerce/
+   ls -la providers/
+   # Should show: database-team/, storage-team/, etc.
    ```
 
-3. **Check allowed list:**
+2. **Verify provider.yaml files:**
    ```bash
-   grep "allowedProductWorkflows" admin-config.yaml
-   # Must include: ecommerce/workflow-name
+   find providers/ -name "provider.yaml" -exec cat {} \;
    ```
 
-4. **Check server logs:**
+3. **Check server logs:**
    ```bash
-   tail -f innominatus.log | grep "product-ecommerce"
+   tail -f innominatus.log | grep -i "provider"
+   # Look for: "Loaded provider: database-team"
    ```
 
-### Issue: All Workflows Failing
-
-**Symptom:** All multi-tier workflows fail immediately
-
-**Possible Causes:**
-
-1. **Database connection lost:**
+4. **List providers via API:**
    ```bash
-   psql -d idp_orchestrator -c "SELECT 1;"
+   curl http://localhost:8081/api/providers | jq
    ```
 
-2. **Workflow files have syntax errors:**
+### Issue: Demo Environment Fails to Install
+
+**Symptom:** `demo-time` command fails or components unhealthy
+
+**Debug Steps:**
+
+1. **Check Kubernetes is running:**
    ```bash
-   for f in workflows/**/*.yaml; do
-       echo "Validating $f"
-       yaml-validator $f
-   done
+   kubectl cluster-info
+   kubectl get nodes
    ```
 
-3. **Step type not allowed:**
-   - Check `allowedStepTypes` in admin-config.yaml
-   - Verify workflows only use allowed types
+2. **Check namespace:**
+   ```bash
+   kubectl get ns | grep demo
+   ```
+
+3. **Check pod status:**
+   ```bash
+   kubectl get pods -n demo
+   kubectl get pods -n postgres-operator
+   kubectl get pods -n vault-secrets-operator
+   ```
+
+4. **Check specific component:**
+   ```bash
+   ./innominatus-ctl demo-status
+
+   # Check logs for specific component:
+   kubectl logs -n demo -l app=gitea
+   kubectl logs -n demo -l app=vault
+   kubectl logs -n demo -l app=minio
+   ```
+
+5. **Reinstall demo:**
+   ```bash
+   ./innominatus-ctl demo-nuke
+   ./innominatus-ctl demo-time
+   ```
+
+### Issue: PostgreSQL Operator Database Not Provisioning
+
+**Symptom:** Workflow creates PostgreSQL CRD but database doesn't start
+
+**Debug Steps:**
+
+1. **Check PostgreSQL Operator is running:**
+   ```bash
+   kubectl get pods -n postgres-operator
+   ```
+
+2. **Check PostgreSQL cluster status:**
+   ```bash
+   kubectl get postgresql.cnpg.io -A
+   kubectl describe postgresql.cnpg.io <db-name> -n <namespace>
+   ```
+
+3. **Check operator logs:**
+   ```bash
+   kubectl logs -n postgres-operator -l app=postgres-operator --tail=100
+   ```
+
+4. **Check PVC creation:**
+   ```bash
+   kubectl get pvc -n <namespace>
+   ```
+
+### Issue: Vault Secrets Not Syncing to Kubernetes
+
+**Symptom:** VSO ExternalSecret created but secret not appearing in namespace
+
+**Debug Steps:**
+
+1. **Check VSO is running:**
+   ```bash
+   kubectl get pods -n vault-secrets-operator
+   ```
+
+2. **Check ExternalSecret status:**
+   ```bash
+   kubectl get externalsecrets -A
+   kubectl describe externalsecret <name> -n <namespace>
+   ```
+
+3. **Check VSO logs:**
+   ```bash
+   kubectl logs -n vault-secrets-operator -l app=vault-secrets-operator --tail=100
+   ```
+
+4. **Verify secret exists in Vault:**
+   ```bash
+   # Get vault token (demo)
+   export VAULT_TOKEN=root
+   export VAULT_ADDR=http://vault.localtest.me
+
+   # Check secret path
+   vault kv get secret/data/<app-name>
+   ```
+
+### Issue: Workflow Execution Fails
+
+**Symptom:** Workflow starts but fails with error
+
+**Debug Steps:**
+
+1. **Check workflow logs:**
+   ```bash
+   ./innominatus-ctl workflow logs <workflow-id>
+   ```
+
+2. **Check workflow detail:**
+   ```bash
+   ./innominatus-ctl workflow detail <workflow-id>
+   ```
+
+3. **Verify variables are set:**
+   ```bash
+   # Check if APP_NAME, NAMESPACE, etc. are provided
+   # Review workflow YAML for required variables
+   ```
+
+4. **Test workflow step manually:**
+   ```bash
+   # For kubernetes steps:
+   kubectl apply -f <manifest>
+
+   # For shell steps:
+   # Run the command directly to see error output
+   ```
 
 ---
 
-## Rollback Procedures
+## Security Best Practices
 
-### Quick Rollback (No Code Change)
+### Provider Review
 
-**Disable multi-tier executor:**
+**Before deploying provider to production:**
 
-```bash
-# Rename admin config
-mv admin-config.yaml admin-config.yaml.disabled
+1. **Code review provider workflows**
+   - No hardcoded credentials
+   - Use Vault or Kubernetes secrets
+   - Validate all input parameters
+   - Implement error handling
 
-# Restart server
-pkill innominatus
-./innominatus
+2. **Test in isolated environment**
+   - Use demo environment first
+   - Test with non-production clusters
+   - Verify cleanup/deletion workflows
 
-# Verify fallback
-# Expected: "Single-tier workflow executor" message
+3. **Restrict access**
+   - Limit who can register providers
+   - Require admin approval for Git-based providers
+   - Monitor provider registration via API logs
+
+### Secret Management
+
+**Best practices for secrets in workflows:**
+
+```yaml
+# ❌ BAD - Hardcoded secret
+steps:
+  - name: deploy
+    config:
+      password: "mysecretpassword"
+
+# ✅ GOOD - Reference from Vault
+steps:
+  - name: get-secret
+    type: shell
+    config:
+      command: |
+        vault kv get -field=password secret/${APP_NAME}
+
+# ✅ GOOD - Reference from Kubernetes secret
+steps:
+  - name: deploy
+    config:
+      password_from_secret:
+        name: ${APP_NAME}-credentials
+        key: password
 ```
 
-**Result:** Only application workflows execute
+### RBAC Considerations
 
-### Full Rollback (Code Change)
+**Production deployment:**
 
-If issues persist:
+1. **Enable OIDC authentication**
+   ```bash
+   export OIDC_ENABLED=true
+   export OIDC_ISSUER="https://your-idp.com"
+   ./innominatus
+   ```
 
-```bash
-# Revert main.go change
-git diff cmd/server/main.go
+2. **Configure team-based access**
+   - Admin users can register providers
+   - Product teams manage their own providers
+   - App developers use providers via workflows
 
-# Line 116 should be:
-srv = server.NewServerWithDB(db)
-
-# Rebuild
-go build -o innominatus cmd/server/main.go
-
-# Restart
-./innominatus
-```
-
----
-
-## Security Considerations
-
-### Current State (Before US-006)
-
-⚠️ **Policy enforcement NOT active**
-
-**Risk:** Any workflow in `workflows/products/` will execute
-
-**Mitigation:**
-1. Restrict write access to `workflows/` directory
-2. Require PR reviews for all workflow changes
-3. Monitor workflow executions closely
-4. Implement US-006 immediately (see below)
-
-### After US-006 Implementation
-
-✅ **Policy enforcement active**
-
-**Benefit:** Only workflows in `allowedProductWorkflows` execute
-
-**Timeline:** US-006 estimated 2 hours (next priority)
+3. **API token management**
+   - Rotate API tokens regularly
+   - Use short-lived tokens for CI/CD
+   - Monitor token usage via logs
 
 ---
 
 ## Performance Tuning
 
-### Workflow Concurrency
+### Workflow Execution
 
-Adjust based on infrastructure capacity:
+**Optimize workflow performance:**
 
-```yaml
-# admin-config.yaml
-workflowPolicies:
-  maxConcurrentWorkflows: 10  # Increase for high-volume deployments
-```
+1. **Use efficient kubectl commands**
+   ```yaml
+   # ❌ Slow - Multiple kubectl calls
+   - kubectl create namespace ${NS}
+   - kubectl create secret ...
+   - kubectl apply -f ...
 
-**Guidance:**
-- Start with 10
-- Monitor CPU/memory during peak deployments
-- Increase to 20-30 for production clusters with >100 deployments/day
+   # ✅ Fast - Single kubectl apply with multiple resources
+   - kubectl apply -f - <<EOF
+     apiVersion: v1
+     kind: Namespace
+     ...
+     ---
+     apiVersion: v1
+     kind: Secret
+     ...
+     EOF
+   ```
 
-### Workflow Timeout
+2. **Parallel step execution (future enhancement)**
+   - Currently steps run sequentially
+   - Plan for parallel execution in future release
 
-```yaml
-workflowPolicies:
-  maxWorkflowDuration: "30m"  # Per workflow
-```
+3. **Resource limits**
+   - Set appropriate timeout values
+   - Monitor workflow duration
+   - Optimize long-running workflows
 
-**Guidance:**
-- Platform workflows: <5 minutes
-- Product workflows: <15 minutes
-- Application workflows: <30 minutes
+### Demo Environment
+
+**Performance considerations:**
+
+- Demo environment requires ~4GB RAM
+- PostgreSQL Operator adds ~500MB
+- Vault Secrets Operator adds ~200MB
+- Each database instance adds ~1GB
+
+**For production:**
+- Use external PostgreSQL (not operator)
+- Use external Vault cluster
+- Deploy to production Kubernetes cluster
 
 ---
 
@@ -538,30 +668,38 @@ workflowPolicies:
 
 After successful activation:
 
-1. **✅ US-005 Complete:** Multi-tier executor active
-2. **➡️ US-006 (Next):** Enable policy enforcement (2 hours)
-3. **➡️ US-007 (Week 2):** Add API endpoints for workflow discovery
-4. **➡️ US-008 (Week 2):** Add CLI commands for product teams
+1. **✅ Core Features Active:** Provider loading, Git integration, demo environment
+2. **➡️ Onboard Product Teams:** Work with internal teams to create providers
+3. **➡️ Production Deployment:** Deploy to production Kubernetes cluster
+4. **➡️ OIDC Integration:** Configure authentication for your organization
+5. **➡️ Monitoring Setup:** Configure Prometheus alerts and dashboards
 
-**See:** [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md) for full roadmap
+**Future Enhancements:**
+- Custom provisioner SDK
+- Multi-tenant RBAC
+- Runtime policy enforcement
+- Workflow templates
 
 ---
 
 ## Getting Help
 
 **Platform Team Resources:**
-- **Gap Analysis:** [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md)
-- **Implementation Summary:** [US-005_IMPLEMENTATION_SUMMARY.md](../US-005_IMPLEMENTATION_SUMMARY.md)
-- **Backlog:** US-005, US-006 in [BACKLOG.md](../../BACKLOG.md)
+- **Product Team Guide:** [README.md](README.md) - Overview and getting started
+- **Product Workflows:** [product-workflows.md](product-workflows.md) - Detailed workflow development guide
+- **Kubernetes Deployment:** [../platform-team-guide/kubernetes-deployment.md](../platform-team-guide/kubernetes-deployment.md)
+- **Main Documentation:** [CLAUDE.md](../../CLAUDE.md) - Core system documentation
 
-**Product Team Resources:**
-- **User Guide:** [README.md](README.md)
-- **Workflow Development:** [product-workflows.md](product-workflows.md) (coming soon)
+**Demo Providers (Examples):**
+- `providers/database-team/` - PostgreSQL via operator
+- `providers/storage-team/` - MinIO object storage
+- `providers/vault-team/` - Secret management with VSO
+- `providers/container-team/` - Container registry management
 
 **Support:**
-- GitHub Issues: Tag with `product-workflows`
-- Internal Slack: #platform-team
-- Email: platform-team@yourcompany.com
+- GitHub Issues: https://github.com/philipsahli/innominatus/issues
+- Check demo status: `./innominatus-ctl demo-status`
+- View logs: `tail -f innominatus.log`
 
 ---
 
@@ -570,25 +708,26 @@ After successful activation:
 Track these to measure activation success:
 
 **Week 1:**
-- [ ] Multi-tier executor activated in production
-- [ ] 3+ platform workflows running
-- [ ] 2+ product teams onboarded
-- [ ] Zero unauthorized workflow executions
-
-**Week 2:**
-- [ ] US-006 policy enforcement active
-- [ ] 10+ product workflows deployed
-- [ ] <5% workflow failure rate
-- [ ] Product teams self-servicing (after US-007/US-008)
+- [ ] Demo environment installed and healthy
+- [ ] 2+ product teams exploring demo providers
+- [ ] First custom provider created
+- [ ] Golden path workflow tested successfully
 
 **Month 1:**
+- [ ] 3+ product team providers deployed
+- [ ] 10+ workflows running successfully
+- [ ] <5% workflow failure rate
+- [ ] Product teams self-servicing via CLI
+
+**Quarter 1:**
 - [ ] 5+ product teams active
-- [ ] 50+ product workflows
-- [ ] Platform workflows covering 100% of deployments
-- [ ] Product team satisfaction >90%
+- [ ] Provider catalog established
+- [ ] OIDC authentication configured
+- [ ] Production deployment complete
+- [ ] Product team satisfaction >85%
 
 ---
 
 **Questions?** Contact platform team or open a GitHub issue.
 
-**Ready to activate?** Follow Step 1 above! 🚀
+**Ready to get started?** Run `./innominatus-ctl demo-time` to explore the demo environment! 🚀

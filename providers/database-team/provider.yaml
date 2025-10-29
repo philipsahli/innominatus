@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: database-team
+  version: 1.0.0
+  category: data
+  description: Database provisioners using PostgreSQL Operator
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+workflows:
+  - name: provision-postgres
+    file: ./workflows/provision-postgres.yaml
+    description: Create PostgreSQL database using Zalando operator
+    category: provisioner
+    version: 1.0.0
+    tags: [database, postgres, zalando]

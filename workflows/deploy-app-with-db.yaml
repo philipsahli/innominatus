@@ -1,0 +1,249 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: deploy-app-with-db
+  description: Deploy application with database provisioning and resource hints injection
+
+spec:
+  parameters:
+    - name: app_name
+      type: string
+      required: true
+
+    - name: environment
+      type: string
+      required: false
+      default: development
+
+  steps:
+    # Step 1: Provision database (using database-team provider logic)
+    - name: provision-database
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          APP_NAME="${APP_NAME:-my-awesome-app}"
+          ENV="${ENV:-development}"
+          NAMESPACE="$APP_NAME-$ENV"
+          DB_NAME="myapp"
+          TEAM_ID="dev-team"
+
+          echo "🗄️  Provisioning database for: $APP_NAME"
+          echo "   Namespace: $NAMESPACE"
+          echo "   Database: $DB_NAME"
+
+          # Create mock PostgreSQL deployment (simulating database-team provider)
+          # In production, this would call the actual database-team provider workflow
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: postgres-$DB_NAME
+            namespace: $NAMESPACE
+            labels:
+              app: postgres
+              database: $DB_NAME
+              managed-by: innominatus
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: postgres
+                database: $DB_NAME
+            template:
+              metadata:
+                labels:
+                  app: postgres
+                  database: $DB_NAME
+              spec:
+                containers:
+                - name: postgres
+                  image: postgres:15
+                  env:
+                  - name: POSTGRES_DB
+                    value: $DB_NAME
+                  - name: POSTGRES_USER
+                    value: appuser
+                  - name: POSTGRES_PASSWORD
+                    value: changeme123
+                  ports:
+                  - containerPort: 5432
+                    name: postgres
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: postgres-$DB_NAME
+            namespace: $NAMESPACE
+          spec:
+            selector:
+              app: postgres
+              database: $DB_NAME
+            ports:
+            - port: 5432
+              targetPort: 5432
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: ${TEAM_ID}-${DB_NAME}-credentials
+            namespace: $NAMESPACE
+          type: Opaque
+          stringData:
+            username: appuser
+            password: changeme123
+            database: $DB_NAME
+            host: postgres-$DB_NAME.$NAMESPACE.svc.cluster.local
+            port: "5432"
+            connection_string: postgresql://appuser:changeme123@postgres-$DB_NAME.$NAMESPACE.svc.cluster.local:5432/$DB_NAME
+          EOF
+
+          echo "✅ Database provisioned successfully"
+          echo "   Database host: postgres-$DB_NAME.$NAMESPACE.svc.cluster.local"
+          echo "   Database name: $DB_NAME"
+          echo "   Credentials secret: ${TEAM_ID}-${DB_NAME}-credentials"
+
+    # Step 2: Deploy application with database connection injected as env vars
+    - name: deploy-application
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          APP_NAME="${APP_NAME:-my-awesome-app}"
+          ENV="${ENV:-development}"
+          NAMESPACE="$APP_NAME-$ENV"
+          DB_NAME="myapp"
+          TEAM_ID="dev-team"
+          SECRET_NAME="${TEAM_ID}-${DB_NAME}-credentials"
+
+          echo "🚀 Deploying application: $APP_NAME"
+          echo "   Namespace: $NAMESPACE"
+          echo "   Injecting database resource hints from secret: $SECRET_NAME"
+
+          # Deploy application with database env vars injected from Secret
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: $APP_NAME
+            namespace: $NAMESPACE
+            labels:
+              app: $APP_NAME
+              environment: $ENV
+              managed-by: innominatus
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: $APP_NAME
+            template:
+              metadata:
+                labels:
+                  app: $APP_NAME
+                  environment: $ENV
+              spec:
+                containers:
+                - name: web
+                  image: nginx:latest
+                  ports:
+                  - containerPort: 80
+                  # Resource hints injected as environment variables
+                  env:
+                  - name: DATABASE_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: $SECRET_NAME
+                        key: connection_string
+                  - name: DB_HOST
+                    valueFrom:
+                      secretKeyRef:
+                        name: $SECRET_NAME
+                        key: host
+                  - name: DB_PORT
+                    valueFrom:
+                      secretKeyRef:
+                        name: $SECRET_NAME
+                        key: port
+                  - name: DB_NAME
+                    valueFrom:
+                      secretKeyRef:
+                        name: $SECRET_NAME
+                        key: database
+                  - name: DB_USER
+                    valueFrom:
+                      secretKeyRef:
+                        name: $SECRET_NAME
+                        key: username
+                  - name: DB_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: $SECRET_NAME
+                        key: password
+                  - name: APP_NAME
+                    value: $APP_NAME
+                  - name: ENVIRONMENT
+                    value: $ENV
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: $APP_NAME
+            namespace: $NAMESPACE
+          spec:
+            selector:
+              app: $APP_NAME
+            ports:
+            - port: 80
+              targetPort: 80
+          EOF
+
+          echo "✅ Application deployed with database resource hints"
+
+    # Step 3: Verify deployment and show resource hints
+    - name: verify-resource-hints
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          APP_NAME="${APP_NAME:-my-awesome-app}"
+          ENV="${ENV:-development}"
+          NAMESPACE="$APP_NAME-$ENV"
+
+          echo "🔍 Verifying deployment and resource hints..."
+          echo ""
+
+          # Wait for deployment to be ready
+          echo "Waiting for application pods to be ready..."
+          kubectl wait --for=condition=available --timeout=120s deployment/$APP_NAME -n $NAMESPACE || echo "⚠️  Deployment may still be in progress"
+
+          # Get pod name
+          POD_NAME=$(kubectl get pods -n $NAMESPACE -l app=$APP_NAME -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+          if [ -z "$POD_NAME" ]; then
+            echo "❌ No pods found for application: $APP_NAME"
+            kubectl get pods -n $NAMESPACE
+            exit 1
+          fi
+
+          echo "✅ Pod running: $POD_NAME"
+          echo ""
+
+          # Show database resource hints injected as environment variables
+          echo "📋 Database Resource Hints (Environment Variables):"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          kubectl exec -n $NAMESPACE $POD_NAME -- env | grep -E "^(DATABASE_URL|DB_HOST|DB_PORT|DB_NAME|DB_USER|APP_NAME|ENVIRONMENT)" | sort || echo "⚠️  Could not retrieve env vars (pod may be starting)"
+
+          echo ""
+          echo "✅ Verification complete!"
+          echo ""
+          echo "Summary:"
+          echo "  - Application: $APP_NAME"
+          echo "  - Namespace: $NAMESPACE"
+          echo "  - Database connection details injected as environment variables"
+          echo "  - All resource hints available to application code"

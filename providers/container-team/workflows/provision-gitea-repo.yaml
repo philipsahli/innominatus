@@ -1,0 +1,135 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-gitea-repo
+  description: Create Git repository in Gitea organization
+
+parameters:
+  - name: repo_name
+    type: string
+    required: true
+    description: Name of the repository to create
+
+  - name: org_name
+    type: string
+    required: true
+    description: Organization to create repository in
+
+  - name: description
+    type: string
+    required: false
+    default: "Application repository"
+    description: Repository description
+
+  - name: private
+    type: boolean
+    required: false
+    default: false
+    description: Make repository private
+
+  - name: auto_init
+    type: boolean
+    required: false
+    default: true
+    description: Initialize repository with README
+
+steps:
+  - name: create-repository
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        echo "📦 Creating Git repository: {{ .parameters.org_name }}/{{ .parameters.repo_name }}"
+
+        GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+        GITEA_USER="${GITEA_USER:-giteaadmin}"
+        GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+        ORG_NAME="{{ .parameters.org_name }}"
+        REPO_NAME="{{ .parameters.repo_name }}"
+
+        # Check if repository already exists
+        HTTP_CODE=$(curl -s -o /tmp/gitea_repo_check.json -w "%{http_code}" \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          "$GITEA_URL/api/v1/repos/$ORG_NAME/$REPO_NAME")
+
+        if [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ Repository '$ORG_NAME/$REPO_NAME' already exists"
+
+          CLONE_URL=$(cat /tmp/gitea_repo_check.json | grep -o '"clone_url":"[^"]*"' | cut -d'"' -f4)
+          SSH_URL=$(cat /tmp/gitea_repo_check.json | grep -o '"ssh_url":"[^"]*"' | cut -d'"' -f4)
+          REPO_ID=$(cat /tmp/gitea_repo_check.json | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+
+          echo "   Repository ID: $REPO_ID"
+          echo "   Clone URL: $CLONE_URL"
+
+          # Output existing repo details
+          cat <<EOF
+        {
+          "repo_id": "$REPO_ID",
+          "repo_name": "$REPO_NAME",
+          "org_name": "$ORG_NAME",
+          "repo_url": "$GITEA_URL/$ORG_NAME/$REPO_NAME",
+          "clone_url": "$CLONE_URL",
+          "ssh_url": "$SSH_URL",
+          "status": "exists"
+        }
+        EOF
+          exit 0
+        fi
+
+        # Create repository in organization
+        echo "📝 Creating new repository in organization '$ORG_NAME'..."
+        CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"name\": \"$REPO_NAME\",
+            \"description\": \"{{ .parameters.description }}\",
+            \"private\": {{ .parameters.private }},
+            \"auto_init\": {{ .parameters.auto_init }},
+            \"default_branch\": \"main\"
+          }" \
+          "$GITEA_URL/api/v1/orgs/$ORG_NAME/repos")
+
+        HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+        RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '/HTTP_CODE:/d')
+
+        if [ "$HTTP_CODE" = "201" ]; then
+          CLONE_URL=$(echo "$RESPONSE_BODY" | grep -o '"clone_url":"[^"]*"' | cut -d'"' -f4)
+          SSH_URL=$(echo "$RESPONSE_BODY" | grep -o '"ssh_url":"[^"]*"' | cut -d'"' -f4)
+          REPO_ID=$(echo "$RESPONSE_BODY" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+
+          echo "✅ Repository created successfully"
+          echo "   Repository ID: $REPO_ID"
+          echo "   URL: $GITEA_URL/$ORG_NAME/$REPO_NAME"
+          echo "   Clone URL: $CLONE_URL"
+
+          # Output repo details
+          cat <<EOF
+        {
+          "repo_id": "$REPO_ID",
+          "repo_name": "$REPO_NAME",
+          "org_name": "$ORG_NAME",
+          "repo_url": "$GITEA_URL/$ORG_NAME/$REPO_NAME",
+          "clone_url": "$CLONE_URL",
+          "ssh_url": "$SSH_URL",
+          "status": "created"
+        }
+        EOF
+        else
+          echo "❌ Failed to create repository (HTTP $HTTP_CODE)"
+          echo "Response: $RESPONSE_BODY"
+          exit 1
+        fi
+
+outputs:
+  repo_name: "{{ .parameters.repo_name }}"
+  org_name: "{{ .parameters.org_name }}"
+  repo_url: "${GITEA_URL:-http://gitea.localtest.me}/{{ .parameters.org_name }}/{{ .parameters.repo_name }}"
+  clone_url: "{{ .steps.create-repository.output.clone_url }}"
+  ssh_url: "{{ .steps.create-repository.output.ssh_url }}"
+  repo_id: "{{ .steps.create-repository.output.repo_id }}"
+  status: "{{ .steps.create-repository.output.status }}"

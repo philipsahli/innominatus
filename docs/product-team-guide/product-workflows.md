@@ -1,103 +1,137 @@
-# Product Workflows Guide
+# Provider Workflows Guide
 
 **Audience:** Product Teams
-**Status:** ✅ Feature Active (US-005 implemented)
-**Last Updated:** 2025-10-19
+**Status:** ✅ Available
+**Last Updated:** 2025-10-29
 
 ---
 
 ## Overview
 
-Product workflows allow you to define deployment logic that automatically runs when applications consuming your product are deployed. This guide covers how to create, test, and deploy product workflows.
+Provider workflows enable product teams to offer infrastructure services (databases, storage, secrets) to application developers through automated provisioning. This guide covers how to create, test, and deploy provider workflows.
+
+**What You'll Learn:**
+- Provider structure and metadata
+- Workflow development patterns
+- Variable interpolation
+- Testing with demo environment
+- Real-world examples from demo providers
 
 ---
 
 ## Quick Start
 
-### 1. Create Your Workflow File
+### 1. Create Provider Structure
 
-**Location:** `workflows/products/{your-product}/{workflow-name}.yaml`
+**Location:** `providers/{your-team}/`
 
-**Example:** `workflows/products/payments/gateway-setup.yaml`
-
-```yaml
-apiVersion: workflow.dev/v1
-kind: ProductWorkflow
-metadata:
-  name: gateway-setup
-  description: Configure payment gateway for new applications
-  product: payments
-  owner: payments-infrastructure-team
-  phase: deployment
-spec:
-  triggers:
-    - product_deployment
-  steps:
-    - name: create-vault-secrets
-      type: vault-setup
-      config:
-        secrets: ["stripe-api-key", "webhook-secret"]
-        path: "secret/apps/${application.name}/payments"
-
-    - name: configure-gateway
-      type: kubernetes
-      namespace: "${application.name}"
-      config:
-        manifests: "./k8s/payment-gateway"
-        variables:
-          APP_NAME: "${application.name}"
-          WEBHOOK_URL: "${application.route}/webhooks/stripe"
-
-    - name: verify-connectivity
-      type: validation
-      config:
-        healthCheck: "https://api.stripe.com/v1/health"
-        timeout: "30s"
+**Structure:**
+```
+providers/your-team/
+├── provider.yaml          # Provider metadata
+└── workflows/             # Workflow definitions
+    ├── create-resource.yaml
+    └── delete-resource.yaml
 ```
 
-### 2. Test Your Workflow
+### 2. Create Provider Metadata
 
-**Using the demo (current method):**
+**File:** `providers/your-team/provider.yaml`
+
+```yaml
+name: your-team
+description: Your infrastructure services
+version: 1.0.0
+owner: your-team@company.com
+workflows_dir: workflows
+supported_resources:
+  - your-resource-type
+tags:
+  - infrastructure
+  - automation
+```
+
+### 3. Create Your First Workflow
+
+**File:** `providers/your-team/workflows/create-resource.yaml`
+
+```yaml
+name: create-resource
+description: Provision resource for application
+steps:
+  - name: create-namespace
+    type: kubernetes
+    config:
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${APP_NAME}
+          labels:
+            managed-by: innominatus
+            team: your-team
+
+  - name: deploy-resource
+    type: kubernetes
+    config:
+      namespace: ${APP_NAME}
+      manifest: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: ${APP_NAME}-config
+        data:
+          resource_url: "https://your-service.com/${APP_NAME}"
+```
+
+### 4. Test Your Workflow
+
+**Using demo environment:**
 
 ```bash
-# Modify workflow-demo.go to use your product
-# Set app metadata:
-app := &workflow.ApplicationInstance{
-    Configuration: map[string]interface{}{
-        "metadata": map[string]interface{}{
-            "product": "payments",  # Your product
-        },
-    },
-}
+# Install demo environment
+./innominatus-ctl demo-time
 
-# Run demo
-go run workflow-demo.go
+# Test your workflow
+./innominatus-ctl run your-team/create-resource examples/dev-team-app.yaml
+
+# Check workflow status
+./innominatus-ctl list-workflows
 ```
 
 **Expected output:**
 ```
-🔄 Resolving Multi-Tier Workflows...
-📊 Workflow Resolution Results:
-  deployment Phase (1 workflows):
-    🔧 product-payments-gateway-setup (3 steps)
-       Step 1: create-vault-secrets (vault-setup)
-       Step 2: configure-gateway (kubernetes)
-       Step 3: verify-connectivity (validation)
+Workflow: your-team/create-resource
+Status: Running
+Steps:
+  ✅ create-namespace (completed)
+  🔄 deploy-resource (running)
 ```
 
-### 3. Submit for Approval
+### 5. Deploy Provider
 
-1. Create Git branch: `git checkout -b add-payments-workflows`
-2. Add your workflow files
-3. Update `admin-config.yaml`:
-   ```yaml
-   allowedProductWorkflows:
-     - payments/gateway-setup  # Add this line
-   ```
-4. Create PR for platform team review
-5. Platform team approves and merges
+**Option A - Local deployment:**
+```bash
+# Place provider in providers/ directory
+cp -r providers/your-team /path/to/innominatus/providers/
 
-### 4. Verify in Production
+# Restart server to load provider
+pkill innominatus && ./innominatus
+```
+
+**Option B - Git-based deployment:**
+```bash
+# Register via admin API
+curl -X POST http://localhost:8081/api/admin/providers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "your-team",
+    "git_url": "https://github.com/yourorg/providers",
+    "path": "providers/your-team",
+    "ref": "main"
+  }'
+```
 
 Once merged and server restarted:
 
@@ -506,181 +540,300 @@ steps:
 
 ## Real-World Examples
 
-### Example 1: E-commerce Payment Integration
+### Example 1: Database Team - PostgreSQL Provisioning
 
-**Product:** `ecommerce`
-**File:** `workflows/products/ecommerce/payment-integration.yaml`
+**Provider:** `database-team`
+**File:** `providers/database-team/workflows/create-postgres.yaml`
+
+This workflow uses the CloudNativePG operator to provision PostgreSQL databases:
 
 ```yaml
-apiVersion: workflow.dev/v1
-kind: ProductWorkflow
-metadata:
-  name: payment-integration
-  description: Setup payment gateway integration for e-commerce apps
-  product: ecommerce
-  owner: ecommerce-infrastructure-team
-  phase: deployment
-spec:
-  triggers:
-    - product_deployment
-  steps:
-    - name: setup-payment-vault
-      type: vault-setup
-      config:
-        secrets:
-          - stripe-api-key
-          - paypal-client-secret
-          - payment-webhook-secret
-        path: "secret/apps/${application.name}/payments"
-        policies:
-          - payment-service-read
-          - payment-audit-write
+name: create-postgres
+description: Create PostgreSQL database via CloudNativePG operator
+steps:
+  - name: create-postgres-cluster
+    type: kubernetes
+    config:
+      manifest: |
+        apiVersion: postgresql.cnpg.io/v1
+        kind: Cluster
+        metadata:
+          name: ${APP_NAME}-db
+          namespace: ${NAMESPACE}
+        spec:
+          instances: 1
+          storage:
+            size: 1Gi
+          postgresql:
+            parameters:
+              max_connections: "100"
+              shared_buffers: "256MB"
 
-    - name: configure-payment-gateway
-      type: kubernetes
-      namespace: "${application.name}-payment"
-      config:
-        manifests: "./k8s/payment-gateway"
-        variables:
-          APP_NAME: "${application.name}"
-          WEBHOOK_URL: "${application.route}/webhooks/payments"
-          VAULT_PATH: "secret/apps/${application.name}/payments"
+  - name: wait-for-database-ready
+    type: shell
+    config:
+      command: |
+        kubectl wait --for=condition=Ready \
+          cluster/${APP_NAME}-db \
+          -n ${NAMESPACE} \
+          --timeout=300s
+        echo "Database cluster is ready"
 
-    - name: verify-payment-connectivity
-      type: validation
-      config:
-        healthChecks:
-          - stripe-connectivity
-          - paypal-connectivity
-        timeout: "30s"
-        retries: 3
+  - name: get-database-credentials
+    type: shell
+    config:
+      command: |
+        # Get credentials from operator-created secret
+        kubectl get secret ${APP_NAME}-db-app \
+          -n ${NAMESPACE} \
+          -o jsonpath='{.data.username}' | base64 -d > /tmp/db-user
+        kubectl get secret ${APP_NAME}-db-app \
+          -n ${NAMESPACE} \
+          -o jsonpath='{.data.password}' | base64 -d > /tmp/db-pass
+
+        echo "Database credentials retrieved"
+
+  - name: store-credentials-in-vault
+    type: shell
+    config:
+      command: |
+        # Store credentials in Vault for application access
+        vault kv put secret/${APP_NAME}/database \
+          username=$(cat /tmp/db-user) \
+          password=$(cat /tmp/db-pass) \
+          host=${APP_NAME}-db-rw.${NAMESPACE}.svc.cluster.local \
+          port=5432 \
+          database=app
+
+  - name: create-vso-externalsecret
+    type: kubernetes
+    config:
+      manifest: |
+        apiVersion: secrets.hashicorp.com/v1beta1
+        kind: VaultStaticSecret
+        metadata:
+          name: ${APP_NAME}-db-credentials
+          namespace: ${NAMESPACE}
+        spec:
+          vaultAuthRef: default
+          mount: secret
+          path: ${APP_NAME}/database
+          refreshAfter: 1h
+          destination:
+            name: ${APP_NAME}-db-credentials
+            create: true
 ```
 
-**Triggers when:**
-```yaml
-# App Score spec includes:
-metadata:
-  product: ecommerce
-```
+**Key Features:**
+- Operator-based database provisioning
+- Automatic credential management
+- Vault integration for secret storage
+- VSO for Kubernetes secret synchronization
 
----
-
-### Example 2: Analytics Data Pipeline
-
-**Product:** `analytics`
-**File:** `workflows/products/analytics/data-pipeline.yaml`
-
-```yaml
-apiVersion: workflow.dev/v1
-kind: ProductWorkflow
-metadata:
-  name: data-pipeline
-  description: Setup data pipeline infrastructure for analytics apps
-  product: analytics
-  owner: analytics-infrastructure-team
-  phase: pre-deployment
-spec:
-  triggers:
-    - product_deployment
-  steps:
-    - name: provision-data-lake
-      type: terraform
-      config:
-        operation: apply
-        working_dir: ./terraform/analytics/data-lake
-        variables:
-          app_name: "${application.name}"
-          retention_days: 90
-        outputs:
-          - s3_bucket
-          - s3_arn
-
-    - name: setup-kafka-streams
-      type: kubernetes
-      namespace: "analytics-streaming"
-      config:
-        manifests: "./k8s/kafka"
-        variables:
-          TOPIC_NAME: "${application.name}-events"
-          PARTITION_COUNT: "12"
-
-    - name: configure-spark-cluster
-      type: kubernetes
-      namespace: "analytics-processing"
-      config:
-        manifests: "./k8s/spark"
-        variables:
-          CLUSTER_NAME: "${application.name}-spark"
-          EXECUTOR_COUNT: "5"
-
-    - name: setup-data-catalog
-      type: database-migration
-      config:
-        connectionString: "${resources.database.connection_string}"
-        migrationsPath: "./migrations/analytics"
-        schema: "data_catalog_${application.name}"
+**Try it:**
+```bash
+./innominatus-ctl demo-time
+./innominatus-ctl run database-team/create-postgres examples/dev-team-app.yaml
 ```
 
 ---
 
-### Example 3: ML Model Serving
+### Example 2: Storage Team - MinIO Bucket Provisioning
 
-**Product:** `ml-platform`
-**File:** `workflows/products/ml-platform/model-serving.yaml`
+**Provider:** `storage-team`
+**File:** `providers/storage-team/workflows/create-bucket.yaml`
+
+This workflow provisions S3-compatible object storage using MinIO:
 
 ```yaml
-apiVersion: workflow.dev/v1
-kind: ProductWorkflow
-metadata:
-  name: model-serving
-  description: Deploy ML model serving infrastructure
-  product: ml-platform
-  owner: ml-ops-team
-  phase: deployment
-spec:
-  triggers:
-    - product_deployment
-  steps:
-    - name: provision-model-registry
-      type: terraform
-      config:
-        operation: apply
-        working_dir: ./terraform/ml/registry
-        variables:
-          app_name: "${application.name}"
-          model_bucket: "ml-models-${workflow.ENVIRONMENT}"
-        outputs:
-          - registry_url
-          - registry_token
+name: create-bucket
+description: Create MinIO bucket for application storage
+steps:
+  - name: create-minio-bucket
+    type: shell
+    config:
+      command: |
+        # Configure MinIO client
+        mc alias set minio http://minio.demo.svc.cluster.local:9000 \
+          minioadmin minioadmin
 
-    - name: deploy-serving-infrastructure
-      type: kubernetes
-      namespace: "${application.name}"
-      config:
-        manifests: "./k8s/model-serving"
-        variables:
-          MODEL_REGISTRY_URL: "${terraform.registry_url}"
-          SERVING_RUNTIME: "tensorflow-serving"
-          GPU_ENABLED: "true"
+        # Create bucket
+        mc mb minio/${APP_NAME}-bucket --ignore-existing
 
-    - name: configure-monitoring
-      type: monitoring
-      config:
-        service: "ml-model-serving"
-        alerts:
-          - prediction_latency
-          - error_rate
-          - gpu_utilization
-        dashboards:
-          - model-performance
-          - resource-usage
+        # Enable versioning
+        mc version enable minio/${APP_NAME}-bucket
 
-    - name: validate-model-endpoint
-      type: validation
-      config:
-        healthCheck: "http://${application.route}/v1/models/status"
-        timeout: "60s"
-        expectedStatus: 200
+        echo "Bucket created: ${APP_NAME}-bucket"
+
+  - name: generate-access-credentials
+    type: shell
+    config:
+      command: |
+        # Generate service account for application
+        mc admin user svcacct add minio minioadmin \
+          --access-key ${APP_NAME}-access \
+          --secret-key $(openssl rand -base64 32) \
+          --policy readwrite
+
+        # Store for next step
+        mc admin user svcacct info minio ${APP_NAME}-access --json > /tmp/minio-creds.json
+
+  - name: set-bucket-policy
+    type: shell
+    config:
+      command: |
+        # Create policy for application access
+        cat > /tmp/bucket-policy.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"AWS": ["arn:aws:iam:::user/${APP_NAME}-access"]},
+            "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+            "Resource": ["arn:aws:s3:::${APP_NAME}-bucket/*"]
+          }]
+        }
+        EOF
+
+        mc anonymous set-json /tmp/bucket-policy.json minio/${APP_NAME}-bucket
+
+  - name: store-credentials-in-vault
+    type: shell
+    config:
+      command: |
+        ACCESS_KEY=$(jq -r '.accessKey' /tmp/minio-creds.json)
+        SECRET_KEY=$(jq -r '.secretKey' /tmp/minio-creds.json)
+
+        vault kv put secret/${APP_NAME}/storage \
+          access_key=$ACCESS_KEY \
+          secret_key=$SECRET_KEY \
+          bucket=${APP_NAME}-bucket \
+          endpoint=http://minio.demo.svc.cluster.local:9000
+```
+
+**Key Features:**
+- S3-compatible object storage
+- Automatic credential generation
+- Bucket policy management
+- Vault integration
+
+**Try it:**
+```bash
+./innominatus-ctl run storage-team/create-bucket examples/dev-team-app.yaml
+```
+
+---
+
+### Example 3: Complete Developer Onboarding Golden Path
+
+**File:** `workflows/onboard-dev-team.yaml`
+
+This comprehensive workflow orchestrates multiple providers for complete developer onboarding:
+
+```yaml
+name: onboard-dev-team
+description: Complete developer team onboarding with infrastructure provisioning
+steps:
+  - name: create-gitea-repository
+    type: shell
+    config:
+      command: |
+        # Create Git repository for application code
+        curl -X POST http://gitea.demo.svc.cluster.local:3000/api/v1/user/repos \
+          -H "Authorization: token ${GITEA_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "${APP_NAME}", "private": false}'
+
+  - name: provision-postgres-database
+    type: workflow
+    config:
+      provider: database-team
+      workflow: create-postgres
+      variables:
+        APP_NAME: ${APP_NAME}
+        NAMESPACE: ${NAMESPACE}
+
+  - name: provision-minio-bucket
+    type: workflow
+    config:
+      provider: storage-team
+      workflow: create-bucket
+      variables:
+        APP_NAME: ${APP_NAME}
+
+  - name: setup-vault-secrets
+    type: workflow
+    config:
+      provider: vault-team
+      workflow: create-secrets
+      variables:
+        APP_NAME: ${APP_NAME}
+        NAMESPACE: ${NAMESPACE}
+
+  - name: deploy-application
+    type: kubernetes
+    config:
+      namespace: ${NAMESPACE}
+      manifest: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${APP_NAME}
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: ${APP_NAME}
+          template:
+            metadata:
+              labels:
+                app: ${APP_NAME}
+            spec:
+              containers:
+              - name: app
+                image: nginx:latest
+                envFrom:
+                - secretRef:
+                    name: ${APP_NAME}-db-credentials
+                - secretRef:
+                    name: ${APP_NAME}-storage-credentials
+
+  - name: create-argocd-application
+    type: kubernetes
+    config:
+      manifest: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: ${APP_NAME}
+          namespace: argocd
+        spec:
+          project: default
+          source:
+            repoURL: http://gitea.demo.svc.cluster.local:3000/admin/${APP_NAME}
+            path: k8s
+            targetRevision: HEAD
+          destination:
+            server: https://kubernetes.default.svc
+            namespace: ${NAMESPACE}
+          syncPolicy:
+            automated:
+              prune: true
+              selfHeal: true
+```
+
+**What This Provides:**
+- Git repository for code
+- PostgreSQL database via operator
+- S3-compatible object storage
+- Secret management via Vault + VSO
+- Kubernetes deployment
+- GitOps with ArgoCD
+
+**Try it:**
+```bash
+./innominatus-ctl demo-time
+./innominatus-ctl run onboard-dev-team examples/dev-team-app.yaml
 ```
 
 ---

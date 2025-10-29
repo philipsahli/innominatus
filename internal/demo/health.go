@@ -54,6 +54,9 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		if component.Name == "vault-secrets-operator" {
 			return h.checkVaultSecretsOperator(component, status)
 		}
+		if component.Name == "postgres-operator" {
+			return h.checkPostgresOperator(component, status)
+		}
 		status.Status = "No ingress configured"
 		status.Healthy = true // Consider it healthy if no ingress is expected
 		return status
@@ -105,6 +108,8 @@ func (h *HealthChecker) CheckComponent(component DemoComponent) HealthStatus {
 		status = h.checkKubernetesDashboard(resp, status)
 	case "vault-secrets-operator":
 		status = h.checkVaultSecretsOperator(component, status)
+	case "postgres-operator":
+		status = h.checkPostgresOperator(component, status)
 	case "minio":
 		status = h.checkMinio(resp, status)
 	case "backstage":
@@ -308,6 +313,49 @@ func (h *HealthChecker) checkVaultSecretsOperator(component DemoComponent, statu
 
 	if err != nil {
 		status.Error = fmt.Sprintf("Failed to check VSO pods: %v", err)
+		status.Status = "Pod check failed"
+		return status
+	}
+
+	outputStr := strings.TrimSpace(string(output))
+	if outputStr == "" {
+		status.Status = "No pods found"
+		return status
+	}
+
+	// Check if all pods are running
+	phases := strings.Fields(outputStr)
+	runningCount := 0
+	totalCount := len(phases)
+
+	for _, phase := range phases {
+		if phase == "Running" {
+			runningCount++
+		}
+	}
+
+	if runningCount == totalCount && totalCount > 0 {
+		status.Healthy = true
+		status.Status = fmt.Sprintf("Running (%d/%d pods)", runningCount, totalCount)
+	} else {
+		status.Status = fmt.Sprintf("Unhealthy (%d/%d pods running)", runningCount, totalCount)
+	}
+
+	return status
+}
+
+// checkPostgresOperator performs Postgres Operator health check using kubectl
+func (h *HealthChecker) checkPostgresOperator(component DemoComponent, status HealthStatus) HealthStatus {
+	start := time.Now()
+
+	// Check if postgres-operator pods are running
+	cmd := exec.Command("kubectl", "get", "pods", "-n", component.Namespace, "-l", "app.kubernetes.io/name=postgres-operator", "-o", "jsonpath={.items[*].status.phase}") // #nosec G204 - kubectl command for health check
+	output, err := cmd.Output()
+
+	status.Latency = time.Since(start)
+
+	if err != nil {
+		status.Error = fmt.Sprintf("Failed to check postgres-operator pods: %v", err)
 		status.Status = "Pod check failed"
 		return status
 	}

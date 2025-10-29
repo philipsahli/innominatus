@@ -3,16 +3,19 @@ package sdk
 import "context"
 
 // Provisioner defines the interface that all resource provisioners must implement.
-// Platform teams implement this interface to provide custom resource provisioning logic.
 //
-// Example:
+// DEPRECATED: This interface is no longer used. All provisioning logic should be
+// implemented via workflows (YAML files). This interface will be removed in v2.0.
 //
-//	type MyProvisioner struct {}
+// New approach:
+//   - Define workflows in your provider's workflows/ directory
+//   - Reference them in provider.yaml under workflows[] field
+//   - Use category: "provisioner" for single-resource workflows
+//   - Use category: "goldenpath" for multi-resource orchestration
 //
-//	func (p *MyProvisioner) Provision(ctx context.Context, resource *Resource, config Config) error {
-//	    // Provision resource using platform-specific logic
-//	    return nil
-//	}
+// See CLAUDE.md for migration guide.
+//
+// Deprecated: Use workflows instead of Go-based provisioners.
 type Provisioner interface {
 	// Name returns the unique name of this provisioner
 	// Example: "aws-rds", "gitea-repo", "azure-cosmosdb"

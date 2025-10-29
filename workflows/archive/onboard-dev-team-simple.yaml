@@ -1,0 +1,57 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: onboard-dev-team-simple
+  description: Simplified onboarding - creates namespace with kubernetes step
+
+spec:
+  parameters:
+    - name: app_name
+      type: string
+      required: true
+
+    - name: environment
+      type: string
+      required: false
+      default: development
+
+  variables:
+    namespace_name: ${parameters.app_name}-${parameters.environment}
+
+  steps:
+    # Step 1: Create Namespace with resource quotas
+    - name: create-namespace
+      type: kubernetes
+      config:
+        operation: apply
+        manifest: |
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ${variables.namespace_name}
+            labels:
+              app: ${parameters.app_name}
+              environment: ${parameters.environment}
+              managed-by: innominatus
+          ---
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata:
+            name: ${variables.namespace_name}-quota
+            namespace: ${variables.namespace_name}
+          spec:
+            hard:
+              requests.cpu: "4"
+              requests.memory: "8Gi"
+              pods: "20"
+
+    # Step 2: Verify namespace created
+    - name: verify-namespace
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          echo "Verifying namespace ${variables.namespace_name} was created..."
+          kubectl get namespace ${variables.namespace_name} || exit 1
+          kubectl get resourcequota -n ${variables.namespace_name} || exit 1
+          echo "Namespace and resource quota verified successfully"

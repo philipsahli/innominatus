@@ -1141,6 +1141,13 @@ func (c *Client) DemoTimeCommand(componentFilter string) error {
 		}
 	}
 
+	// Install PostgreSQL Operator (Zalando)
+	cheatSheet.PrintProgress("Installing PostgreSQL Operator (Zalando)...")
+	if err := demo.InstallPostgresOperator(env.KubeContext); err != nil {
+		cheatSheet.PrintError("Installing PostgreSQL Operator", err)
+		return err
+	}
+
 	// Wait for services to be healthy (only check installed components)
 	cheatSheet.PrintProgress("Waiting for services to become healthy...")
 	if err := healthChecker.WaitForComponentsHealthy(allInstalledComponents, 30, 10*time.Second); err != nil {
@@ -1233,6 +1240,12 @@ func (c *Client) DemoNukeCommand() error {
 		}
 	}
 
+	// Uninstall PostgreSQL Operator
+	cheatSheet.PrintProgress("Uninstalling PostgreSQL Operator...")
+	if err := demo.UninstallPostgresOperator(env.KubeContext); err != nil {
+		fmt.Printf("Warning: Failed to uninstall PostgreSQL Operator: %v\n", err)
+	}
+
 	// Remove ArgoCD OIDC configuration before deleting namespaces
 	cheatSheet.PrintProgress("Removing ArgoCD OIDC configuration...")
 	// #nosec G204 - kubectl context from controlled demo environment
@@ -1311,6 +1324,14 @@ func (c *Client) DemoStatusCommand() error {
 	// Print detailed status
 	cheatSheet.PrintStatus(healthResults)
 
+	// Check PostgreSQL Operator status
+	fmt.Println("\n🐘 PostgreSQL Operator:")
+	if err := demo.CheckPostgresOperatorStatus(env.KubeContext); err != nil {
+		fmt.Printf("❌ PostgreSQL Operator: %v\n", err)
+	} else {
+		fmt.Println("✅ PostgreSQL Operator: Running")
+	}
+
 	// Print credentials
 	cheatSheet.PrintCredentials()
 
@@ -1324,7 +1345,7 @@ func (c *Client) DemoStatusCommand() error {
 }
 
 // DemoResetCommand resets the database to a clean state
-func (c *Client) DemoResetCommand() error {
+func (c *Client) DemoResetCommand(noCheck bool) error {
 	// Create demo environment and reset handler
 	env := demo.NewDemoEnvironment()
 	resetHandler := demo.NewDemoReset(env.KubeContext)
@@ -1332,21 +1353,27 @@ func (c *Client) DemoResetCommand() error {
 	fmt.Println("🔄 Demo Database Reset")
 	fmt.Println("")
 
-	// Check if demo-time has been run
-	fmt.Println("Checking if demo environment is installed...")
-	installed, err := resetHandler.CheckDemoInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to check demo installation: %w", err)
-	}
+	// Check if demo-time has been run (unless --no-check is specified)
+	if !noCheck {
+		fmt.Println("Checking if demo environment is installed...")
+		installed, err := resetHandler.CheckDemoInstalled()
+		if err != nil {
+			return fmt.Errorf("failed to check demo installation: %w", err)
+		}
 
-	if !installed {
-		fmt.Println("❌ Demo environment not detected.")
-		fmt.Println("   Run 'demo-time' first to install the demo environment.")
-		return fmt.Errorf("demo environment not installed")
-	}
+		if !installed {
+			fmt.Println("❌ Demo environment not detected.")
+			fmt.Println("   Run 'demo-time' first to install the demo environment.")
+			fmt.Println("   Or use --no-check to skip this verification.")
+			return fmt.Errorf("demo environment not installed")
+		}
 
-	fmt.Println("✅ Demo environment detected")
-	fmt.Println("")
+		fmt.Println("✅ Demo environment detected")
+		fmt.Println("")
+	} else {
+		fmt.Println("⚠️  Skipping demo environment check (--no-check)")
+		fmt.Println("")
+	}
 
 	// Display warning
 	fmt.Println("⚠️  WARNING: This will DELETE ALL DATA from the database!")
@@ -2668,7 +2695,7 @@ func toTitle(s string) string {
 // ProviderCommand handles provider-related subcommands
 func (c *Client) ProviderCommand(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("provider command requires a subcommand (list, stats)")
+		return fmt.Errorf("provider command requires a subcommand (list, stats, reload)")
 	}
 
 	subcommand := args[0]
@@ -2678,8 +2705,10 @@ func (c *Client) ProviderCommand(args []string) error {
 		return c.ListProvidersCommand()
 	case "stats":
 		return c.ProviderStatsCommand()
+	case "reload":
+		return c.ProviderReloadCommand()
 	default:
-		return fmt.Errorf("unknown provider subcommand: %s (available: list, stats)", subcommand)
+		return fmt.Errorf("unknown provider subcommand: %s (available: list, stats, reload)", subcommand)
 	}
 }
 
@@ -2731,6 +2760,36 @@ func (c *Client) ProviderStatsCommand() error {
 	formatter.PrintKeyValue(0, "Total Providers", fmt.Sprintf("%d", stats.Providers))
 	formatter.PrintKeyValue(0, "Total Provisioners", fmt.Sprintf("%d", stats.Provisioners))
 	formatter.PrintEmpty()
+
+	return nil
+}
+
+// ProviderReloadCommand reloads providers from admin-config.yaml
+func (c *Client) ProviderReloadCommand() error {
+	formatter := NewOutputFormatter()
+
+	formatter.PrintHeader("Reloading Providers")
+	formatter.PrintEmpty()
+
+	response, err := c.ReloadProviders()
+	if err != nil {
+		return fmt.Errorf("failed to reload providers: %w", err)
+	}
+
+	if success, ok := response["success"].(bool); ok && success {
+		formatter.PrintSuccess(fmt.Sprintf("%v", response["message"]))
+		formatter.PrintEmpty()
+
+		if providers, ok := response["providers"].(float64); ok {
+			formatter.PrintKeyValue(0, "Providers Loaded", fmt.Sprintf("%d", int(providers)))
+		}
+		if provisioners, ok := response["provisioners"].(float64); ok {
+			formatter.PrintKeyValue(0, "Provisioners Loaded", fmt.Sprintf("%d", int(provisioners)))
+		}
+		formatter.PrintEmpty()
+	} else {
+		return fmt.Errorf("reload failed: %v", response)
+	}
 
 	return nil
 }

@@ -577,6 +577,18 @@ func NewDemoEnvironment() *DemoEnvironment {
 				HealthPath: "/",
 				Port:       443,
 			},
+			{
+				Name:        "postgres-operator",
+				Namespace:   "postgres-operator",
+				Chart:       "", // Installed via demo-time
+				Repo:        "",
+				Version:     "",
+				IngressHost: "", // Kubernetes operator, no web UI
+				Credentials: map[string]string{},
+				Values:      map[string]interface{}{},
+				HealthPath:  "", // Health checked via Kubernetes API
+				Port:        0,
+			},
 		},
 	}
 }
@@ -617,8 +629,10 @@ func (d *DemoEnvironment) GetIngressComponents() []DemoComponent {
 func (d *DemoEnvironment) GetSystemComponents() []DemoComponent {
 	var systemComponents []DemoComponent
 	for _, component := range d.Components {
-		// Include ingress components and specific system components like VSO
-		if component.IngressHost != "" || component.Name == "vault-secrets-operator" {
+		// Include ingress components and specific system components like VSO and postgres-operator
+		if component.IngressHost != "" ||
+			component.Name == "vault-secrets-operator" ||
+			component.Name == "postgres-operator" {
 			systemComponents = append(systemComponents, component)
 		}
 	}

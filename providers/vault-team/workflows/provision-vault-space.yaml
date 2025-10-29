@@ -1,0 +1,131 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-vault-space
+  description: Create Vault namespace with KV engine and Kubernetes auth for VSO
+
+parameters:
+  - name: app_name
+    type: string
+    required: true
+    description: Application name (used for vault path)
+
+  - name: namespace
+    type: string
+    required: true
+    description: Kubernetes namespace
+
+  - name: service_account
+    type: string
+    required: false
+    default: "default"
+    description: Service account for Vault auth
+
+steps:
+  - name: enable-kv-engine
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        # Enable KV v2 secrets engine at app-specific path
+        vault secrets enable -path=secret/{{ .parameters.app_name }} kv-v2 || echo "KV engine may already exist"
+
+  - name: configure-kubernetes-auth
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        # Enable Kubernetes auth if not already enabled
+        vault auth enable kubernetes 2>/dev/null || echo "Kubernetes auth already enabled"
+
+        # Get Kubernetes CA cert and token for auth configuration
+        K8S_CA_CERT=$(kubectl config view --raw --minify --flatten -o jsonpath='{.clusters[].cluster.certificate-authority-data}' | base64 -d)
+        K8S_HOST=$(kubectl config view --raw --minify --flatten -o jsonpath='{.clusters[].cluster.server}')
+
+        # Configure Kubernetes auth
+        vault write auth/kubernetes/config \
+          kubernetes_host="$K8S_HOST" \
+          kubernetes_ca_cert="$K8S_CA_CERT" \
+          disable_local_ca_jwt=true || echo "Auth config may already exist"
+
+  - name: create-vault-policy
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        # Create policy for app access
+        vault policy write {{ .parameters.app_name }}-read - <<EOF
+        path "secret/data/{{ .parameters.app_name }}/*" {
+          capabilities = ["read", "list"]
+        }
+        path "secret/metadata/{{ .parameters.app_name }}/*" {
+          capabilities = ["read", "list"]
+        }
+        EOF
+
+  - name: create-kubernetes-role
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        # Create Kubernetes auth role
+        vault write auth/kubernetes/role/{{ .parameters.app_name }} \
+          bound_service_account_names={{ .parameters.service_account }} \
+          bound_service_account_namespaces={{ .parameters.namespace }} \
+          policies={{ .parameters.app_name }}-read \
+          ttl=24h
+
+  - name: setup-vso-resources
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        ---
+        apiVersion: secrets.hashicorp.com/v1beta1
+        kind: VaultConnection
+        metadata:
+          name: {{ .parameters.app_name }}-vault-connection
+          namespace: {{ .parameters.namespace }}
+        spec:
+          address: http://vault.vault.svc.cluster.local:8200
+          skipTLSVerify: true
+        ---
+        apiVersion: secrets.hashicorp.com/v1beta1
+        kind: VaultAuth
+        metadata:
+          name: {{ .parameters.app_name }}-vault-auth
+          namespace: {{ .parameters.namespace }}
+        spec:
+          vaultConnectionRef: {{ .parameters.app_name }}-vault-connection
+          method: kubernetes
+          mount: kubernetes
+          kubernetes:
+            role: {{ .parameters.app_name }}
+            serviceAccount: {{ .parameters.service_account }}
+
+outputs:
+  vault_path: "secret/data/{{ .parameters.app_name }}"
+  vault_url: "http://vault.localtest.me"
+  kubernetes_role: "{{ .parameters.app_name }}"
+  vso_auth_ref: "{{ .parameters.app_name }}-vault-auth"
+  vso_connection_ref: "{{ .parameters.app_name }}-vault-connection"

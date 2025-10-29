@@ -577,6 +577,15 @@ func (c *Client) GetProviderStats() (*ProviderStats, error) {
 	return &stats, nil
 }
 
+// ReloadProviders triggers a reload of providers from admin-config.yaml
+func (c *Client) ReloadProviders() (map[string]interface{}, error) {
+	var response map[string]interface{}
+	if err := c.http.POST("/api/admin/reload", nil, &response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // GetStats retrieves platform statistics (applications, workflows, resources, users)
 func (c *Client) GetStats() (*Stats, error) {
 	var stats Stats

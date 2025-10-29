@@ -62,139 +62,26 @@ This document provides a comprehensive implementation plan for a multi-team plat
 
 - Kubernetes cluster with demo environment: `./innominatus-ctl demo-time`
 - Gitea, ArgoCD, Vault, Minio already deployed
-- PostgreSQL operator (will be added to demo environment)
+- PostgreSQL operator (automatically installed by demo-time)
 
 ## Implementation Phases
 
-### Phase 1: Extend Demo Environment with PostgreSQL Operator
+### Phase 1: PostgreSQL Operator ✅ IMPLEMENTED
 
-#### 1.1 Add PostgreSQL Operator Component
+The PostgreSQL Operator (Zalando) is now automatically installed as part of the demo environment.
 
-**File**: `internal/demo/postgres_operator.go`
+**Implementation complete in:**
+- `internal/demo/postgres_operator.go` - Installation/uninstallation functions
+- `internal/cli/commands.go` - Integration with demo-time, demo-nuke, demo-status
 
-```go
-package demo
+**What it does:**
+- Automatically installs Zalando PostgreSQL Operator during `demo-time`
+- Creates `postgres-operator` namespace
+- Installs operator and UI components
+- Checks operator status in `demo-status`
+- Cleans up operator in `demo-nuke`
 
-import (
-	"fmt"
-	"os/exec"
-)
-
-// InstallPostgresOperator installs Zalando PostgreSQL Operator
-func InstallPostgresOperator() error {
-	fmt.Println("📦 Installing PostgreSQL Operator (Zalando)...")
-
-	// Add Helm repo
-	cmd := exec.Command("helm", "repo", "add", "postgres-operator-charts",
-		"https://opensource.zalando.com/postgres-operator/charts/postgres-operator")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to add postgres operator helm repo: %w", err)
-	}
-
-	cmd = exec.Command("helm", "repo", "update")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to update helm repos: %w", err)
-	}
-
-	// Install operator
-	cmd = exec.Command("helm", "install", "postgres-operator",
-		"postgres-operator-charts/postgres-operator",
-		"--namespace", "postgres-operator",
-		"--create-namespace",
-		"--set", "configKubernetes.enable_pod_antiaffinity=false",
-		"--set", "configKubernetes.enable_pod_disruption_budget=false",
-		"--wait")
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to install postgres operator: %w", err)
-	}
-
-	// Install UI (optional)
-	cmd = exec.Command("helm", "install", "postgres-operator-ui",
-		"postgres-operator-charts/postgres-operator-ui",
-		"--namespace", "postgres-operator",
-		"--wait")
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to install postgres operator UI: %w", err)
-	}
-
-	fmt.Println("✅ PostgreSQL Operator installed successfully")
-	return nil
-}
-
-// UninstallPostgresOperator removes PostgreSQL Operator
-func UninstallPostgresOperator() error {
-	fmt.Println("🗑️  Uninstalling PostgreSQL Operator...")
-
-	cmd := exec.Command("helm", "uninstall", "postgres-operator-ui", "-n", "postgres-operator")
-	_ = cmd.Run() // Ignore errors
-
-	cmd = exec.Command("helm", "uninstall", "postgres-operator", "-n", "postgres-operator")
-	_ = cmd.Run()
-
-	cmd = exec.Command("kubectl", "delete", "namespace", "postgres-operator")
-	_ = cmd.Run()
-
-	fmt.Println("✅ PostgreSQL Operator uninstalled")
-	return nil
-}
-
-// CheckPostgresOperatorStatus checks if operator is running
-func CheckPostgresOperatorStatus() error {
-	cmd := exec.Command("kubectl", "get", "pods", "-n", "postgres-operator",
-		"-l", "app.kubernetes.io/name=postgres-operator")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("postgres operator not found: %w", err)
-	}
-	fmt.Printf("PostgreSQL Operator Status:\n%s\n", output)
-	return nil
-}
-```
-
-#### 1.2 Update Demo Commands
-
-**File**: `internal/demo/cheatsheet.go` (add to existing functions)
-
-```go
-// Add to DemoTime() function
-func DemoTime() error {
-	// ... existing demo setup ...
-
-	// Add PostgreSQL Operator
-	if err := InstallPostgresOperator(); err != nil {
-		return fmt.Errorf("failed to install postgres operator: %w", err)
-	}
-
-	// ... rest of demo setup ...
-}
-
-// Add to DemoStatus() function
-func DemoStatus() error {
-	// ... existing status checks ...
-
-	fmt.Println("\n🐘 PostgreSQL Operator:")
-	if err := CheckPostgresOperatorStatus(); err != nil {
-		fmt.Printf("❌ PostgreSQL Operator: %v\n", err)
-	} else {
-		fmt.Println("✅ PostgreSQL Operator: Running")
-	}
-
-	// ... rest of status checks ...
-}
-
-// Add to DemoNuke() function
-func DemoNuke() error {
-	// ... existing cleanup ...
-
-	if err := UninstallPostgresOperator(); err != nil {
-		fmt.Printf("Warning: failed to uninstall postgres operator: %v\n", err)
-	}
-
-	// ... rest of cleanup ...
-}
-```
+**No manual intervention required** - the operator is ready to use!
 
 ### Phase 2: Container Team Provider
 
@@ -1455,68 +1342,121 @@ environment:
 ### Product Teams Setup
 
 ```bash
-# 3. Create Gitea organizations for product teams
-./innominatus-ctl run team-setup --team container-team
-./innominatus-ctl run team-setup --team database-team
-./innominatus-ctl run team-setup --team storage-team
-./innominatus-ctl run team-setup --team vault-team
+# 3. Setup product team providers in Gitea repositories
+# This script creates organizations, repositories, and pushes provider content
+./scripts/setup-demo-providers.sh
+
+# Expected output:
+# 🚀 Setting up Product Team Providers in Gitea
+# ==============================================
+#
+# Step 1: Creating Gitea organizations
+# -----------------------------------
+# 📁 Creating organization: container-team
+#    ✅ Organization ready
+# 📁 Creating organization: database-team
+#    ✅ Organization ready
+# 📁 Creating organization: storage-team
+#    ✅ Organization ready
+# 📁 Creating organization: vault-team
+#    ✅ Organization ready
+#
+# Step 2: Creating Git repositories
+# -------------------------------
+# 📦 Creating repository: container-team/container-team-provider
+#    ✅ Repository ready
+# 📦 Creating repository: database-team/database-team-provider
+#    ✅ Repository ready
+# 📦 Creating repository: storage-team/storage-team-provider
+#    ✅ Repository ready
+# 📦 Creating repository: vault-team/vault-team-provider
+#    ✅ Repository ready
+#
+# Step 3: Pushing provider content
+# ------------------------------
+# 📤 Pushing container-team provider content to Git
+#    ✅ Content pushed to Git
+# 📤 Pushing database-team provider content to Git
+#    ✅ Content pushed to Git
+# 📤 Pushing storage-team provider content to Git
+#    ✅ Content pushed to Git
+# 📤 Pushing vault-team provider content to Git
+#    ✅ Content pushed to Git
+#
+# 🎉 Setup Complete!
+#
+# Product team providers are now available in Gitea:
+#   • http://gitea.localtest.me/container-team/container-team-provider
+#   • http://gitea.localtest.me/database-team/database-team-provider
+#   • http://gitea.localtest.me/storage-team/storage-team-provider
+#   • http://gitea.localtest.me/vault-team/vault-team-provider
+
+# 4. (Optional) Create dev-team organization for application repositories
 ./innominatus-ctl run team-setup --team dev-team
-
-# 4. Create Git repositories for each product team's provider
-# (These can be created manually via Gitea UI or CLI)
-# - container-team/container-provider
-# - database-team/database-provider
-# - storage-team/storage-provider
-# - vault-team/vault-provider
-
-# 5. Push provider configurations to Git repositories
-# (Copy the provider.yaml and workflows/ from each team's section above)
 ```
 
 ### Configure Innominatus Admin
 
 ```bash
-# 6. Update admin-config.yaml to register product team providers
-cat >> admin-config.yaml <<EOF
+# 5. Create or update admin-config.yaml to register Git-based product team providers
+cat > admin-config.yaml <<EOF
+# Innominatus Admin Configuration
+# This file registers all product team providers from Git repositories
 
 providers:
-  # Existing providers...
-
   - name: container-team
     type: git
     category: platform
-    repository: http://gitea-http.gitea.svc.cluster.local:3000/container-team/container-provider
+    description: Container platform provisioners from container-team
+    repository: http://gitea-http.gitea.svc.cluster.local:3000/container-team/container-team-provider
     ref: main
     enabled: true
 
   - name: database-team
     type: git
     category: data
-    repository: http://gitea-http.gitea.svc.cluster.local:3000/database-team/database-provider
+    description: Database provisioners from database-team
+    repository: http://gitea-http.gitea.svc.cluster.local:3000/database-team/database-team-provider
     ref: main
     enabled: true
 
   - name: storage-team
     type: git
     category: storage
-    repository: http://gitea-http.gitea.svc.cluster.local:3000/storage-team/storage-provider
+    description: Object storage provisioners from storage-team
+    repository: http://gitea-http.gitea.svc.cluster.local:3000/storage-team/storage-team-provider
     ref: main
     enabled: true
 
   - name: vault-team
     type: git
     category: security
-    repository: http://gitea-http.gitea.svc.cluster.local:3000/vault-team/vault-provider
+    description: Secret management provisioners from vault-team
+    repository: http://gitea-http.gitea.svc.cluster.local:3000/vault-team/vault-team-provider
     ref: main
     enabled: true
 EOF
 
-# 7. Restart innominatus to reload providers
+# 6. Restart innominatus to reload providers from Git
 pkill innominatus
 ./innominatus &
 
-# 8. Verify providers are loaded
+# Wait for server to start
+sleep 3
+
+# 7. Verify providers are loaded from Git repositories
 ./innominatus-ctl list-providers
+
+# Expected output should show all 4 product teams with their provisioners:
+# container-team:
+#   - namespace (kubernetes-namespace)
+#   - argocd-app (argocd-application)
+# database-team:
+#   - postgres-db (postgresql)
+# storage-team:
+#   - s3-bucket (s3)
+# vault-team:
+#   - vault-space (vault-namespace)
 ```
 
 ### Dev Team Onboarding (The Main Demo)
@@ -1645,20 +1585,275 @@ kubectl get secret database-credentials -n my-awesome-app-development \
 - Application deployed via GitOps
 - Full audit trail in workflow logs
 
-## Success Criteria
+## Success Criteria & Acceptance Criteria
 
 At the end of the demo, stakeholders should see:
 
-1. ✅ **Namespace created** by container-team
-2. ✅ **PostgreSQL database running** provisioned by database-team
-3. ✅ **S3 bucket created** by storage-team
-4. ✅ **Vault namespace configured** by vault-team with VSO
-5. ✅ **Application pod running** with:
-   - Database password in synced K8s secret
-   - `DATABASE_URL` environment variable set
-   - `S3_ENDPOINT`, `S3_BUCKET`, `S3_URL` environment variables set
-6. ✅ **ArgoCD application** deploying from Git
-7. ✅ **Complete audit trail** in workflow execution logs
+### 1. ✅ **Namespace created** by container-team
+
+**Business Outcome:** Development team has an isolated Kubernetes namespace with resource quotas
+
+**Given** the onboard-dev-team workflow has completed successfully
+**When** checking Kubernetes namespaces
+**Then** namespace exists with proper labels and resource quotas applied
+
+**Technical verification:**
+```bash
+kubectl get namespace my-awesome-app-development
+kubectl get namespace my-awesome-app-development -o jsonpath='{.metadata.labels}'
+kubectl get resourcequota -n my-awesome-app-development
+```
+
+**Expected results:**
+- Namespace `my-awesome-app-development` exists with status `Active`
+- Labels include: `managed-by: innominatus`, `app: my-awesome-app`, `environment: development`
+- ResourceQuota exists with CPU (4 cores), Memory (8Gi), and Pod limits (20 pods)
+- NetworkPolicy `default-deny-ingress` exists
+
+---
+
+### 2. ✅ **PostgreSQL database running** provisioned by database-team
+
+**Business Outcome:** Application has a managed PostgreSQL database with credentials
+
+**Given** the database provisioning step has completed
+**When** checking PostgreSQL cluster status
+**Then** database cluster is running with correct configuration
+
+**Technical verification:**
+```bash
+kubectl get postgresql -n my-awesome-app-development
+kubectl get pods -n my-awesome-app-development | grep postgres
+kubectl get secret -n my-awesome-app-development | grep credentials
+```
+
+**Expected results:**
+- PostgreSQL cluster `dev-team-my-awesome-app` exists with status `Running`
+- PostgreSQL pods (2 replicas) are in `Running` state
+- Database credentials secret exists: `dev-team-my-awesome-app.my-awesome-app-app.credentials`
+- Database is accessible at: `dev-team-my-awesome-app.my-awesome-app-development.svc.cluster.local:5432`
+
+**Connectivity test:**
+```bash
+DB_SECRET="dev-team-my-awesome-app.my-awesome-app-app.credentials"
+DB_PASSWORD=$(kubectl get secret $DB_SECRET -n my-awesome-app-development -o jsonpath='{.data.password}' | base64 -d)
+kubectl run -it --rm psql-test --image=postgres:15 --restart=Never -n my-awesome-app-development -- \
+  psql postgresql://my_awesome_app_app:$DB_PASSWORD@dev-team-my-awesome-app.my-awesome-app-development.svc.cluster.local:5432/my-awesome-app -c '\l'
+```
+
+---
+
+### 3. ✅ **S3 bucket created** by storage-team
+
+**Business Outcome:** Application has object storage with access credentials
+
+**Given** the storage provisioning step has completed
+**When** checking Minio buckets
+**Then** bucket exists with correct access policies
+
+**Technical verification:**
+```bash
+mc alias set minio http://minio.localtest.me minioadmin minioadmin
+mc ls minio/ | grep my-awesome-app-development
+kubectl get secret -n my-awesome-app-development | grep s3-credentials
+```
+
+**Expected results:**
+- S3 bucket `my-awesome-app-development` exists in Minio
+- Bucket has versioning enabled
+- Secret `my-awesome-app-development-s3-credentials` exists in namespace
+- Secret contains keys: `access-key`, `secret-key`, `endpoint`, `bucket`, `s3-url`
+
+---
+
+### 4. ✅ **Vault namespace configured** by vault-team with VSO
+
+**Business Outcome:** Application secrets are managed in Vault and synced to Kubernetes
+
+**Given** the vault provisioning and secret sync steps have completed
+**When** checking Vault and VSO resources
+**Then** Vault namespace exists and secrets are synced to Kubernetes
+
+**Technical verification:**
+```bash
+# Check Vault namespace
+export VAULT_ADDR=http://vault.localtest.me
+export VAULT_TOKEN=root
+vault namespace list | grep my-awesome-app
+
+# Check VSO resources
+kubectl get vaultconnection -n my-awesome-app-development
+kubectl get vaultauth -n my-awesome-app-development
+kubectl get vaultstaticsecret -n my-awesome-app-development
+```
+
+**Expected results:**
+- Vault namespace `applications/my-awesome-app` exists
+- VaultConnection `my-awesome-app-vault-connection` exists
+- VaultAuth `my-awesome-app-vault-auth` exists with Kubernetes auth method
+- VaultStaticSecret `my-awesome-app-database-credentials` exists with sync status
+
+---
+
+### 5. ✅ **Kubernetes secret synced from Vault**
+
+**Business Outcome:** Database credentials are automatically synced from Vault to Kubernetes secret
+
+**Given** VSO has completed database credential sync
+**When** checking the synced Kubernetes secret
+**Then** secret exists with all required database connection fields
+
+**Technical verification:**
+```bash
+kubectl get secret database-credentials -n my-awesome-app-development
+kubectl get secret database-credentials -n my-awesome-app-development -o yaml
+kubectl get secret database-credentials -n my-awesome-app-development -o jsonpath='{.data}' | jq 'keys'
+```
+
+**Expected results:**
+- Secret `database-credentials` exists in namespace
+- Secret type is `Opaque`
+- Secret contains keys: `username`, `password`, `host`, `port`, `database`, `connection_string`
+- Label `managed-by: innominatus` is present
+- Secret data is base64-encoded and can be decoded:
+```bash
+kubectl get secret database-credentials -n my-awesome-app-development -o jsonpath='{.data.password}' | base64 -d
+```
+
+---
+
+### 6. ✅ **Application pod running** with correct environment variables
+
+**Business Outcome:** Application pod is running with database and S3 credentials configured as environment variables
+
+**Given** ArgoCD has deployed the application
+**When** checking application pods and environment variables
+**Then** pods are running with correct environment configuration
+
+**Technical verification:**
+```bash
+# Check pod status
+kubectl get pods -n my-awesome-app-development -l app=my-awesome-app
+
+# Get pod name
+POD=$(kubectl get pod -n my-awesome-app-development -l app=my-awesome-app -o jsonpath='{.items[0].metadata.name}')
+
+# Check environment variables
+kubectl exec -n my-awesome-app-development $POD -- env | sort | grep -E "DATABASE|DB_|S3_"
+```
+
+**Expected results:**
+- At least 1 pod with label `app=my-awesome-app` is in `Running` state
+- Pod has `Ready 1/1` status
+- Pod uses ServiceAccount `my-awesome-app-sa`
+
+**Environment variables must include:**
+- `DATABASE_URL` - Full PostgreSQL connection string from Vault secret
+- `DB_HOST` - Database host (from Vault secret)
+- `DB_PORT` - Database port (from Vault secret, should be `5432`)
+- `DB_NAME` - Database name (from Vault secret)
+- `DB_USER` - Database username (from Vault secret)
+- `DB_PASSWORD` - Database password (from Vault secret)
+- `S3_ENDPOINT` - Minio endpoint (`http://minio.minio.svc.cluster.local:9000`)
+- `S3_BUCKET` - Bucket name (`my-awesome-app-development`)
+- `S3_ACCESS_KEY` - S3 access key
+- `S3_SECRET_KEY` - S3 secret key
+- `S3_URL` - S3 URL (`s3://my-awesome-app-development`)
+
+**Verify environment variables are correctly set:**
+```bash
+POD=$(kubectl get pod -n my-awesome-app-development -l app=my-awesome-app -o jsonpath='{.items[0].metadata.name}')
+
+# Check DATABASE_URL format
+kubectl exec -n my-awesome-app-development $POD -- sh -c 'echo $DATABASE_URL' | grep -E "^postgresql://.+:.+@.+:5432/.+$"
+
+# Check S3_ENDPOINT
+kubectl exec -n my-awesome-app-development $POD -- sh -c 'echo $S3_ENDPOINT' | grep "minio.minio.svc.cluster.local:9000"
+
+# Check S3_BUCKET
+kubectl exec -n my-awesome-app-development $POD -- sh -c 'echo $S3_BUCKET' | grep "my-awesome-app-development"
+```
+
+---
+
+### 7. ✅ **ArgoCD application** deploying from Git
+
+**Business Outcome:** Application is deployed via GitOps with ArgoCD syncing from Git repository
+
+**Given** the ArgoCD application has been created
+**When** checking ArgoCD application status
+**Then** application is synced and healthy
+
+**Technical verification:**
+```bash
+# Check ArgoCD application
+kubectl get application -n argocd my-awesome-app
+kubectl get application -n argocd my-awesome-app -o jsonpath='{.status.sync.status}'
+kubectl get application -n argocd my-awesome-app -o jsonpath='{.status.health.status}'
+
+# Check in ArgoCD UI
+open http://argocd.localtest.me/applications/my-awesome-app
+```
+
+**Expected results:**
+- Application `my-awesome-app` exists in ArgoCD namespace
+- Sync status is `Synced` (not `OutOfSync`)
+- Health status is `Healthy` (not `Degraded` or `Missing`)
+- Application source repository: `http://gitea-http.gitea.svc.cluster.local:3000/dev-team/my-awesome-app`
+- Application source path: `k8s`
+- Target revision: `HEAD`
+- Destination namespace: `my-awesome-app-development`
+- Auto-sync enabled with prune and self-heal
+
+**Verify Git repository:**
+```bash
+# Check Git repository exists
+curl -s http://gitea.localtest.me/api/v1/repos/dev-team/my-awesome-app | jq '.name'
+
+# Verify k8s manifests exist in repo
+curl -s http://gitea.localtest.me/api/v1/repos/dev-team/my-awesome-app/contents/k8s | jq '.[].name'
+# Should show: deployment.yaml, service.yaml, serviceaccount.yaml
+```
+
+---
+
+### 8. ✅ **Complete audit trail** in workflow execution logs
+
+**Business Outcome:** Platform team can audit entire deployment process with detailed logs
+
+**Given** the onboard-dev-team workflow has completed
+**When** checking workflow execution history
+**Then** complete audit trail is available with all steps logged
+
+**Technical verification:**
+```bash
+# List workflow executions
+./innominatus-ctl workflow list
+
+# Get workflow details
+WORKFLOW_ID=$(./innominatus-ctl workflow list --format json | jq -r '.[0].id')
+./innominatus-ctl workflow detail $WORKFLOW_ID
+
+# View workflow logs
+./innominatus-ctl workflow logs $WORKFLOW_ID
+```
+
+**Expected results:**
+- Workflow execution record exists in database
+- Workflow status is `completed` (not `failed` or `running`)
+- All 13 steps show status `completed`
+- Workflow outputs include: namespace, database credentials, S3 bucket info, Vault namespace, Git repo URL, ArgoCD app URL
+- Logs contain detailed output from each step including:
+  - Namespace creation
+  - Vault space provisioning
+  - Database provisioning
+  - S3 bucket creation
+  - Secret storage in Vault
+  - VSO secret sync
+  - Git repository creation
+  - Manifest generation and commit
+  - ArgoCD application creation
+  - Health check verification
 
 ## Next Steps
 

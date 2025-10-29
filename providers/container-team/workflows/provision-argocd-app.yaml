@@ -1,0 +1,66 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-argocd-app
+  description: Create ArgoCD application for GitOps deployment
+
+parameters:
+  - name: app_name
+    type: string
+    required: true
+    description: Application name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Target namespace for deployment
+
+  - name: repo_url
+    type: string
+    required: true
+    description: Git repository URL
+
+  - name: path
+    type: string
+    required: false
+    default: "."
+    description: Path in repo to manifests
+
+  - name: sync_policy
+    type: string
+    required: false
+    default: "auto"
+    description: Sync policy (auto or manual)
+
+steps:
+  - name: create-argocd-app
+    type: argocd-app
+    config:
+      appName: "{{ .parameters.app_name }}"
+      project: default
+      repoURL: "{{ .parameters.repo_url }}"
+      path: "{{ .parameters.path }}"
+      targetRevision: HEAD
+      namespace: "{{ .parameters.namespace }}"
+      server: https://kubernetes.default.svc
+      syncPolicy: "{{ .parameters.sync_policy }}"
+      automated:
+        prune: true
+        selfHeal: true
+
+  - name: wait-for-sync
+    type: policy
+    config:
+      command: |
+        #!/bin/bash
+        set -e
+        echo "Waiting for ArgoCD app to sync..."
+        kubectl wait --for=condition=Synced \
+          application/{{ .parameters.app_name }} \
+          -n argocd \
+          --timeout=300s || true
+
+outputs:
+  app_name: "{{ .parameters.app_name }}"
+  app_url: "http://argocd.localtest.me/applications/{{ .parameters.app_name }}"
+  sync_status: "synced"

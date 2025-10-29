@@ -1,0 +1,85 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-namespace
+  description: Create Kubernetes namespace with resource quotas and network policies
+
+parameters:
+  - name: namespace_name
+    type: string
+    required: true
+    description: Name of the namespace to create
+
+  - name: resource_quota_cpu
+    type: string
+    required: false
+    default: "4"
+    description: CPU quota for namespace
+
+  - name: resource_quota_memory
+    type: string
+    required: false
+    default: "8Gi"
+    description: Memory quota for namespace
+
+  - name: resource_quota_pods
+    type: string
+    required: false
+    default: "20"
+    description: Pod count limit
+
+  - name: labels
+    type: map
+    required: false
+    description: Additional labels for namespace
+
+steps:
+  - name: create-namespace
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ .parameters.namespace_name }}
+          labels:
+            managed-by: innominatus
+            {{- range $key, $value := .parameters.labels }}
+            {{ $key }}: "{{ $value }}"
+            {{- end }}
+
+  - name: create-resource-quota
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: v1
+        kind: ResourceQuota
+        metadata:
+          name: resource-quota
+          namespace: {{ .parameters.namespace_name }}
+        spec:
+          hard:
+            requests.cpu: "{{ .parameters.resource_quota_cpu }}"
+            requests.memory: "{{ .parameters.resource_quota_memory }}"
+            pods: "{{ .parameters.resource_quota_pods }}"
+
+  - name: create-network-policy
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          name: default-deny-ingress
+          namespace: {{ .parameters.namespace_name }}
+        spec:
+          podSelector: {}
+          policyTypes:
+          - Ingress
+
+outputs:
+  namespace: "{{ .parameters.namespace_name }}"
+  status: "active"

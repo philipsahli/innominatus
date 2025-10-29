@@ -74,7 +74,7 @@ export default function ProvidersPage() {
 
         {/* Statistics Cards */}
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -91,12 +91,31 @@ export default function ProvidersPage() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Total Provisioners
+                  Total Workflows
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 flex items-center gap-2">
+                <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                  {providers.reduce((sum, p) => sum + p.provisioners + p.golden_paths, 0)}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  All workflows combined
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Provisioners
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {providers.reduce((sum, p) => sum + p.provisioners, 0)}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Single-resource workflows
                 </div>
               </CardContent>
             </Card>
@@ -108,8 +127,11 @@ export default function ProvidersPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                   {providers.reduce((sum, p) => sum + p.golden_paths, 0)}
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Multi-resource orchestration
                 </div>
               </CardContent>
             </Card>
@@ -156,55 +178,64 @@ export default function ProvidersPage() {
                       <TableHead>Name</TableHead>
                       <TableHead>Version</TableHead>
                       <TableHead>Category</TableHead>
-                      <TableHead>Provisioners</TableHead>
-                      <TableHead>Golden Paths</TableHead>
+                      <TableHead>Workflows</TableHead>
                       <TableHead>Description</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {providers.map((provider) => (
-                      <TableRow
-                        key={provider.name}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-800"
-                      >
-                        <TableCell>
-                          <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                            <Package className="w-4 h-4 text-purple-500" />
-                            {provider.name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">v{provider.version}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="default"
-                            className={
-                              provider.category === 'infrastructure'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-                                : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
-                            }
-                          >
-                            {provider.category || 'unknown'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            {provider.provisioners}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            {provider.golden_paths}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            {provider.description || 'No description'}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {providers.map((provider) => {
+                      const totalWorkflows = provider.provisioners + provider.golden_paths;
+                      return (
+                        <TableRow
+                          key={provider.name}
+                          className="hover:bg-gray-50 dark:hover:bg-gray-800"
+                        >
+                          <TableCell>
+                            <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                              <Package className="w-4 h-4 text-purple-500" />
+                              {provider.name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">v{provider.version}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="default"
+                              className={
+                                provider.category === 'infrastructure'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
+                                  : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100'
+                              }
+                            >
+                              {provider.category || 'unknown'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                                {totalWorkflows} total
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                                <div>
+                                  <Badge variant="secondary" className="text-xs mr-1">P</Badge>
+                                  {provider.provisioners} provisioner{provider.provisioners !== 1 ? 's' : ''}
+                                </div>
+                                <div>
+                                  <Badge variant="secondary" className="text-xs mr-1">GP</Badge>
+                                  {provider.golden_paths} golden path{provider.golden_paths !== 1 ? 's' : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              {provider.description || 'No description'}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -215,34 +246,52 @@ export default function ProvidersPage() {
         {/* Information Card */}
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle className="text-base">About Providers</CardTitle>
+            <CardTitle className="text-base">About Providers & Workflows</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
             <p>
-              <strong>Providers</strong> enable extensibility by allowing infrastructure and product
-              teams to define custom provisioners and golden paths. Providers can be loaded from:
+              <strong>Providers</strong> bundle workflows that teams can use to provision resources and orchestrate deployments.
+              Each provider contains YAML-based workflows that define automated operations.
             </p>
-            <ul className="list-disc list-inside space-y-1 ml-2">
-              <li>
-                <strong>Filesystem:</strong> Local provider manifests in the providers/ directory
-              </li>
-              <li>
-                <strong>Git Repositories:</strong> Remote providers with version pinning
-                (tags/branches)
-              </li>
-            </ul>
+
             <p className="pt-2">
-              <strong>Categories:</strong>
+              <strong>Workflow Types:</strong>
             </p>
             <ul className="list-disc list-inside space-y-1 ml-2">
               <li>
-                <strong>Infrastructure:</strong> Platform team providers (AWS, Azure, GCP, Storage)
+                <strong>Provisioners (P):</strong> Single-resource workflows that create individual resources
+                like databases, namespaces, or storage buckets
               </li>
               <li>
-                <strong>Service:</strong> Product team providers (ecommerce, analytics, ML
-                pipelines)
+                <strong>Golden Paths (GP):</strong> Multi-resource orchestration workflows that combine
+                multiple provisioners (e.g., onboard-dev-team, deploy-app)
               </li>
             </ul>
+
+            <p className="pt-2">
+              <strong>Provider Sources:</strong>
+            </p>
+            <ul className="list-disc list-inside space-y-1 ml-2">
+              <li>
+                <strong>Built-in Provider:</strong> Core workflows shipped with innominatus (filesystem)
+              </li>
+              <li>
+                <strong>Extension Providers:</strong> Custom workflows from product/platform teams loaded from Git repositories
+              </li>
+            </ul>
+
+            <p className="pt-2">
+              <strong>Provider Categories:</strong>
+            </p>
+            <ul className="list-disc list-inside space-y-1 ml-2">
+              <li>
+                <strong>Infrastructure:</strong> Platform team providers (AWS, Azure, GCP, Kubernetes)
+              </li>
+              <li>
+                <strong>Service:</strong> Product team providers (ecommerce, analytics, ML pipelines)
+              </li>
+            </ul>
+
             <p className="pt-2">
               Providers are configured in{' '}
               <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">admin-config.yaml</code>{' '}

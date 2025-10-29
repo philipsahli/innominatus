@@ -1,0 +1,208 @@
+apiVersion: workflow.dev/v1
+kind: Workflow
+metadata:
+  name: onboard-dev-team-hardcoded
+  description: Hardcoded onboarding for demo (AC #1 verification)
+
+spec:
+  parameters:
+    - name: app_name
+      type: string
+      required: true
+
+    - name: environment
+      type: string
+      required: false
+      default: development
+
+  steps:
+    # Step 1: Create team identity in Gitea (uses identity-team provider logic)
+    - name: setup-gitea-org
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "📦 Creating Gitea organization for team: dev-team"
+
+          GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+          GITEA_USER="${GITEA_USER:-giteaadmin}"
+          GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+          ORG_NAME="dev-team"
+
+          # Check if organization already exists
+          HTTP_CODE=$(curl -s -o /tmp/gitea_org_check.json -w "%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            "$GITEA_URL/api/v1/orgs/$ORG_NAME")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Organization '$ORG_NAME' already exists"
+            ORG_ID=$(cat /tmp/gitea_org_check.json | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+            echo "   Organization ID: $ORG_ID"
+            exit 0
+          fi
+
+          # Create organization
+          echo "📝 Creating new organization '$ORG_NAME'..."
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -u "$GITEA_USER:$GITEA_PASSWORD" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"username\": \"$ORG_NAME\",
+              \"full_name\": \"Development Team\",
+              \"description\": \"Development team organization\",
+              \"visibility\": \"public\"
+            }" \
+            "$GITEA_URL/api/v1/orgs")
+
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+          RESPONSE_BODY=$(echo "$CREATE_RESPONSE" | sed '/HTTP_CODE:/d')
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            ORG_ID=$(echo "$RESPONSE_BODY" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
+            echo "✅ Organization created successfully"
+            echo "   Organization ID: $ORG_ID"
+            echo "   URL: $GITEA_URL/$ORG_NAME"
+          else
+            echo "❌ Failed to create organization (HTTP $HTTP_CODE)"
+            echo "Response: $RESPONSE_BODY"
+            exit 1
+          fi
+
+    # Step 2: Create team identity in Keycloak (uses identity-team provider logic)
+    - name: setup-keycloak-team
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          echo "👥 Creating Keycloak group for team: dev-team"
+
+          KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak.localtest.me}"
+          KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+          KEYCLOAK_PASSWORD="${KEYCLOAK_PASSWORD:-admin123}"
+          REALM="demo-realm"
+          GROUP_NAME="dev-team"
+
+          # Get admin access token
+          echo "🔑 Obtaining admin access token..."
+          TOKEN_RESPONSE=$(curl -s -X POST \
+            "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+            -d "username=$KEYCLOAK_ADMIN" \
+            -d "password=$KEYCLOAK_PASSWORD" \
+            -d "grant_type=password" \
+            -d "client_id=admin-cli")
+
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "❌ Failed to obtain access token"
+            echo "Response: $TOKEN_RESPONSE"
+            exit 1
+          fi
+
+          # Check if group already exists
+          echo "🔍 Checking if group exists..."
+          GROUPS_RESPONSE=$(curl -s \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+          if echo "$GROUPS_RESPONSE" | grep -q "\"name\":\"$GROUP_NAME\""; then
+            echo "✅ Group '$GROUP_NAME' already exists in realm '$REALM'"
+            GROUP_ID=$(echo "$GROUPS_RESPONSE" | grep -B2 "\"name\":\"$GROUP_NAME\"" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+            echo "   Group ID: $GROUP_ID"
+            exit 0
+          fi
+
+          # Create group
+          echo "📝 Creating new group '$GROUP_NAME'..."
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"$GROUP_NAME\",
+              \"attributes\": {
+                \"description\": [\"Development team group\"],
+                \"team_type\": [\"development\"],
+                \"managed_by\": [\"innominatus\"]
+              }
+            }" \
+            "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+          HTTP_CODE=$(echo "$CREATE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+
+          if [ "$HTTP_CODE" = "201" ]; then
+            echo "✅ Group created successfully"
+            echo "   Group: $GROUP_NAME"
+            echo "   Realm: $REALM"
+          else
+            echo "❌ Failed to create group (HTTP $HTTP_CODE)"
+            echo "Response: $CREATE_RESPONSE"
+            exit 1
+          fi
+
+    # Step 3: Create initial namespace for team
+    - name: create-namespace
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          # Hardcoded for demo - AC #1 verification
+          NAMESPACE="my-awesome-app-development"
+          APP_NAME="my-awesome-app"
+          ENV="development"
+
+          echo "Creating namespace: $NAMESPACE"
+
+          # Create namespace YAML
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: $NAMESPACE
+            labels:
+              app: $APP_NAME
+              environment: $ENV
+              managed-by: innominatus
+          ---
+          apiVersion: v1
+          kind: ResourceQuota
+          metadata:
+            name: ${NAMESPACE}-quota
+            namespace: $NAMESPACE
+          spec:
+            hard:
+              requests.cpu: "4"
+              requests.memory: "8Gi"
+              pods: "20"
+          EOF
+
+          echo "✓ Namespace $NAMESPACE created successfully"
+
+    # Step 2: Verify namespace created
+    - name: verify-namespace
+      type: policy
+      config:
+        script: |
+          #!/bin/bash
+          set -e
+
+          NAMESPACE="my-awesome-app-development"
+
+          echo "Verifying namespace $NAMESPACE..."
+          kubectl get namespace $NAMESPACE || exit 1
+
+          echo "Checking namespace labels..."
+          kubectl get namespace $NAMESPACE -o jsonpath='{.metadata.labels}' | grep -q "managed-by" || exit 1
+          kubectl get namespace $NAMESPACE -o jsonpath='{.metadata.labels}' | grep -q "innominatus" || exit 1
+
+          echo "Checking resource quota..."
+          kubectl get resourcequota ${NAMESPACE}-quota -n $NAMESPACE || exit 1
+
+          echo "✓ Namespace and resource quota verified successfully"

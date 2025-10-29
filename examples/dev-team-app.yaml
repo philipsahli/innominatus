@@ -1,0 +1,60 @@
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: my-awesome-app
+
+containers:
+  main:
+    image: nginx:latest  # Replace with actual application image
+
+    # Environment variables using resource outputs
+    variables:
+      # Database connection (from Vault-synced secret)
+      DATABASE_URL: ${resources.database.outputs.connection_string}
+      DB_HOST: ${resources.database.outputs.host}
+      DB_PORT: ${resources.database.outputs.port}
+      DB_NAME: ${resources.database.outputs.database_name}
+
+      # S3 Storage connection
+      S3_ENDPOINT: ${resources.storage.outputs.endpoint}
+      S3_BUCKET: ${resources.storage.outputs.bucket_name}
+      S3_URL: ${resources.storage.outputs.s3_url}
+
+      # Application config
+      APP_NAME: my-awesome-app
+      ENVIRONMENT: ${environment.type}
+
+# Resource declarations (provisioned by product teams)
+resources:
+  # Vault team provides secret space
+  vault:
+    type: vault-space
+    params:
+      sync_to_namespace: true
+      auto_rotate: false
+
+  # Database team provides PostgreSQL
+  database:
+    type: postgres-db
+    params:
+      size: small
+      replicas: 2
+      version: "15"
+
+  # Storage team provides S3 bucket
+  storage:
+    type: s3-bucket
+    params:
+      versioning: true
+      public_access: false
+
+  # Container team provides namespace and ArgoCD app
+  platform:
+    type: argocd-app
+    params:
+      sync_policy: auto
+
+# Environment configuration
+environment:
+  type: development
+  ttl: 168h  # 7 days for dev environment

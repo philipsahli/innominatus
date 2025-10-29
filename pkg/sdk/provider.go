@@ -15,10 +15,15 @@ type Provider struct {
 	// Compatibility defines core version requirements
 	Compatibility ProviderCompatibility `yaml:"compatibility" json:"compatibility"`
 
+	// Workflows lists all workflows provided by this provider (unified provisioners + golden paths)
+	Workflows []WorkflowMetadata `yaml:"workflows,omitempty" json:"workflows,omitempty"`
+
 	// Provisioners lists the resource provisioners provided by this provider
-	Provisioners []ProvisionerMetadata `yaml:"provisioners" json:"provisioners"`
+	// DEPRECATED: Use Workflows with category="provisioner" instead. Will be removed in v2.0.
+	Provisioners []ProvisionerMetadata `yaml:"provisioners,omitempty" json:"provisioners,omitempty"`
 
 	// GoldenPaths lists the workflow templates provided by this provider
+	// DEPRECATED: Use Workflows with category="goldenpath" instead. Will be removed in v2.0.
 	GoldenPaths []GoldenPathMetadata `yaml:"goldenpaths,omitempty" json:"goldenpaths,omitempty"`
 
 	// Configuration contains provider-specific configuration
@@ -70,26 +75,33 @@ type ProviderCompatibility struct {
 	MaxCoreVersion string `yaml:"maxCoreVersion" json:"maxCoreVersion"`
 }
 
-// GoldenPathMetadata describes a workflow template provided by the provider
-type GoldenPathMetadata struct {
-	// Name is the unique identifier for this golden path
+// WorkflowMetadata describes a workflow provided by the provider
+// Workflows can be either provisioners (single-resource) or goldenpaths (multi-resource orchestration)
+type WorkflowMetadata struct {
+	// Name is the unique identifier for this workflow
 	Name string `yaml:"name" json:"name"`
 
 	// File is the path to the workflow YAML file
 	File string `yaml:"file" json:"file"`
 
-	// Version is the semantic version of this golden path
-	Version string `yaml:"version" json:"version"`
+	// Version is the semantic version of this workflow
+	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 
 	// Description provides a human-readable description
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 
-	// Category groups golden paths (deployment, cleanup, environment, etc.)
+	// Category indicates the workflow type: "provisioner" (single-resource) or "goldenpath" (multi-resource)
+	// provisioner: Creates a single resource (database, namespace, bucket, etc.)
+	// goldenpath: Orchestrates multiple workflows from different providers
 	Category string `yaml:"category,omitempty" json:"category,omitempty"`
 
 	// Tags are searchable keywords
 	Tags []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
+
+// GoldenPathMetadata is deprecated. Use WorkflowMetadata with category="goldenpath" instead.
+// DEPRECATED: Will be removed in v2.0
+type GoldenPathMetadata = WorkflowMetadata
 
 // Validate checks if the provider manifest is valid
 func (p *Provider) Validate() error {
@@ -109,11 +121,24 @@ func (p *Provider) Validate() error {
 	if p.Compatibility.MinCoreVersion == "" {
 		return ErrInvalidProvider("compatibility.minCoreVersion is required")
 	}
-	if len(p.Provisioners) == 0 {
-		return ErrInvalidProvider("at least one provisioner is required")
+
+	// Require either workflows or provisioners (for backward compat)
+	if len(p.Workflows) == 0 && len(p.Provisioners) == 0 {
+		return ErrInvalidProvider("at least one workflow or provisioner is required")
 	}
 
-	// Validate provisioners
+	// Validate workflows
+	for i, wf := range p.Workflows {
+		if wf.Name == "" {
+			return ErrInvalidProvider("workflows[%d].name is required", i)
+		}
+		if wf.File == "" {
+			return ErrInvalidProvider("workflows[%d].file is required", i)
+		}
+		// Category is optional, defaults to "provisioner" if not specified
+	}
+
+	// Validate provisioners (deprecated but still supported)
 	for i, prov := range p.Provisioners {
 		if prov.Name == "" {
 			return ErrInvalidProvider("provisioners[%d].name is required", i)

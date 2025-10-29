@@ -374,11 +374,13 @@ var demoStatusCmd = &cobra.Command{
 	},
 }
 
+var noCheck bool
+
 var demoResetCmd = &cobra.Command{
 	Use:   "demo-reset",
 	Short: "Reset database to clean state (deletes all data)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return client.DemoResetCommand()
+		return client.DemoResetCommand(noCheck)
 	},
 }
 
@@ -466,6 +468,8 @@ func init() {
 	runCmd.Flags().StringArrayVar(&runParams, "param", []string{}, "Parameter override (key=value)")
 
 	demoTimeCmd.Flags().StringVar(&demoComponent, "component", "", "Comma-separated list of components to install")
+
+	demoResetCmd.Flags().BoolVar(&noCheck, "no-check", false, "Skip demo environment check")
 
 	// Add workflow subcommands
 	workflowCmd.AddCommand(workflowDetailCmd, workflowLogsCmd)

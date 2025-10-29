@@ -197,6 +197,11 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	fmt.Printf("   This may take several minutes for database initialization...\n")
 	fmt.Printf("   Progress: ")
 
+	// Capture stdout and stderr
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
 	// Start the command
 	err = cmd.Start()
 	if err != nil {
@@ -218,12 +223,13 @@ func (i *Installer) InstallComponent(component DemoComponent) error {
 	for {
 		select {
 		case err := <-done:
-			fmt.Printf("\n   ✅ Installation completed successfully\n")
+			fmt.Printf("\n")
 			if err != nil {
-				// Get output if command failed
-				output, _ := cmd.CombinedOutput()
-				return fmt.Errorf("failed to install %s: %v\nOutput: %s", component.Name, err, string(output))
+				// Return error with captured output
+				output := outBuf.String() + errBuf.String()
+				return fmt.Errorf("failed to install %s: %v\nOutput: %s", component.Name, err, output)
 			}
+			fmt.Printf("   ✅ Installation completed successfully\n")
 			return nil
 		case <-dotTicker.C:
 			fmt.Printf(".")
@@ -551,13 +557,25 @@ func (i *Installer) ApplyKeycloakConfig() error {
 
 	// Create demo users
 	if err := i.createKeycloakUser(token, "demo-user", "password123", "demo-user@example.com"); err != nil {
-		fmt.Printf("   User demo-user: %v (might already exist)\n", err)
+		// Check if it's a "user already exists" error (409 Conflict - this is OK)
+		if strings.Contains(err.Error(), "status 409") {
+			fmt.Printf("   ✅ demo-user already exists\n")
+		} else {
+			// Any other error should fail demo-time
+			return fmt.Errorf("failed to create demo-user: %w", err)
+		}
 	} else {
 		fmt.Printf("   ✅ demo-user created\n")
 	}
 
 	if err := i.createKeycloakUser(token, "test-user", "test123", "test-user@example.com"); err != nil {
-		fmt.Printf("   User test-user: %v (might already exist)\n", err)
+		// Check if it's a "user already exists" error (409 Conflict - this is OK)
+		if strings.Contains(err.Error(), "status 409") {
+			fmt.Printf("   ✅ test-user already exists\n")
+		} else {
+			// Any other error should fail demo-time
+			return fmt.Errorf("failed to create test-user: %w", err)
+		}
 	} else {
 		fmt.Printf("   ✅ test-user created\n")
 	}

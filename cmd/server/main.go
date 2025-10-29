@@ -43,6 +43,92 @@ func fileExists(path string) bool {
 	return !os.IsNotExist(err)
 }
 
+// loadProvidersFromConfig loads providers from admin config into the registry
+func loadProvidersFromConfig(logger *logging.ZerologAdapter, adminConfig *admin.AdminConfig, providerRegistry *providers.Registry, version string) error {
+	if adminConfig == nil || len(adminConfig.Providers) == 0 {
+		logger.Info("No providers configured in admin-config.yaml")
+		return nil
+	}
+
+	logger.InfoWithFields("Loading providers", map[string]interface{}{
+		"count": len(adminConfig.Providers),
+	})
+
+	fsLoader := providers.NewLoader(version)
+	gitLoader := providers.NewGitLoader("/tmp/innominatus-providers", version)
+
+	for _, providerSrc := range adminConfig.Providers {
+		if !providerSrc.Enabled {
+			logger.DebugWithFields("Skipping disabled provider", map[string]interface{}{
+				"name": providerSrc.Name,
+			})
+			continue
+		}
+
+		var provider *sdk.Provider
+		var loadErr error
+
+		switch providerSrc.Type {
+		case "filesystem":
+			// Load from filesystem path
+			manifestPath := providerSrc.Path + "/provider.yaml"
+			if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+				// Try legacy platform.yaml
+				manifestPath = providerSrc.Path + "/platform.yaml"
+			}
+			provider, loadErr = fsLoader.LoadFromFile(manifestPath)
+
+		case "git":
+			// Load from Git repository
+			provider, loadErr = gitLoader.LoadFromGit(providers.GitProviderSource{
+				Name:       providerSrc.Name,
+				Repository: providerSrc.Repository,
+				Ref:        providerSrc.Ref,
+			})
+
+		default:
+			logger.WarnWithFields("Unknown provider type", map[string]interface{}{
+				"name": providerSrc.Name,
+				"type": providerSrc.Type,
+			})
+			continue
+		}
+
+		if loadErr != nil {
+			logger.WarnWithFields("Failed to load provider", map[string]interface{}{
+				"name":  providerSrc.Name,
+				"type":  providerSrc.Type,
+				"error": loadErr.Error(),
+			})
+			continue
+		}
+
+		// Register provider
+		if err := providerRegistry.RegisterProvider(provider); err != nil {
+			logger.WarnWithFields("Failed to register provider", map[string]interface{}{
+				"name":  provider.Metadata.Name,
+				"error": err.Error(),
+			})
+			continue
+		}
+
+		logger.InfoWithFields("Provider loaded successfully", map[string]interface{}{
+			"name":         provider.Metadata.Name,
+			"version":      provider.Metadata.Version,
+			"category":     provider.Metadata.Category,
+			"provisioners": len(provider.Provisioners),
+		})
+	}
+
+	providerCount, provisionerCount := providerRegistry.Count()
+	logger.InfoWithFields("Provider loading complete", map[string]interface{}{
+		"providers":    providerCount,
+		"provisioners": provisionerCount,
+	})
+
+	return nil
+}
+
 func isStaticAsset(path string) bool {
 	// Check if path starts with common static asset prefixes
 	return strings.HasPrefix(path, "/.next/") ||
@@ -142,84 +228,10 @@ func main() {
 
 	// Initialize provider registry and load providers
 	providerRegistry := providers.NewRegistry()
-	if adminConfig != nil && len(adminConfig.Providers) > 0 {
-		logger.InfoWithFields("Loading providers", map[string]interface{}{
-			"count": len(adminConfig.Providers),
+	if err := loadProvidersFromConfig(logger, adminConfig, providerRegistry, version); err != nil {
+		logger.WarnWithFields("Failed to load providers", map[string]interface{}{
+			"error": err.Error(),
 		})
-
-		fsLoader := providers.NewLoader(version)
-		gitLoader := providers.NewGitLoader("/tmp/innominatus-providers", version)
-
-		for _, providerSrc := range adminConfig.Providers {
-			if !providerSrc.Enabled {
-				logger.DebugWithFields("Skipping disabled provider", map[string]interface{}{
-					"name": providerSrc.Name,
-				})
-				continue
-			}
-
-			var provider *sdk.Provider
-			var loadErr error
-
-			switch providerSrc.Type {
-			case "filesystem":
-				// Load from filesystem path
-				manifestPath := providerSrc.Path + "/provider.yaml"
-				if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
-					// Try legacy platform.yaml
-					manifestPath = providerSrc.Path + "/platform.yaml"
-				}
-				provider, loadErr = fsLoader.LoadFromFile(manifestPath)
-
-			case "git":
-				// Load from Git repository
-				provider, loadErr = gitLoader.LoadFromGit(providers.GitProviderSource{
-					Name:       providerSrc.Name,
-					Repository: providerSrc.Repository,
-					Ref:        providerSrc.Ref,
-				})
-
-			default:
-				logger.WarnWithFields("Unknown provider type", map[string]interface{}{
-					"name": providerSrc.Name,
-					"type": providerSrc.Type,
-				})
-				continue
-			}
-
-			if loadErr != nil {
-				logger.WarnWithFields("Failed to load provider", map[string]interface{}{
-					"name":  providerSrc.Name,
-					"type":  providerSrc.Type,
-					"error": loadErr.Error(),
-				})
-				continue
-			}
-
-			// Register provider
-			if err := providerRegistry.RegisterProvider(provider); err != nil {
-				logger.WarnWithFields("Failed to register provider", map[string]interface{}{
-					"name":  provider.Metadata.Name,
-					"error": err.Error(),
-				})
-				continue
-			}
-
-			logger.InfoWithFields("Provider loaded successfully", map[string]interface{}{
-				"name":         provider.Metadata.Name,
-				"version":      provider.Metadata.Version,
-				"category":     provider.Metadata.Category,
-				"provisioners": len(provider.Provisioners),
-			})
-		}
-
-		providerCount, provisionerCount := providerRegistry.Count()
-		logger.InfoWithFields("Provider loading complete", map[string]interface{}{
-			"providers":    providerCount,
-			"provisioners": provisionerCount,
-		})
-	} else {
-		logger.Info("No providers configured in admin-config.yaml")
 	}
 
 	var srv *server.Server
@@ -268,6 +280,31 @@ func main() {
 	if providerRegistry != nil {
 		srv.SetProviderRegistry(providerRegistry)
 		logger.Info("Provider registry configured")
+
+		// Set up reload callback for hot-reloading providers
+		reloadFunc := func() error {
+			logger.Info("Reloading providers from admin-config.yaml")
+
+			// Load fresh admin config
+			newAdminConfig, err := admin.LoadAdminConfig("admin-config.yaml")
+			if err != nil {
+				return fmt.Errorf("failed to load admin config: %w", err)
+			}
+
+			// Clear existing providers
+			providerRegistry.Clear()
+			logger.Info("Provider registry cleared")
+
+			// Load providers from new config
+			if err := loadProvidersFromConfig(logger, newAdminConfig, providerRegistry, version); err != nil {
+				return fmt.Errorf("failed to load providers: %w", err)
+			}
+
+			return nil
+		}
+
+		srv.SetProvidersReloadFunc(reloadFunc)
+		logger.Info("Provider hot-reload configured")
 	}
 
 	// Initialize AI service (optional - continues without AI if not configured)
@@ -400,6 +437,7 @@ func main() {
 
 	// Admin configuration routes
 	http.HandleFunc("/api/admin/config", withTraceCORSAdmin(srv.HandleAdminConfig))
+	http.HandleFunc("/api/admin/reload", withTraceCORSAdmin(srv.HandleAdminReload))
 
 	// Graph API routes (with trace ID, logging, CORS, and authentication)
 	http.HandleFunc("/api/graph", withTraceCORSAuth(srv.HandleGraph))
@@ -502,6 +540,16 @@ func main() {
 						fileExistsInUI = true
 					}
 				}
+
+				// Next.js static export: directory paths like /auth/oidc/callback/ -> check for index.html
+				if !fileExistsInUI && strings.HasSuffix(r.URL.Path, "/") && r.URL.Path != "/" {
+					indexPath := strings.TrimPrefix(r.URL.Path, "/") + "index.html"
+					_, err := fs.Stat(webUIEmbedFS, indexPath)
+					if err == nil {
+						// Don't rewrite path - let http.FileServer handle it
+						fileExistsInUI = true
+					}
+				}
 			} else {
 				// Check in filesystem
 				fileExistsInUI = fileExists(webUIBasePath + r.URL.Path)
@@ -511,6 +559,15 @@ func main() {
 					altPath := strings.TrimSuffix(r.URL.Path, ".txt") + "/index.txt"
 					if fileExists(webUIBasePath + altPath) {
 						r.URL.Path = altPath
+						fileExistsInUI = true
+					}
+				}
+
+				// Next.js static export: directory paths like /auth/oidc/callback/ -> check for index.html
+				if !fileExistsInUI && strings.HasSuffix(r.URL.Path, "/") && r.URL.Path != "/" {
+					indexPath := webUIBasePath + r.URL.Path + "index.html"
+					if fileExists(indexPath) {
+						// Don't rewrite path - let http.FileServer handle it
 						fileExistsInUI = true
 					}
 				}

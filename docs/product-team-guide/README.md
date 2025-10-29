@@ -6,19 +6,24 @@ This guide is for **internal product engineering teams** who build services cons
 
 ---
 
-## ⚠️ Current Status: Feature in Development
+## ✅ Current Status: Available
 
-**Important:** Product workflow capabilities are **partially implemented** and not yet active in production deployments.
+**Important:** Product team provider capabilities are **implemented and available** for production use.
 
-**What this means:**
-- ✅ Core implementation exists (workflow resolver, executor, policy framework)
-- ✅ Example workflows available (`workflows/products/ecommerce/`, `workflows/products/analytics/`)
-- ✅ Can be tested via demo (`go run workflow-demo.go`)
-- 🚧 **Not yet wired to the API server** - workflows won't execute in production
-- 🚧 **No CLI tooling** - product teams can't self-service yet
-- 🚧 **No API endpoints** - can't query/manage workflows programmatically
+**What's Available:**
+- ✅ Multi-team provider architecture (4 demo providers included)
+- ✅ Git-based provider loading from remote repositories
+- ✅ API integration with server endpoints
+- ✅ PostgreSQL Operator auto-installation with demo environment
+- ✅ Vault Secrets Operator (VSO) for secret synchronization
+- ✅ Complete demo environment via `innominatus-ctl demo-time`
+- ✅ Golden path workflows for developer onboarding
 
-**See:** [Product Workflow Gaps Analysis](../PRODUCT_WORKFLOW_GAPS.md) for complete technical details.
+**Demo Providers Included:**
+- `container-team` - Container registry and image management
+- `database-team` - PostgreSQL databases via operator
+- `storage-team` - MinIO object storage buckets
+- `vault-team` - Secret management via Vault + VSO
 
 ---
 
@@ -57,243 +62,289 @@ This guide is for **internal product engineering teams** who build services cons
 
 ---
 
-## Core Capabilities (When Active)
+## Core Capabilities
 
-### 1. Product Workflows
+### 1. Git-Based Provider Loading
 
-Define workflows that run automatically when applications deploy:
+Providers can be loaded from Git repositories and registered via admin configuration:
 
-**File:** `workflows/products/ecommerce/payment-integration.yaml`
-```yaml
-apiVersion: workflow.dev/v1
-kind: ProductWorkflow
-metadata:
-  name: payment-integration
-  description: Payment service integration
-  product: ecommerce
-  owner: ecommerce-infrastructure-team
-  phase: deployment
-spec:
-  triggers:
-    - product_deployment
-  steps:
-    - name: setup-payment-vault
-      type: vault-setup
-      config:
-        secrets: ["stripe-api-key", "paypal-client-secret"]
-
-    - name: configure-payment-gateway
-      type: kubernetes
-      namespace: "${application.name}-payment"
-      config:
-        manifests: "./k8s/payment-gateway"
-
-    - name: verify-payment-connectivity
-      type: validation
-      config:
-        healthChecks: ["stripe-connectivity", "paypal-connectivity"]
-        timeout: "30s"
+**Provider Structure:**
+```
+providers/database-team/
+├── provider.yaml          # Provider metadata
+└── workflows/
+    ├── create-postgres.yaml
+    └── delete-postgres.yaml
 ```
 
-**Triggers:** When an app developer deploys an app with:
+**Admin Registration:**
 ```yaml
-# app Score spec
-metadata:
-  name: checkout-service
-  product: ecommerce  # <-- Triggers ecommerce product workflows
+providers:
+  - name: database-team
+    git_url: https://github.com/yourorg/providers
+    path: providers/database-team
+    ref: main
 ```
 
-### 2. Custom Resources (🚧 Planned)
+**Available via API:** `GET /api/providers` and `POST /api/admin/providers`
 
-Define product-specific resource types:
+### 2. Golden Path Workflows
 
+Complete multi-step workflows that orchestrate infrastructure provisioning:
+
+**Example:** `workflows/onboard-dev-team.yaml` demonstrates a full developer onboarding flow:
+- Creates Gitea repository
+- Provisions PostgreSQL database via operator
+- Creates MinIO storage bucket
+- Configures Vault secrets with VSO synchronization
+- Deploys application to Kubernetes
+
+**Run with CLI:**
+```bash
+./innominatus-ctl run onboard-dev-team score-spec.yaml
+```
+
+### 3. Provider Workflows
+
+Each provider team defines workflows for their domain:
+
+**Database Team Example:** `providers/database-team/workflows/create-postgres.yaml`
+- Creates PostgreSQL CRD via operator
+- Waits for database to be ready
+- Stores credentials in Vault
+- Configures VSO for secret sync
+
+**Storage Team Example:** `providers/storage-team/workflows/create-bucket.yaml`
+- Creates MinIO bucket
+- Generates access credentials
+- Stores credentials in Vault
+- Sets up bucket policies
+
+**Vault Team Example:** `providers/vault-team/workflows/create-secrets.yaml`
+- Creates Vault secret path
+- Generates VSO ExternalSecret CRD
+- Syncs secrets to Kubernetes
+
+### 4. Integrated Demo Environment
+
+Complete multi-team infrastructure available via:
+
+```bash
+./innominatus-ctl demo-time    # Install all demo components
+./innominatus-ctl demo-status  # Check health
+```
+
+**Includes:**
+- **Gitea** - Git repository (http://gitea.localtest.me)
+- **ArgoCD** - GitOps deployment (http://argocd.localtest.me)
+- **Vault** - Secret management (http://vault.localtest.me)
+- **MinIO** - Object storage (http://minio.localtest.me)
+- **PostgreSQL Operator** - Database provisioning
+- **Vault Secrets Operator** - Secret synchronization
+
+---
+
+## Completed Features ✅
+
+The following features have been implemented and are available:
+
+### Multi-Team Provider Architecture
+- 4 demo providers included (container, database, storage, vault teams)
+- Provider directory structure with workflows subdirectory
+- Provider metadata via `provider.yaml` files
+
+### Git-Based Provider Loading
+- Load providers from remote Git repositories
+- Register providers via admin configuration
+- API endpoints for provider management
+
+### Workflow Execution
+- Golden path workflows via CLI (`innominatus-ctl run`)
+- Multi-step workflow orchestration
+- Support for Terraform, Kubernetes, Ansible, and shell commands
+
+### Demo Infrastructure
+- Complete demo environment via `demo-time` command
+- PostgreSQL Operator auto-installation
+- Vault Secrets Operator for secret synchronization
+- Integrated services (Gitea, ArgoCD, Vault, MinIO)
+
+### API Integration
+- Provider management endpoints
+- Workflow execution APIs
+- Admin configuration endpoints
+
+---
+
+## Future Enhancements 🚧
+
+### Custom Resource Types
+Define product-specific resource types in Score specs:
 ```yaml
-# In Score spec
 resources:
   payment-gateway:
-    type: payment-gateway  # Custom type from ecommerce team
+    type: payment-gateway  # Custom type from product team
     properties:
       provider: stripe
-      webhook_url: https://...
 ```
 
-**Requires:** Custom provisioner implementation (see [Provisioners Guide](provisioners.md))
+**Status:** SDK interface exists, provisioner registry not yet implemented
 
-### 3. Workflow Phases
-
-Product workflows execute in 3 phases:
-
-| Phase | Purpose | Example |
-|-------|---------|---------|
-| **pre-deployment** | Setup infrastructure | Provision databases, configure secrets |
-| **deployment** | Deploy services | Configure gateways, set up integrations |
-| **post-deployment** | Verify and monitor | Health checks, monitoring setup |
-
-**Platform workflows** (security-scan, cost-monitoring) run across all phases
-**Product workflows** run only for apps consuming your product
-**Application workflows** (from Score spec) run for specific app
-
----
-
-## Current Limitations
-
-### ⚠️ Not Active in Production
-
-**Current State:**
-- Multi-tier workflow executor exists (`internal/workflow/executor.go:96-126`)
-- But server uses single-tier executor (`internal/server/handlers.go:226`)
-- Product workflows are **never loaded or executed**
-
-**Workaround:**
-- Can test workflows with: `go run workflow-demo.go`
-- Can inspect workflow files manually
-- Cannot trigger via API server
-
-**Fix Required:** Platform team must update `handlers.go` to use `NewMultiTierWorkflowExecutor`
-
-**See:** [Activation Guide](activation-guide.md) for platform team instructions
-
-### 🚧 No Self-Service Tooling
-
-**Missing CLI Commands:**
+### Enhanced CLI Tooling
+Additional commands for workflow management:
 ```bash
-# Desired (not yet available)
-innominatus-ctl list-products
-innominatus-ctl list-product-workflows ecommerce
-innominatus-ctl validate-product-workflow my-workflow.yaml
-innominatus-ctl test-product-workflow my-workflow.yaml test-app.yaml --dry-run
+innominatus-ctl list-providers
+innominatus-ctl validate-provider ./my-provider
+innominatus-ctl test-workflow my-workflow.yaml --dry-run
 ```
 
-**Workaround:**
-- Manually read YAML files in `workflows/products/`
-- Validate YAML syntax with generic tools
-- Test via `workflow-demo.go` (requires Go development environment)
+**Status:** Basic workflow commands available, enhanced tooling planned
 
-### 🚧 No API Endpoints
+### Multi-Tenant Support
+Isolated provider spaces per team with RBAC:
+- Team-scoped provider registration
+- Workflow execution permissions
+- Resource quota enforcement
 
-**Missing:**
-- `GET /api/workflows/products` - List products with workflows
-- `GET /api/workflows/products/{product}` - List workflows for product
-- `POST /api/workflows/products/validate` - Validate workflow file
+**Status:** Single-tenant currently, multi-tenancy planned for future release
 
-**Workaround:**
-- Direct file system access to `workflows/products/` directory
+### Workflow Policy Enforcement
+Runtime policy validation:
+- Allowed step types per team
+- Resource limits per workflow
+- Approval gates for sensitive operations
 
-### 🚧 Policy Enforcement Not Active
-
-**admin-config.yaml** defines policies:
-```yaml
-workflowPolicies:
-  allowedProductWorkflows:
-    - ecommerce/database-setup
-    - ecommerce/payment-integration
-```
-
-**BUT:** These policies are not enforced in production server
-
-**Risk:** Any workflow file in `workflows/products/` directory could execute
-**Mitigation:** Platform team must manually review workflow files before adding
+**Status:** Policy framework exists, enforcement planned
 
 ---
 
-## Getting Started (Current State)
+## Getting Started
 
 ### Prerequisites
 
-- Git repository access to innominatus codebase
-- Permission to create files in `workflows/products/{your-product}/`
-- Approval from platform team for new product workflows
-- Go development environment (for testing via `workflow-demo.go`)
+- **Access to innominatus instance** - Server running with admin permissions
+- **Docker Desktop with Kubernetes** - For demo environment (optional but recommended)
+- **Git repository** - For storing provider configurations (optional)
 
-### Step 1: Create Your Product Directory
+### Option 1: Use Demo Environment (Recommended)
 
-```bash
-mkdir -p workflows/products/your-product
-```
-
-### Step 2: Create Your First Workflow
-
-**File:** `workflows/products/your-product/setup-infrastructure.yaml`
-
-```yaml
-apiVersion: workflow.dev/v1
-kind: ProductWorkflow
-metadata:
-  name: setup-infrastructure
-  description: Setup infrastructure for your-product
-  product: your-product
-  owner: your-product-infrastructure-team
-  phase: pre-deployment
-
-spec:
-  triggers:
-    - product_deployment
-
-  steps:
-    - name: provision-resources
-      type: terraform
-      config:
-        working_dir: ./terraform/your-product
-        operation: apply
-
-    - name: configure-monitoring
-      type: monitoring
-      config:
-        service: your-product
-        alerts: ["error_rate", "latency"]
-```
-
-### Step 3: Register in Admin Config
-
-Add your workflow to allowed list:
-
-**File:** `admin-config.yaml`
-
-```yaml
-workflowPolicies:
-  allowedProductWorkflows:
-    - ecommerce/database-setup
-    - ecommerce/payment-integration
-    - analytics/data-pipeline
-    - your-product/setup-infrastructure  # Add this
-```
-
-### Step 4: Test with Demo
+Start with the complete demo environment to see providers in action:
 
 ```bash
-# Modify workflow-demo.go to test your product
-# Update app configuration:
-app := &workflow.ApplicationInstance{
-    Name: "test-app",
-    Configuration: map[string]interface{}{
-        "metadata": map[string]interface{}{
-            "product": "your-product",  # Your product name
-        },
-    },
-}
+# Install demo environment
+./innominatus-ctl demo-time
 
-# Run demo
-go run workflow-demo.go
+# Check status
+./innominatus-ctl demo-status
+
+# Explore demo providers
+ls providers/
+# Output: container-team/  database-team/  storage-team/  vault-team/
 ```
 
-**Expected Output:**
+**Demo Components:**
+- Gitea repository at http://gitea.localtest.me (admin/admin)
+- Vault at http://vault.localtest.me (root token)
+- MinIO at http://minio.localtest.me (minioadmin/minioadmin)
+- PostgreSQL Operator (auto-installed)
+- Vault Secrets Operator (auto-installed)
+
+### Option 2: Create Your Own Provider
+
+#### Step 1: Create Provider Structure
+
+```bash
+mkdir -p providers/your-team
+cd providers/your-team
 ```
-🔄 Resolving Multi-Tier Workflows...
-📊 Workflow Resolution Results:
-  pre-deployment Phase (1 workflows):
-    🔧 product-your-product-setup-infrastructure (2 steps)
-       Step 1: provision-resources (terraform)
-       Step 2: configure-monitoring (monitoring)
+
+#### Step 2: Create Provider Metadata
+
+**File:** `providers/your-team/provider.yaml`
+
+```yaml
+name: your-team
+description: Your team's infrastructure services
+version: 1.0.0
+owner: your-team@company.com
+workflows_dir: workflows
 ```
 
-### Step 5: Submit for Review
+#### Step 3: Create Your First Workflow
 
-1. Create Git branch: `git checkout -b add-your-product-workflows`
-2. Add workflow files and admin config changes
-3. Create pull request for platform team review
-4. Platform team approves and merges
+**File:** `providers/your-team/workflows/provision-service.yaml`
 
-**Note:** Currently, workflows won't execute in production until multi-tier executor is activated.
+```yaml
+name: provision-service
+description: Provision service infrastructure
+steps:
+  - name: create-namespace
+    type: kubernetes
+    config:
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: ${APP_NAME}
+
+  - name: deploy-service
+    type: kubernetes
+    config:
+      namespace: ${APP_NAME}
+      manifest_path: ./manifests/service.yaml
+```
+
+#### Step 4: Register Provider
+
+**Via Admin API:**
+```bash
+curl -X POST http://localhost:8081/api/admin/providers \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "your-team",
+    "git_url": "https://github.com/yourorg/providers",
+    "path": "providers/your-team",
+    "ref": "main"
+  }'
+```
+
+**Or via local directory:**
+Place your provider in `providers/your-team/` and restart the server.
+
+#### Step 5: Test Your Provider
+
+```bash
+# List available providers
+./innominatus-ctl list-goldenpaths
+
+# Run workflow
+./innominatus-ctl run your-team/provision-service examples/app-spec.yaml
+```
+
+### Option 3: Study Demo Providers
+
+Explore the included demo providers for complete examples:
+
+**Database Team:** `providers/database-team/`
+- Creates PostgreSQL databases via operator
+- Stores credentials in Vault
+- Configures VSO for secret sync
+
+**Storage Team:** `providers/storage-team/`
+- Creates MinIO buckets
+- Manages access policies
+- Integrates with Vault
+
+**Vault Team:** `providers/vault-team/`
+- Manages secret paths
+- Creates VSO ExternalSecrets
+- Syncs to Kubernetes
+
+**Container Team:** `providers/container-team/`
+- Registry management
+- Image policies
+- Harbor integration
 
 ---
 
@@ -359,65 +410,101 @@ workflowPolicies:
 
 ---
 
-## Examples
+## Real-World Examples
 
-### Example 1: E-commerce Payment Integration
+### Example 1: Database Team - PostgreSQL Provisioning
 
-**See:** [workflows/products/ecommerce/payment-integration.yaml](../../workflows/products/ecommerce/payment-integration.yaml)
-
-**What it does:**
-1. Sets up payment gateway secrets in Vault
-2. Deploys payment gateway Kubernetes resources
-3. Verifies connectivity to payment providers
-
-**When it runs:** When any app with `metadata.product: ecommerce` deploys
-
-### Example 2: Analytics Data Pipeline
-
-**See:** [workflows/products/analytics/data-pipeline.yaml](../../workflows/products/analytics/data-pipeline.yaml)
+**Location:** `providers/database-team/workflows/create-postgres.yaml`
 
 **What it does:**
-1. Provisions data lake storage
-2. Sets up Kafka streaming infrastructure
-3. Configures Spark cluster for data processing
-4. Creates data catalog schema
+1. Creates PostgreSQL custom resource via operator
+2. Waits for database pod to be ready
+3. Retrieves connection credentials from Kubernetes secret
+4. Stores credentials in Vault
+5. Creates VSO ExternalSecret for automatic sync
 
-**When it runs:** When any app with `metadata.product: analytics` deploys
+**Key Features:**
+- Operator-based database management
+- Automatic credential rotation
+- Kubernetes-native secret sync
 
-### Example 3: E-commerce Database Setup
+**Try it:**
+```bash
+./innominatus-ctl demo-time  # Install postgres-operator
+./innominatus-ctl run database-team/create-postgres examples/dev-team-app.yaml
+```
 
-**See:** [workflows/products/ecommerce/database-setup.yaml](../../workflows/products/ecommerce/database-setup.yaml)
+### Example 2: Storage Team - MinIO Bucket Creation
+
+**Location:** `providers/storage-team/workflows/create-bucket.yaml`
 
 **What it does:**
-1. Provisions production database via Terraform
-2. Runs database migrations
-3. Sets up database monitoring alerts
+1. Creates MinIO bucket with versioning enabled
+2. Generates access key and secret key
+3. Stores credentials in Vault
+4. Configures bucket policies for application access
 
-**When it runs:** Pre-deployment phase for e-commerce apps
+**Key Features:**
+- S3-compatible object storage
+- Automatic policy management
+- Secure credential storage
+
+**Try it:**
+```bash
+./innominatus-ctl run storage-team/create-bucket examples/dev-team-app.yaml
+```
+
+### Example 3: Complete Developer Onboarding
+
+**Location:** `workflows/onboard-dev-team.yaml`
+
+**What it does:**
+1. Creates Gitea repository for application code
+2. Provisions PostgreSQL database
+3. Creates MinIO storage bucket
+4. Sets up Vault secret paths
+5. Configures VSO for secret synchronization
+6. Deploys application to Kubernetes with ArgoCD
+
+**Key Features:**
+- End-to-end automation
+- Multi-provider orchestration
+- GitOps integration
+
+**Try it:**
+```bash
+./innominatus-ctl demo-time  # Required
+./innominatus-ctl run onboard-dev-team examples/dev-team-app.yaml
+```
 
 ---
 
-## Roadmap
+## Development Progress
 
-### Phase 1: Activation (Target: 1 week)
-- [ ] Multi-tier executor activated in production server
-- [ ] Policy enforcement enabled
-- [ ] Basic documentation for product teams
-- [ ] 3 pilot product teams onboarded
+### ✅ Phase 1: Core Infrastructure (Completed)
+- ✅ Multi-team provider architecture
+- ✅ Git-based provider loading
+- ✅ Workflow execution engine
+- ✅ 4 demo providers (database, storage, vault, container)
+- ✅ PostgreSQL Operator integration
+- ✅ Vault Secrets Operator integration
+- ✅ Demo environment automation
 
-### Phase 2: Developer Experience (Target: 2 weeks)
-- [ ] CLI commands for workflow management
-- [ ] API endpoints for workflow discovery
-- [ ] Web UI for workflow inspection
-- [ ] Self-service onboarding
+### ✅ Phase 2: Developer Experience (Completed)
+- ✅ CLI commands for workflow execution
+- ✅ API endpoints for provider management
+- ✅ Golden path workflows
+- ✅ Complete onboarding automation
+- ✅ Demo environment tooling
 
-### Phase 3: Advanced Features (Target: 4 weeks)
-- [ ] Custom provisioner registration
-- [ ] Product-specific resource types
+### 🚧 Phase 3: Enterprise Features (In Progress)
+- [ ] Custom provisioner SDK
+- [ ] Product-specific resource types in Score specs
 - [ ] Workflow templates and generators
-- [ ] Multi-tenant support
-
-**Track Progress:** See [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md) for detailed status
+- [ ] Multi-tenant RBAC
+- [ ] Runtime policy enforcement
+- [ ] Approval gates and governance
+- [ ] Advanced monitoring and observability
 
 ---
 
@@ -437,14 +524,16 @@ workflowPolicies:
 ## Getting Help
 
 **For Product Teams:**
-1. **Check examples:** Review existing workflows in `workflows/products/`
-2. **Read gap analysis:** [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md)
-3. **Contact platform team:** Your platform team manages innominatus
+1. **Review demo providers:** Study working examples in `providers/`
+2. **Read detailed guides:** [Product Workflows Guide](product-workflows.md)
+3. **Contact platform team:** Your platform team manages the innominatus instance
+4. **Join community:** GitHub issues and discussions
 
 **For Platform Teams:**
-1. **Activation steps:** See [Activation Guide](activation-guide.md)
-2. **Technical details:** See [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md)
-3. **Implementation:** Review GAP 1-6 in gap analysis
+1. **Deployment guide:** See [Kubernetes Deployment](../platform-team-guide/kubernetes-deployment.md)
+2. **Activation guide:** [Product Team Activation](activation-guide.md)
+3. **OIDC setup:** Configure authentication for your organization
+4. **Monitor system:** Use `/health`, `/ready`, and `/metrics` endpoints
 
 ---
 
@@ -452,27 +541,35 @@ workflowPolicies:
 
 ### Q: Can I use this feature today?
 
-**A:** You can create workflow files and test with `workflow-demo.go`, but workflows won't execute in production deployments until the multi-tier executor is activated by your platform team.
+**A:** Yes! Provider capabilities are fully functional. Start with `./innominatus-ctl demo-time` to explore the demo environment, or create your own provider following the Getting Started guide.
 
-### Q: When will this be production-ready?
+### Q: How do I create a new provider?
 
-**A:** The core implementation exists. Platform teams can activate it with a small code change (GAP 1). See [Activation Guide](activation-guide.md).
+**A:** Create a provider directory with `provider.yaml` and `workflows/` subdirectory. Register it via admin API or place it in the `providers/` directory. See "Getting Started → Option 2" above.
 
-### Q: How do I get my workflows approved?
+### Q: Where can I see working examples?
 
-**A:** Currently, submit a pull request adding your workflows to `workflows/products/` and updating `admin-config.yaml`. Platform team reviews and approves. (Self-service tooling coming in Phase 2)
+**A:** Check the 4 demo providers:
+- `providers/database-team/` - PostgreSQL via operator
+- `providers/storage-team/` - MinIO object storage
+- `providers/vault-team/` - Secret management
+- `providers/container-team/` - Container registry
+
+### Q: Can I load providers from Git?
+
+**A:** Yes! Providers can be loaded from Git repositories. Register them via the admin API with `git_url`, `path`, and `ref` parameters.
 
 ### Q: Can I create custom resource types?
 
-**A:** Not yet. SDK interface exists (`pkg/sdk/provisioner.go`) but provisioner registry is not implemented (GAP 5). Planned for Phase 3.
+**A:** Not yet. The SDK interface exists but the provisioner registry is not fully implemented. This is planned for Phase 3 (Enterprise Features).
 
-### Q: How does this differ from platform extensions?
+### Q: How does this differ from Score spec deployments?
 
-**A:** Platform extensions add infrastructure platforms (AWS, Azure). Product workflows add product-specific logic that runs during app deployments. See [Platform Extension Guide](../PLATFORM_EXTENSION_GUIDE.md).
+**A:** Score specs describe applications. Providers offer services (databases, storage, secrets) that applications consume. Providers run workflows to provision these services automatically.
 
 ### Q: Is this multi-tenant?
 
-**A:** Not yet. All products share the same `workflows/products/` directory. Multi-tenancy is a future enhancement.
+**A:** Currently single-tenant. All providers share the same namespace. Multi-tenant RBAC with team isolation is planned for Phase 3.
 
 ---
 
@@ -480,22 +577,22 @@ workflowPolicies:
 
 ### For Product Teams
 
-1. **Review examples:** Study existing workflows in `workflows/products/ecommerce/` and `workflows/products/analytics/`
-2. **Identify use cases:** What should happen when apps use your product?
-3. **Draft workflows:** Create YAML files following examples
-4. **Contact platform team:** Request review and activation timeline
-5. **Test with demo:** Validate workflow structure with `workflow-demo.go`
+1. **Try the demo:** Run `./innominatus-ctl demo-time` to explore the full demo environment
+2. **Study examples:** Review the 4 demo providers in `providers/`
+3. **Identify your services:** What infrastructure do you provide to app developers?
+4. **Create your provider:** Follow "Getting Started → Option 2" to build your first provider
+5. **Test workflows:** Use `./innominatus-ctl run` to test your workflows
 
 ### For Platform Teams
 
-1. **Review gap analysis:** Read [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md)
-2. **Plan activation:** Estimate effort for GAP 1 + GAP 3 (critical gaps)
-3. **Pilot with 1-2 teams:** Choose product teams for early testing
-4. **Follow activation guide:** Implement multi-tier executor (see [Activation Guide](activation-guide.md))
-5. **Enable production:** Roll out to all product teams
+1. **Deploy innominatus:** Set up the server with Kubernetes or standalone
+2. **Configure OIDC:** Set up authentication for your organization
+3. **Register providers:** Add product team providers via admin API or Git
+4. **Set up demo:** Install demo environment for product teams to explore
+5. **Enable self-service:** Configure admin settings for provider registration
 
 ---
 
 **Questions?** Contact your platform team or open an issue on GitHub.
 
-**Contributing?** See [PRODUCT_WORKFLOW_GAPS.md](../PRODUCT_WORKFLOW_GAPS.md) for implementation opportunities.
+**Want to contribute?** Provider examples and workflow patterns are welcome! Submit PRs with new provider implementations or workflow improvements.
