@@ -161,34 +161,28 @@ func TestServerStartupWithoutDatabase(t *testing.T) {
 
 // TestDatabaseConnectionStringHandling tests database connection logic
 func TestDatabaseConnectionStringHandling(t *testing.T) {
-	// Save original env vars
-	originalHost := os.Getenv("DB_HOST")
-	originalPort := os.Getenv("DB_PORT")
-	originalUser := os.Getenv("DB_USER")
-	originalPassword := os.Getenv("DB_PASSWORD")
-	originalName := os.Getenv("DB_NAME")
+	// Use testcontainer for actual database connection test
+	testDB := database.SetupTestDatabase(t)
+	defer testDB.Close()
 
-	// Clean up after test
-	defer func() {
-		_ = os.Setenv("DB_HOST", originalHost)
-		_ = os.Setenv("DB_PORT", originalPort)
-		_ = os.Setenv("DB_USER", originalUser)
-		_ = os.Setenv("DB_PASSWORD", originalPassword)
-		_ = os.Setenv("DB_NAME", originalName)
-	}()
+	// Verify connection works
+	err := testDB.DB.Ping()
+	if err != nil {
+		t.Fatalf("Database ping failed: %v", err)
+	}
 
-	// Test with default values (will fail to connect but tests logic)
-	_ = os.Setenv("DB_HOST", "localhost")
-	_ = os.Setenv("DB_PORT", "5432")
-	_ = os.Setenv("DB_USER", "test")
-	_ = os.Setenv("DB_PASSWORD", "test")
-	_ = os.Setenv("DB_NAME", "testdb")
-
-	// Attempt to create database connection (will fail but validates logic)
-	_, err := database.NewDatabase()
-	// We expect an error because there's no actual database
-	if err == nil {
-		t.Log("Database connection succeeded (unexpected but not an error for this test)")
+	// Verify we can get connection details
+	if testDB.Config.Host == "" {
+		t.Error("Expected host to be set")
+	}
+	if testDB.Config.Port == "" {
+		t.Error("Expected port to be set")
+	}
+	if testDB.Config.User == "" {
+		t.Error("Expected user to be set")
+	}
+	if testDB.Config.DBName == "" {
+		t.Error("Expected database name to be set")
 	}
 }
 

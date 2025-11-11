@@ -35,12 +35,13 @@ type GenerateSpecResponse struct {
 
 // StatusResponse indicates if AI is enabled and configured
 type StatusResponse struct {
-	Enabled         bool   `json:"enabled"`
-	LLMProvider     string `json:"llm_provider"`
-	EmbeddingModel  string `json:"embedding_model"`
-	DocumentsLoaded int    `json:"documents_loaded"`
-	Status          string `json:"status"` // "ready", "not_configured", "error"
-	Message         string `json:"message,omitempty"`
+	Enabled         bool     `json:"enabled"`
+	LLMProvider     string   `json:"llm_provider"`
+	EmbeddingModel  string   `json:"embedding_model"`
+	DocumentsLoaded int      `json:"documents_loaded"`
+	Status          string   `json:"status"` // "ready", "not_configured", "error"
+	Message         string   `json:"message,omitempty"`
+	MissingKeys     []string `json:"missing_keys,omitempty"` // List of missing environment variables
 }
 
 // Message represents a chat message with role

@@ -1,0 +1,814 @@
+openapi: 3.0.3
+info:
+  title: Innominatus MCP Server API
+  version: 1.0.0
+  description: |
+    Model Context Protocol (MCP) server for Innominatus platform orchestration.
+
+    This API provides Claude AI with tools to interact with the Innominatus platform,
+    enabling conversational management of workflows, resources, and deployments.
+
+    **Note:** This is a stdio-based MCP server, not a traditional HTTP REST API.
+    The endpoints documented here represent MCP tools that Claude AI can invoke.
+
+    **Setup:**
+    1. Generate API token in Innominatus Web UI (Profile → API Keys)
+    2. Configure Claude Desktop with:
+       - `INNOMINATUS_API_BASE`: http://localhost:8081 (default)
+       - `INNOMINATUS_API_TOKEN`: Your API token
+    3. Restart Claude Desktop
+
+  contact:
+    name: Innominatus Platform Team
+    url: https://github.com/philipsahli/innominatus
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+  - url: https://innominatus.example.com
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Golden Paths
+    description: Pre-defined workflow templates for common platform operations
+  - name: Providers
+    description: Platform providers that handle resource provisioning
+  - name: Workflows
+    description: Workflow execution and monitoring
+  - name: Resources
+    description: Provisioned platform resources (databases, storage, etc.)
+  - name: Specs
+    description: Score specification management
+
+paths:
+  /tools/list_golden_paths:
+    post:
+      summary: List golden path workflows
+      description: |
+        Retrieve all available golden path workflows (opinionated multi-step orchestrations).
+
+        Golden paths combine multiple provisioners into end-to-end flows for common scenarios
+        like team onboarding, application deployment, or environment setup.
+      operationId: listGoldenPaths
+      tags:
+        - Golden Paths
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: List of golden path workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                  - golden_paths
+                properties:
+                  count:
+                    type: integer
+                    description: Total number of golden paths
+                    example: 5
+                  golden_paths:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GoldenPath'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/list_providers:
+    post:
+      summary: List platform providers
+      description: |
+        Retrieve all registered platform providers and their capabilities.
+
+        Providers are teams or components that provision specific resource types
+        (e.g., database-team handles postgres, storage-team handles s3).
+      operationId: listProviders
+      tags:
+        - Providers
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: List of platform providers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                  - providers
+                properties:
+                  count:
+                    type: integer
+                    description: Total number of providers
+                    example: 6
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderSummary'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/get_provider_details:
+    post:
+      summary: Get provider details
+      description: |
+        Retrieve detailed information about a specific provider, including its workflows
+        and resource type capabilities.
+      operationId: getProviderDetails
+      tags:
+        - Providers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider_name
+              properties:
+                provider_name:
+                  type: string
+                  description: Name of the provider to query
+                  example: database-team
+      responses:
+        '200':
+          description: Detailed provider information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderDetails'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/execute_workflow:
+    post:
+      summary: Execute a workflow
+      description: |
+        Start execution of a golden path workflow with optional input parameters.
+
+        Returns an execution ID that can be used to monitor progress via get_workflow_status.
+      operationId: executeWorkflow
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workflow_name
+              properties:
+                workflow_name:
+                  type: string
+                  description: Name of the workflow to execute
+                  example: onboard-dev-team
+                inputs:
+                  type: object
+                  description: Key-value pairs of workflow input parameters
+                  additionalProperties: true
+                  example:
+                    team_name: frontend-team
+                    namespace: frontend
+                    repo_name: frontend-app
+      responses:
+        '200':
+          description: Workflow execution started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecutionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/get_workflow_status:
+    post:
+      summary: Get workflow execution status
+      description: |
+        Retrieve detailed status of a workflow execution, including all steps and their progress.
+      operationId: getWorkflowStatus
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - execution_id
+              properties:
+                execution_id:
+                  type: integer
+                  description: ID of the workflow execution to query
+                  example: 42
+      responses:
+        '200':
+          description: Workflow execution status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecutionDetail'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/list_workflow_executions:
+    post:
+      summary: List recent workflow executions
+      description: |
+        Retrieve a list of recent workflow executions across all workflows.
+      operationId: listWorkflowExecutions
+      tags:
+        - Workflows
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                  description: Maximum number of executions to return
+                  default: 20
+                  minimum: 1
+                  maximum: 100
+                  example: 10
+      responses:
+        '200':
+          description: List of workflow executions
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                  - executions
+                properties:
+                  count:
+                    type: integer
+                    description: Total number of executions returned
+                    example: 10
+                  executions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkflowExecutionSummary'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/list_resources:
+    post:
+      summary: List provisioned resources
+      description: |
+        Retrieve all provisioned platform resources, optionally filtered by type.
+
+        Resources include databases, storage buckets, namespaces, repositories, etc.
+      operationId: listResources
+      tags:
+        - Resources
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  description: Filter resources by type (postgres, s3, namespace, etc.)
+                  example: postgres
+      responses:
+        '200':
+          description: List of resources
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                  - resources
+                properties:
+                  count:
+                    type: integer
+                    description: Total number of resources
+                    example: 15
+                  resources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResourceSummary'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/get_resource_details:
+    post:
+      summary: Get resource details
+      description: |
+        Retrieve detailed information about a specific resource, including its state,
+        configuration, and provisioning workflow.
+      operationId: getResourceDetails
+      tags:
+        - Resources
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resource_id
+              properties:
+                resource_id:
+                  type: integer
+                  description: ID of the resource to query
+                  example: 123
+      responses:
+        '200':
+          description: Detailed resource information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDetails'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/list_specs:
+    post:
+      summary: List Score specifications
+      description: |
+        Retrieve all deployed Score specifications (application definitions).
+      operationId: listSpecs
+      tags:
+        - Specs
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: List of Score specifications
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - count
+                  - specs
+                properties:
+                  count:
+                    type: integer
+                    description: Total number of specs
+                    example: 8
+                  specs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SpecSummary'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /tools/submit_spec:
+    post:
+      summary: Deploy a Score specification
+      description: |
+        Submit a new Score specification for deployment. This triggers automatic resource
+        provisioning via the orchestration engine.
+
+        The spec should be a valid Score YAML specification defining containers and resources.
+      operationId: submitSpec
+      tags:
+        - Specs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - spec_yaml
+              properties:
+                spec_yaml:
+                  type: string
+                  description: Score specification in YAML format
+                  example: |
+                    apiVersion: score.dev/v1b1
+                    metadata:
+                      name: my-app
+                    containers:
+                      main:
+                        image: nginx:latest
+                    resources:
+                      database:
+                        type: postgres
+                        properties:
+                          version: "15"
+      responses:
+        '200':
+          description: Spec submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitSpecResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: |
+        API token generated from Innominatus Web UI (Profile → API Keys).
+        Set via INNOMINATUS_API_TOKEN environment variable when configuring MCP server.
+
+  schemas:
+    GoldenPath:
+      type: object
+      required:
+        - name
+        - provider
+        - description
+      properties:
+        name:
+          type: string
+          description: Workflow name
+          example: onboard-dev-team
+        provider:
+          type: string
+          description: Provider that owns this workflow
+          example: container-team
+        description:
+          type: string
+          description: Human-readable description
+          example: Complete team onboarding with namespace, repo, and ArgoCD app
+        tags:
+          type: array
+          items:
+            type: string
+          description: Workflow tags for categorization
+          example: [onboarding, team, gitops]
+
+    ProviderSummary:
+      type: object
+      required:
+        - name
+        - category
+        - description
+        - resource_types
+        - workflow_count
+      properties:
+        name:
+          type: string
+          description: Provider name
+          example: database-team
+        category:
+          type: string
+          description: Provider category
+          enum: [infrastructure, service]
+          example: infrastructure
+        description:
+          type: string
+          description: Provider description
+          example: Database provisioning and lifecycle management
+        resource_types:
+          type: array
+          items:
+            type: string
+          description: Resource types this provider can handle
+          example: [postgres, postgresql, mysql]
+        workflow_count:
+          type: integer
+          description: Total number of workflows
+          example: 4
+
+    ProviderDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProviderSummary'
+        - type: object
+          properties:
+            version:
+              type: string
+              description: Provider version
+              example: 1.0.0
+            capabilities:
+              type: object
+              description: Detailed capability definitions
+              additionalProperties: true
+            workflows:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  category:
+                    type: string
+                    enum: [provisioner, goldenpath]
+                  tags:
+                    type: array
+                    items:
+                      type: string
+
+    WorkflowExecutionResponse:
+      type: object
+      required:
+        - execution_id
+        - workflow_name
+        - status
+        - started_at
+        - message
+      properties:
+        execution_id:
+          type: integer
+          description: Unique workflow execution ID
+          example: 42
+        workflow_name:
+          type: string
+          description: Name of the executed workflow
+          example: provision-postgres
+        status:
+          type: string
+          description: Current execution status
+          enum: [pending, running, completed, failed]
+          example: running
+        started_at:
+          type: string
+          format: date-time
+          description: Execution start timestamp (ISO 8601)
+          example: "2025-11-09T19:30:00Z"
+        message:
+          type: string
+          description: Human-readable status message
+          example: Workflow execution started successfully
+
+    WorkflowExecutionSummary:
+      type: object
+      required:
+        - execution_id
+        - workflow_name
+        - status
+        - started_at
+      properties:
+        execution_id:
+          type: integer
+          example: 42
+        workflow_name:
+          type: string
+          example: provision-postgres
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+          example: completed
+        started_at:
+          type: string
+          format: date-time
+          example: "2025-11-09T19:30:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2025-11-09T19:32:15Z"
+
+    WorkflowExecutionDetail:
+      allOf:
+        - $ref: '#/components/schemas/WorkflowExecutionSummary'
+        - type: object
+          properties:
+            error_message:
+              type: string
+              nullable: true
+              description: Error message if workflow failed
+            steps:
+              type: array
+              description: Workflow step executions
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: create-namespace
+                  type:
+                    type: string
+                    example: kubernetes
+                  status:
+                    type: string
+                    enum: [pending, running, completed, failed]
+                  started_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  completed_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+
+    ResourceSummary:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - spec_name
+        - state
+      properties:
+        id:
+          type: integer
+          description: Unique resource ID
+          example: 123
+        name:
+          type: string
+          description: Resource name
+          example: database
+        type:
+          type: string
+          description: Resource type
+          example: postgres
+        spec_name:
+          type: string
+          description: Name of the Score spec that requested this resource
+          example: my-app
+        state:
+          type: string
+          description: Resource state
+          enum: [requested, provisioning, active, scaling, updating, degraded, terminating, terminated, failed]
+          example: active
+        workflow_execution_id:
+          type: integer
+          nullable: true
+          description: ID of the workflow that provisioned this resource
+          example: 42
+
+    ResourceDetails:
+      allOf:
+        - $ref: '#/components/schemas/ResourceSummary'
+        - type: object
+          properties:
+            properties:
+              type: object
+              description: Resource configuration properties
+              additionalProperties: true
+              example:
+                db_name: ecommerce-db
+                version: "15"
+                replicas: 3
+            error_message:
+              type: string
+              nullable: true
+              description: Error message if resource provisioning failed
+            created_at:
+              type: string
+              format: date-time
+              example: "2025-11-09T19:30:00Z"
+            updated_at:
+              type: string
+              format: date-time
+              example: "2025-11-09T19:32:00Z"
+
+    SpecSummary:
+      type: object
+      required:
+        - name
+        - created_at
+        - resources_count
+      properties:
+        name:
+          type: string
+          description: Score spec name
+          example: my-app
+        created_at:
+          type: string
+          format: date-time
+          description: Spec creation timestamp
+          example: "2025-11-09T19:00:00Z"
+        resources_count:
+          type: integer
+          description: Number of resources defined in spec
+          example: 2
+
+    SubmitSpecResponse:
+      type: object
+      required:
+        - name
+        - message
+        - resources_requested
+      properties:
+        name:
+          type: string
+          description: Name of the deployed spec
+          example: my-app
+        message:
+          type: string
+          description: Confirmation message
+          example: Score specification submitted successfully
+        resources_requested:
+          type: integer
+          description: Number of resources to be provisioned
+          example: 2
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: Resource not found
+
+  responses:
+    BadRequestError:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Missing required parameter 'provider_name'
+
+    UnauthorizedError:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Invalid or missing API token
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Provider 'unknown-team' not found
+
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Internal server error occurred

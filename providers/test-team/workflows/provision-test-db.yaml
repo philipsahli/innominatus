@@ -1,0 +1,51 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-test-db
+  description: Simple test database provisioner
+
+parameters:
+  - name: db_name
+    type: string
+    required: true
+    description: Database name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace
+
+  - name: team_id
+    type: string
+    required: true
+    description: Team identifier
+
+steps:
+  - name: create-database
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+        echo "Creating test database: {{ .parameters.db_name }}"
+        echo "Team: {{ .parameters.team_id }}"
+        echo "Namespace: {{ .parameters.namespace }}"
+        sleep 2
+        echo "Database created successfully!"
+        exit 0
+
+  - name: verify-database
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+        echo "Verifying database is running..."
+        sleep 1
+        echo "Database is healthy and ready!"
+        exit 0
+
+outputs:
+  database_name: "{{ .parameters.db_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  status: "active"

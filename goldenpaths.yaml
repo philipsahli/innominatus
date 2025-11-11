@@ -1,194 +1,320 @@
-goldenpaths:
-  team-setup:
-    workflow: ./workflows/team-setup.yaml
-    description: Create Gitea team organization for collaborative development
-    category: platform
-    tags: [team, setup, gitea, organization, collaboration]
-    estimated_duration: 1-2 minutes
-    parameters:
-      org_name:
-        type: string
-        default: platform-team
-        description: Name of the Gitea team organization to create
-        pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
-      org_description:
-        type: string
-        default: Platform engineering team organization
-        description: Description for the team organization
-      org_visibility:
-        type: enum
-        default: public
-        description: Team organization visibility setting
-        allowed_values: [public, limited, private]
+# goldenpaths:
+#   team-setup:
+#     workflow: ./workflows/team-setup.yaml
+#     description: Create Gitea team organization for collaborative development
+#     category: platform
+#     tags: [team, setup, gitea, organization, collaboration]
+#     estimated_duration: 1-2 minutes
+#     parameters:
+#       org_name:
+#         type: string
+#         default: platform-team
+#         description: Name of the Gitea team organization to create
+#         pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
+#       org_description:
+#         type: string
+#         default: Platform engineering team organization
+#         description: Description for the team organization
+#       org_visibility:
+#         type: enum
+#         default: public
+#         description: Team organization visibility setting
+#         allowed_values: [public, limited, private]
 
-  keycloak-team-setup:
-    workflow: ./workflows/keycloak-team-setup.yaml
-    description: Create Keycloak team/group for identity and access management
-    category: platform
-    tags: [team, setup, keycloak, identity, access-management]
-    estimated_duration: 1-2 minutes
-    parameters:
-      group_name:
-        type: string
-        default: dev-team
-        description: Name of the Keycloak group/team to create
-        pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
-      realm:
-        type: string
-        default: demo-realm
-        description: Keycloak realm where the group will be created
+#   keycloak-team-setup:
+#     workflow: ./workflows/keycloak-team-setup.yaml
+#     description: Create Keycloak team/group for identity and access management
+#     category: platform
+#     tags: [team, setup, keycloak, identity, access-management]
+#     estimated_duration: 1-2 minutes
+#     parameters:
+#       group_name:
+#         type: string
+#         default: dev-team
+#         description: Name of the Keycloak group/team to create
+#         pattern: '^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]$'
+#       realm:
+#         type: string
+#         default: demo-realm
+#         description: Keycloak realm where the group will be created
 
-  deploy-app:
-    workflow: ./workflows/deploy-app.yaml
-    description: Deploy application with full GitOps pipeline including Git repository and ArgoCD onboarding
-    category: deployment
-    tags: [deployment, gitops, argocd, production]
-    estimated_duration: 5-10 minutes
-    parameters:
-      sync_policy:
-        type: enum
-        default: auto
-        description: ArgoCD sync policy for automatic or manual deployment
-        allowed_values: [auto, manual]
-      namespace_prefix:
-        type: string
-        default: ""
-        description: Optional prefix for Kubernetes namespace
-        pattern: '^[a-z0-9\-]*$'
+# #  deploy-app:
+# #    workflow: ./workflows/deploy-app.yaml
+# #    description: Deploy application with full GitOps pipeline including Git repository and ArgoCD onboarding
+# #    category: deployment
+# #    tags: [deployment, gitops, argocd, production]
+# #    estimated_duration: 5-10 minutes
+# #    parameters:
+# #      sync_policy:
+# #        type: enum
+# #        default: auto
+# #        description: ArgoCD sync policy for automatic or manual deployment
+# #        allowed_values: [auto, manual]
+# #      namespace_prefix:
+# #        type: string
+# #        default: ""
+# #        description: Optional prefix for Kubernetes namespace
+# #        pattern: '^[a-z0-9\-]*$'
 
-  undeploy-app:
-    workflow: ./workflows/undeploy-app.yaml
-    description: Remove deployed application and clean up all associated resources
-    category: cleanup
-    tags: [cleanup, teardown, removal]
-    estimated_duration: 2-5 minutes
-    parameters: {}
+# #  undeploy-app:
+# #    workflow: ./workflows/undeploy-app.yaml
+# #    description: Remove deployed application and clean up all associated resources
+# #    category: cleanup
+# #    tags: [cleanup, teardown, removal]
+# #    estimated_duration: 2-5 minutes
+# #    parameters: {}
 
-  ephemeral-env:
-    workflow: ./workflows/ephemeral-env.yaml
-    description: Create temporary environment for testing with automatic TTL-based cleanup
-    category: environment
-    tags: [testing, ephemeral, temporary, preview]
-    estimated_duration: 3-7 minutes
-    parameters:
-      ttl:
-        type: duration
-        default: 2h
-        description: Time-to-live for ephemeral environment (hours, minutes, or days)
-        pattern: '^\d+[hmd]$'
-      environment_type:
-        type: enum
-        default: preview
-        description: Type of ephemeral environment to create
-        allowed_values: [preview, staging, development, testing]
-      replicas:
-        type: int
-        default: "1"
-        description: Number of application replicas
-        min: 1
-        max: 10
+# #  ephemeral-env:
+# #    workflow: ./workflows/ephemeral-env.yaml
+# #    description: Create temporary environment for testing with automatic TTL-based cleanup
+# #    category: environment
+# #    tags: [testing, ephemeral, temporary, preview]
+# #    estimated_duration: 3-7 minutes
+# #    parameters:
+#       ttl:
+#         type: duration
+#         default: 2h
+#         description: Time-to-live for ephemeral environment (hours, minutes, or days)
+#         pattern: '^\d+[hmd]$'
+#       environment_type:
+#         type: enum
+#         default: preview
+#         description: Type of ephemeral environment to create
+#         allowed_values: [preview, staging, development, testing]
+#       replicas:
+#         type: int
+#         default: "1"
+#         description: Number of application replicas
+#         min: 1
+#         max: 10
 
-  db-lifecycle:
-    workflow: ./workflows/db-lifecycle.yaml
-    description: Manage database operations including backup, migration, and health checks
-    category: database
-    tags: [database, backup, migration, maintenance]
-    estimated_duration: 5-15 minutes
-    parameters:
-      operation:
-        type: enum
-        default: health-check
-        description: Database operation to perform
-        allowed_values: [health-check, backup, migration, restore]
-      backup_retention:
-        type: duration
-        default: 7d
-        description: Retention period for database backups
-        pattern: '^\d+[dw]$'
-      enable_compression:
-        type: bool
-        default: "true"
-        description: Enable backup compression to save storage space
+#   db-lifecycle:
+#     workflow: ./workflows/db-lifecycle.yaml
+#     description: Manage database operations including backup, migration, and health checks
+#     category: database
+#     tags: [database, backup, migration, maintenance]
+#     estimated_duration: 5-15 minutes
+#     parameters:
+#       operation:
+#         type: enum
+#         default: health-check
+#         description: Database operation to perform
+#         allowed_values: [health-check, backup, migration, restore]
+#       backup_retention:
+#         type: duration
+#         default: 7d
+#         description: Retention period for database backups
+#         pattern: '^\d+[dw]$'
+#       enable_compression:
+#         type: bool
+#         default: "true"
+#         description: Enable backup compression to save storage space
 
-  observability-setup:
-    workflow: ./workflows/observability-setup.yaml
-    description: Setup monitoring and observability stack with metrics, logs, and tracing
-    category: observability
-    tags: [monitoring, observability, metrics, logging, tracing]
-    estimated_duration: 10-20 minutes
-    parameters:
-      enable_metrics:
-        type: bool
-        default: "true"
-        description: Enable Prometheus metrics collection
-      enable_logs:
-        type: bool
-        default: "true"
-        description: Enable centralized logging with Loki
-      enable_tracing:
-        type: bool
-        default: "false"
-        description: Enable distributed tracing with Tempo
-      retention_days:
-        type: int
-        default: "30"
-        description: Metrics and logs retention period in days
-        min: 7
-        max: 365
+#   observability-setup:
+#     workflow: ./workflows/observability-setup.yaml
+#     description: Setup monitoring and observability stack with metrics, logs, and tracing
+#     category: observability
+#     tags: [monitoring, observability, metrics, logging, tracing]
+#     estimated_duration: 10-20 minutes
+#     parameters:
+#       enable_metrics:
+#         type: bool
+#         default: "true"
+#         description: Enable Prometheus metrics collection
+#       enable_logs:
+#         type: bool
+#         default: "true"
+#         description: Enable centralized logging with Loki
+#       enable_tracing:
+#         type: bool
+#         default: "false"
+#         description: Enable distributed tracing with Tempo
+#       retention_days:
+#         type: int
+#         default: "30"
+#         description: Metrics and logs retention period in days
+#         min: 7
+#         max: 365
 
-  onboard-dev-team:
-    workflow: ./workflows/onboard-dev-team-hardcoded.yaml
-    description: Complete platform onboarding for development team (simplified for demo)
-    category: onboarding
-    tags: [onboarding, dev-team, full-stack, multi-team]
-    estimated_duration: 2-3 minutes
-    parameters:
-      app_name:
-        type: string
-        required: true
-        pattern: '^[a-z0-9\-]+$'
-        description: Application name (lowercase, alphanumeric, hyphens)
-      environment:
-        type: enum
-        required: false
-        default: development
-        allowed_values: [development, staging, production]
-        description: Environment type
+#   onboard-dev-team:
+#     workflow: ./workflows/onboard-dev-team-hardcoded.yaml
+#     description: Complete platform onboarding for development team (simplified for demo)
+#     category: onboarding
+#     tags: [onboarding, dev-team, full-stack, multi-team]
+#     estimated_duration: 2-3 minutes
+#     parameters:
+#       app_name:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Application name (lowercase, alphanumeric, hyphens)
+#       environment:
+#         type: enum
+#         required: false
+#         default: development
+#         allowed_values: [development, staging, production]
+#         description: Environment type
 
-  onboard-team:
-    workflow: ./workflows/onboard-team-simple.yaml
-    description: Simple team onboarding with Gitea and namespace (provider-based architecture demo)
-    category: onboarding
-    tags: [onboarding, providers, gitea, namespace, multi-team-idp]
-    estimated_duration: 1-2 minutes
-    parameters:
-      app_name:
-        type: string
-        required: true
-        pattern: '^[a-z0-9\-]+$'
-        description: Application name (lowercase, alphanumeric, hyphens)
-      environment:
-        type: enum
-        required: false
-        default: development
-        allowed_values: [development, staging, production]
-        description: Environment type
+#   onboard-team:
+#     workflow: ./workflows/onboard-team-simple.yaml
+#     description: Simple team onboarding with Gitea and namespace (provider-based architecture demo)
+#     category: onboarding
+#     tags: [onboarding, providers, gitea, namespace, multi-team-idp]
+#     estimated_duration: 1-2 minutes
+#     parameters:
+#       app_name:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Application name (lowercase, alphanumeric, hyphens)
+#       environment:
+#         type: enum
+#         required: false
+#         default: development
+#         allowed_values: [development, staging, production]
+#         description: Environment type
 
-  deploy-with-database:
-    workflow: ./workflows/deploy-app-with-db.yaml
-    description: Deploy application with database provisioning and resource hints injection
-    category: deployment
-    tags: [deployment, database, resource-hints, provider-based, multi-team-idp]
-    estimated_duration: 3-5 minutes
-    parameters:
-      app_name:
-        type: string
-        required: true
-        pattern: '^[a-z0-9\-]+$'
-        description: Application name (lowercase, alphanumeric, hyphens)
-      environment:
-        type: enum
-        required: false
-        default: development
-        allowed_values: [development, staging, production]
-        description: Environment type
+#   deploy-with-database:
+#     workflow: ./workflows/deploy-app-with-db.yaml
+#     description: Deploy application with database provisioning and resource hints injection
+#     category: deployment
+#     tags: [deployment, database, resource-hints, provider-based, multi-team-idp]
+#     estimated_duration: 3-5 minutes
+#     parameters:
+#       app_name:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Application name (lowercase, alphanumeric, hyphens)
+#       environment:
+#         type: enum
+#         required: false
+#         default: development
+#         allowed_values: [development, staging, production]
+#         description: Environment type
+
+#   setup-prometheus:
+#     workflow: ./providers/observability-team/workflows/provision-prometheus.yaml
+#     description: Setup Prometheus metrics collection with Kubernetes service discovery
+#     category: observability
+#     tags: [observability, prometheus, metrics, monitoring, provider-based]
+#     estimated_duration: 2-3 minutes
+#     parameters:
+#       namespace:
+#         type: string
+#         required: false
+#         default: observability
+#         description: Namespace for Prometheus deployment
+#         pattern: '^[a-z0-9\-]+$'
+#       retention:
+#         type: string
+#         required: false
+#         default: 30d
+#         description: Metrics retention period
+#         pattern: '^\d+[dw]$'
+#       scrape_interval:
+#         type: string
+#         required: false
+#         default: 30s
+#         description: Metrics scrape interval
+#         pattern: '^\d+[sm]$'
+#       enable_alerts:
+#         type: string
+#         required: false
+#         default: "true"
+#         description: Enable Prometheus alerting rules
+#       team_id:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Team identifier for resource ownership
+
+#   setup-loki:
+#     workflow: ./providers/observability-team/workflows/provision-loki.yaml
+#     description: Setup Loki log aggregation with Promtail log shipper
+#     category: observability
+#     tags: [observability, loki, logs, logging, provider-based]
+#     estimated_duration: 2-3 minutes
+#     parameters:
+#       namespace:
+#         type: string
+#         required: false
+#         default: observability
+#         description: Namespace for Loki deployment
+#         pattern: '^[a-z0-9\-]+$'
+#       retention:
+#         type: string
+#         required: false
+#         default: 30d
+#         description: Log retention period
+#         pattern: '^\d+[dw]$'
+#       team_id:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Team identifier for resource ownership
+
+#   setup-tempo:
+#     workflow: ./providers/observability-team/workflows/provision-tempo.yaml
+#     description: Setup Tempo distributed tracing with OTLP, Jaeger, and Zipkin support
+#     category: observability
+#     tags: [observability, tempo, tracing, distributed-tracing, provider-based]
+#     estimated_duration: 2-3 minutes
+#     parameters:
+#       namespace:
+#         type: string
+#         required: false
+#         default: observability
+#         description: Namespace for Tempo deployment
+#         pattern: '^[a-z0-9\-]+$'
+#       retention:
+#         type: string
+#         required: false
+#         default: 7d
+#         description: Trace retention period
+#         pattern: '^\d+[dw]$'
+#       team_id:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Team identifier for resource ownership
+
+#   setup-grafana:
+#     workflow: ./providers/observability-team/workflows/provision-grafana-dashboard.yaml
+#     description: Setup Grafana with datasources for Prometheus, Loki, and Tempo
+#     category: observability
+#     tags: [observability, grafana, dashboards, visualization, provider-based]
+#     estimated_duration: 2-3 minutes
+#     parameters:
+#       namespace:
+#         type: string
+#         required: false
+#         default: observability
+#         description: Namespace for Grafana deployment
+#         pattern: '^[a-z0-9\-]+$'
+#       dashboard_name:
+#         type: string
+#         required: false
+#         default: observability-overview
+#         description: Name for the default dashboard
+#         pattern: '^[a-z0-9\-]+$'
+#       team_id:
+#         type: string
+#         required: true
+#         pattern: '^[a-z0-9\-]+$'
+#         description: Team identifier for resource ownership
+#       enable_prometheus:
+#         type: string
+#         required: false
+#         default: "true"
+#         description: Enable Prometheus datasource
+#       enable_loki:
+#         type: string
+#         required: false
+#         default: "true"
+#         description: Enable Loki datasource
+#       enable_tempo:
+#         type: string
+#         required: false
+#         default: "true"
+#         description: Enable Tempo datasource

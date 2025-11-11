@@ -1036,7 +1036,11 @@ func (i *Installer) createVaultClient(token string) error {
 // createInnominatusClient creates the Innominatus OIDC client in Keycloak
 func (i *Installer) createInnominatusClient(token string) error {
 	// Get appropriate redirect URIs based on deployment mode
-	redirectURIs := []string{"http://localhost:8081/auth/callback", "http://innominatus.localtest.me/auth/callback"}
+	redirectURIs := []string{
+		"http://localhost:8081/auth/callback",
+		"http://innominatus.localtest.me/auth/callback",
+		"http://127.0.0.1:8082/callback", // CLI SSO callback
+	}
 	if IsRunningInKubernetes() {
 		// In K8s mode, add service-based callback URL
 		namespace := os.Getenv("POD_NAMESPACE")

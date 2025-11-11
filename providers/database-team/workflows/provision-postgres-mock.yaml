@@ -1,0 +1,96 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-postgres-mock
+  description: Mock PostgreSQL provisioner (no K8s required)
+
+parameters:
+  - name: db_name
+    type: string
+    required: true
+    description: Database cluster name
+
+  - name: namespace
+    type: string
+    required: false
+    default: "default"
+    description: Namespace (mock)
+
+  - name: team_id
+    type: string
+    required: false
+    default: "team"
+    description: Team identifier
+
+  - name: size
+    type: string
+    required: false
+    default: "small"
+    description: Database size (small/medium/large)
+
+  - name: replicas
+    type: number
+    required: false
+    default: 2
+    description: Number of replicas
+
+  - name: version
+    type: string
+    required: false
+    default: "15"
+    description: PostgreSQL version
+
+steps:
+  - name: create-mock-database
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+        echo "🗄️  Creating mock PostgreSQL database..."
+        echo "  Database: {{ .parameters.db_name }}"
+        echo "  Team: {{ .parameters.team_id }}"
+        echo "  Namespace: {{ .parameters.namespace }}"
+        echo "  Version: {{ .parameters.version }}"
+        echo "  Size: {{ .parameters.size }}"
+        echo "  Replicas: {{ .parameters.replicas }}"
+        sleep 2
+        echo "✅ Mock database created successfully!"
+        exit 0
+
+  - name: generate-mock-credentials
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+        echo "🔑 Generating mock credentials..."
+
+        # Generate mock credentials
+        DB_USER="{{ .parameters.db_name }}_app"
+        DB_PASSWORD="mock-password-$(date +%s)"
+        DB_HOST="localhost"
+        DB_PORT="5432"
+        DB_NAME="{{ .parameters.db_name }}"
+
+        # Output as JSON for workflow outputs
+        cat <<EOF
+        {
+          "username": "$DB_USER",
+          "password": "$DB_PASSWORD",
+          "host": "$DB_HOST",
+          "port": "$DB_PORT",
+          "database": "$DB_NAME",
+          "connection_string": "postgresql://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME"
+        }
+        EOF
+
+outputs:
+  database_name: "{{ .parameters.db_name }}"
+  cluster_name: "{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  host: "localhost"
+  port: "5432"
+  username: "{{ .steps.generate-mock-credentials.output.username }}"
+  password: "{{ .steps.generate-mock-credentials.output.password }}"
+  connection_string: "{{ .steps.generate-mock-credentials.output.connection_string }}"

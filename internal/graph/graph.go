@@ -13,6 +13,7 @@ const (
 	NodeTypeSpec     NodeType = "spec"
 	NodeTypeWorkflow NodeType = "workflow"
 	NodeTypeResource NodeType = "resource"
+	NodeTypeProvider NodeType = "provider"
 )
 
 // NodeStatus represents the status of a node

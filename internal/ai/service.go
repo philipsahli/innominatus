@@ -101,10 +101,26 @@ func (s *Service) GetStatus(ctx context.Context) StatusResponse {
 
 	if !s.enabled {
 		log.Debug().Msg("AI service is not enabled")
+
+		// Check which keys are missing
+		var missingKeys []string
+		if os.Getenv("OPENAI_API_KEY") == "" {
+			missingKeys = append(missingKeys, "OPENAI_API_KEY")
+		}
+		if os.Getenv("ANTHROPIC_API_KEY") == "" {
+			missingKeys = append(missingKeys, "ANTHROPIC_API_KEY")
+		}
+
+		message := "AI service is disabled. Set OPENAI_API_KEY and ANTHROPIC_API_KEY to enable."
+		if len(missingKeys) > 0 {
+			message = fmt.Sprintf("AI service is disabled. Missing environment variables: %v", missingKeys)
+		}
+
 		return StatusResponse{
-			Enabled: false,
-			Status:  "not_configured",
-			Message: "AI service is disabled. Set OPENAI_API_KEY and ANTHROPIC_API_KEY to enable.",
+			Enabled:     false,
+			Status:      "not_configured",
+			Message:     message,
+			MissingKeys: missingKeys,
 		}
 	}
 
@@ -161,14 +177,42 @@ func (s *Service) loadKnowledgeBase(ctx context.Context, cfg Config) error {
 		Int("documents_loaded", len(documents)).
 		Msg("Adding documents to RAG index")
 
-	// Add documents to RAG
-	if err := s.sdk.RAG().AddDocuments(ctx, documents); err != nil {
-		log.Error().
-			Err(err).
-			Int("document_count", len(documents)).
-			Msg("Failed to add documents to RAG index")
-		return fmt.Errorf("failed to add documents to RAG: %w", err)
+	// Add documents to RAG in batches to avoid OpenAI token limits
+	// OpenAI text-embedding-3-small has 8192 tokens context limit per document
+	// Some docs are very large, so use conservative batch size
+	// Estimate ~2000 tokens per doc average = ~20 docs per batch to be safe
+	batchSize := 20
+	totalDocs := len(documents)
+
+	for i := 0; i < totalDocs; i += batchSize {
+		end := i + batchSize
+		if end > totalDocs {
+			end = totalDocs
+		}
+
+		batch := documents[i:end]
+		batchNum := (i / batchSize) + 1
+		totalBatches := (totalDocs + batchSize - 1) / batchSize
+
+		log.Debug().
+			Int("batch", batchNum).
+			Int("total_batches", totalBatches).
+			Int("batch_size", len(batch)).
+			Msg("Adding document batch to RAG index")
+
+		if err := s.sdk.RAG().AddDocuments(ctx, batch); err != nil {
+			log.Error().
+				Err(err).
+				Int("batch", batchNum).
+				Int("batch_size", len(batch)).
+				Msg("Failed to add document batch to RAG index")
+			return fmt.Errorf("failed to add documents batch %d to RAG: %w", batchNum, err)
+		}
 	}
+
+	log.Info().
+		Int("total_documents", totalDocs).
+		Msg("Successfully added all documents to RAG index")
 
 	count, err := s.sdk.RAG().Count(ctx)
 	if err != nil {

@@ -28,6 +28,21 @@ users:
           name: aaaaaaa
           created_at: 2025-10-05T19:36:17.49289+02:00
           expires_at: 2026-01-03T19:36:17.49289+01:00
+        - key: 4701018663ec365e586e35f1fc704f7e9aab7ec9106f454341e09ed3df6f7f78
+          name: cli-unifi-1761664593
+          created_at: 2025-10-28T16:16:33.30039+01:00
+          last_used_at: 2025-11-07T06:13:33.463099+01:00
+          expires_at: 2026-01-26T16:16:33.30039+01:00
+        - key: c5cdd543807fb377b2579b1bcd426b744f04ceb8f4ac0be7f47816b91c488463
+          name: cli-unifi-1762492491
+          created_at: 2025-11-07T06:14:51.297657+01:00
+          last_used_at: 2025-11-09T19:37:44.918178+01:00
+          expires_at: 2026-02-05T06:14:51.297657+01:00
+        - key: $2a$10$MbueZLVaTV7S.ioizXn1peBMqebLhe4zjvIVwy.jfO6bBZ.SHNH7.
+          name: cli-unifi-1762793079
+          created_at: 2025-11-10T17:44:39.20867+01:00
+          last_used_at: 2025-11-11T07:36:59.253093+01:00
+          expires_at: 2026-02-08T17:44:39.20867+01:00
     - username: alice
       password: alice123
       team: frontend

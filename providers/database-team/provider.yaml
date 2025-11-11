@@ -10,10 +10,66 @@ compatibility:
   minCoreVersion: 1.0.0
   maxCoreVersion: 2.0.0
 
+capabilities:
+  # New operation-based capability format with CRUD workflows
+  resourceTypeCapabilities:
+    - type: postgres
+      operations:
+        create:
+          workflow: provision-postgres
+        update:
+          workflow: update-postgres
+        delete:
+          workflow: delete-postgres
+    - type: postgresql
+      aliasFor: postgres
+    - type: postgres-mock
+      operations:
+        create:
+          workflow: provision-postgres-mock
+        delete:
+          workflow: delete-postgres-mock
+
+  # Legacy format for backward compatibility
+  resourceTypes: [postgres, postgresql, postgres-mock]
+
 workflows:
   - name: provision-postgres
     file: ./workflows/provision-postgres.yaml
     description: Create PostgreSQL database using Zalando operator
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [database, postgres, zalando]
+
+  - name: update-postgres
+    file: ./workflows/update-postgres.yaml
+    description: Update PostgreSQL configuration (scale replicas, change version)
+    category: provisioner
+    operation: update
+    version: 1.0.0
+    tags: [database, postgres, scaling, configuration]
+
+  - name: delete-postgres
+    file: ./workflows/delete-postgres.yaml
+    description: Delete PostgreSQL cluster and associated resources
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [database, postgres, cleanup]
+
+  - name: provision-postgres-mock
+    file: ./workflows/provision-postgres-mock.yaml
+    description: Mock PostgreSQL provisioner (no K8s required)
+    category: provisioner
+    operation: create
+    version: 1.0.0
+    tags: [database, postgres, mock, test]
+
+  - name: delete-postgres-mock
+    file: ./workflows/delete-postgres-mock.yaml
+    description: Delete mock PostgreSQL instance
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [database, postgres, mock, test, cleanup]

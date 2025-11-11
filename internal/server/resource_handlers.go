@@ -15,6 +15,8 @@ func (s *Server) HandleResources(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 		s.handleListResources(w, r)
+	case "POST":
+		s.handleCreateResource(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -274,6 +276,68 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+	}
+}
+
+// handleCreateResource creates a new resource instance
+func (s *Server) handleCreateResource(w http.ResponseWriter, r *http.Request) {
+	// Check if we have database and resource manager
+	if s.db == nil || s.resourceManager == nil {
+		http.Error(w, "Resource management requires database connection", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Get user from context
+	user := s.getUserFromContext(r)
+	if user == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		ApplicationName string                 `json:"application_name"`
+		ResourceName    string                 `json:"resource_name"`
+		ResourceType    string                 `json:"resource_type"`
+		Configuration   map[string]interface{} `json:"configuration,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.ApplicationName == "" {
+		http.Error(w, "application_name is required", http.StatusBadRequest)
+		return
+	}
+	if req.ResourceName == "" {
+		http.Error(w, "resource_name is required", http.StatusBadRequest)
+		return
+	}
+	if req.ResourceType == "" {
+		http.Error(w, "resource_type is required", http.StatusBadRequest)
+		return
+	}
+
+	// Create resource instance
+	resource, err := s.resourceManager.CreateResourceInstance(
+		req.ApplicationName,
+		req.ResourceName,
+		req.ResourceType,
+		req.Configuration,
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create resource: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return created resource
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(resource); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
 }

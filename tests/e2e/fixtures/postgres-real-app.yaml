@@ -1,0 +1,23 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: ecommerce-backend
+containers:
+  api:
+    image: nginx:latest
+    env:
+      DATABASE_URL: ${resources.database.connection_string}
+      DB_USER: ${resources.database.username}
+      DB_PASSWORD: ${resources.database.password}
+      DB_HOST: ${resources.database.host}
+      DB_PORT: ${resources.database.port}
+      DB_NAME: ${resources.database.database_name}
+resources:
+  database:
+    type: postgres
+    properties:
+      db_name: ecommerce-db
+      namespace: ecommerce
+      team_id: ecommerce-team
+      size: medium
+      replicas: 3
+      version: "15"

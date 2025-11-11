@@ -8,8 +8,10 @@ import (
 	"innominatus/internal/admin"
 	"innominatus/internal/ai"
 	"innominatus/internal/database"
+	"innominatus/internal/events"
 	"innominatus/internal/logging"
 	"innominatus/internal/metrics"
+	"innominatus/internal/orchestration"
 	"innominatus/internal/providers"
 	"innominatus/internal/server"
 	"innominatus/internal/tracing"
@@ -19,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -29,7 +32,8 @@ var migrationsFS embed.FS
 //go:embed swagger-admin.yaml swagger-user.yaml
 var swaggerFilesFS embed.FS
 
-//go:embed all:web-ui-out
+// Temporarily disabled for development - use filesystem mode
+// //go:embed all:web-ui-out
 var webUIFS embed.FS
 
 // Build information - set via ldflags during release builds
@@ -56,6 +60,15 @@ func loadProvidersFromConfig(logger *logging.ZerologAdapter, adminConfig *admin.
 
 	fsLoader := providers.NewLoader(version)
 	gitLoader := providers.NewGitLoader("/tmp/innominatus-providers", version)
+
+	// Collect loaded providers for sorted output
+	type loadedProvider struct {
+		name         string
+		version      string
+		category     string
+		provisioners int
+	}
+	var loadedProviders []loadedProvider
 
 	for _, providerSrc := range adminConfig.Providers {
 		if !providerSrc.Enabled {
@@ -112,11 +125,27 @@ func loadProvidersFromConfig(logger *logging.ZerologAdapter, adminConfig *admin.
 			continue
 		}
 
+		// Collect for sorted output
+		loadedProviders = append(loadedProviders, loadedProvider{
+			name:         provider.Metadata.Name,
+			version:      provider.Metadata.Version,
+			category:     provider.Metadata.Category,
+			provisioners: len(provider.Provisioners),
+		})
+	}
+
+	// Sort providers alphabetically by name
+	sort.Slice(loadedProviders, func(i, j int) bool {
+		return loadedProviders[i].name < loadedProviders[j].name
+	})
+
+	// Print sorted providers
+	for _, p := range loadedProviders {
 		logger.InfoWithFields("Provider loaded successfully", map[string]interface{}{
-			"name":         provider.Metadata.Name,
-			"version":      provider.Metadata.Version,
-			"category":     provider.Metadata.Category,
-			"provisioners": len(provider.Provisioners),
+			"name":         p.name,
+			"version":      p.version,
+			"category":     p.category,
+			"provisioners": p.provisioners,
 		})
 	}
 
@@ -181,7 +210,7 @@ func (w *loggingResponseWriter) Write(b []byte) (int, error) {
 
 func main() {
 	var port = flag.String("port", "8081", "HTTP server port")
-	var disableDB = flag.Bool("disable-db", false, "Disable database features")
+	// PostgreSQL is now required - removed --disable-db flag
 	var skipValidation = flag.Bool("skip-validation", false, "Skip configuration validation on startup")
 	flag.Parse()
 
@@ -234,52 +263,49 @@ func main() {
 		})
 	}
 
-	var srv *server.Server
-
-	if !*disableDB {
-		// Try to initialize database
-		db, err := database.NewDatabase()
-		if err != nil {
-			logger.WarnWithFields("Failed to connect to database, starting without database features", map[string]interface{}{
-				"error": err.Error(),
-			})
-			srv = server.NewServer()
-		} else {
-			// Initialize schema
-			err = db.InitSchema()
-			if err != nil {
-				logger.WarnWithFields("Failed to initialize database schema, starting without database features", map[string]interface{}{
-					"error": err.Error(),
-				})
-				_ = db.Close()
-				srv = server.NewServer()
-			} else {
-				logger.Info("Database connected successfully")
-
-				// Set embedded migrations filesystem
-				migrationsSubFS, err := fs.Sub(migrationsFS, "migrations")
-				if err != nil {
-					logger.WarnWithFields("Failed to create migrations sub-filesystem", map[string]interface{}{
-						"error": err.Error(),
-					})
-				} else {
-					db.SetMigrationsFS(migrationsSubFS)
-					logger.Info("Embedded migrations filesystem configured")
-				}
-
-				// Pass admin config to enable multi-tier workflows
-				srv = server.NewServerWithDBAndAdminConfig(db, adminConfig)
-			}
-		}
-	} else {
-		logger.Info("Database features disabled")
-		srv = server.NewServer()
+	// PostgreSQL is required - fail fast if unavailable
+	db, err := database.NewDatabase()
+	if err != nil {
+		logger.FatalWithFields("Failed to connect to PostgreSQL database", map[string]interface{}{
+			"error":         err.Error(),
+			"hint":          "Ensure PostgreSQL is running and DB_* environment variables are set correctly",
+			"required_vars": "DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD",
+		})
 	}
+
+	// Initialize schema
+	err = db.InitSchema()
+	if err != nil {
+		logger.FatalWithFields("Failed to initialize database schema", map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
+
+	logger.Info("Database connected successfully")
+
+	// Set embedded migrations filesystem
+	migrationsSubFS, err := fs.Sub(migrationsFS, "migrations")
+	if err != nil {
+		logger.WarnWithFields("Failed to create migrations sub-filesystem", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		db.SetMigrationsFS(migrationsSubFS)
+		logger.Info("Embedded migrations filesystem configured")
+	}
+
+	// Pass admin config to enable multi-tier workflows
+	srv := server.NewServerWithDBAndAdminConfig(db, adminConfig)
 
 	// Set provider registry on server
 	if providerRegistry != nil {
 		srv.SetProviderRegistry(providerRegistry)
 		logger.Info("Provider registry configured")
+
+		// Create and set resolver for resource type validation
+		providerResolver := orchestration.NewResolver(providerRegistry)
+		srv.SetProviderResolver(providerResolver)
+		logger.Info("Provider resolver configured for resource type validation")
 
 		// Set up reload callback for hot-reloading providers
 		reloadFunc := func() error {
@@ -305,6 +331,66 @@ func main() {
 
 		srv.SetProvidersReloadFunc(reloadFunc)
 		logger.Info("Provider hot-reload configured")
+
+		// Start orchestration engine if database and providers are available
+		if srv.HasDatabase() && providerRegistry != nil {
+			db := srv.GetDatabase()
+			workflowRepo := srv.GetWorkflowRepository()
+			resourceRepo := srv.GetResourceRepository()
+			workflowExec := srv.GetWorkflowExecutor()
+			graphAdapter := srv.GetGraphAdapter()
+
+			// Determine providers directory
+			providersDir := "providers" // Default
+			if adminConfig != nil && len(adminConfig.Providers) > 0 {
+				// Use the path from the first filesystem provider
+				for _, p := range adminConfig.Providers {
+					if p.Type == "filesystem" && p.Path != "" {
+						// Extract parent directory from provider path
+						providersDir = "providers" // Keep as default for now
+						break
+					}
+				}
+			}
+
+			engine := orchestration.NewEngine(
+				db,
+				providerRegistry,
+				workflowRepo,
+				resourceRepo,
+				workflowExec,
+				graphAdapter,
+				providersDir,
+			)
+
+			// Create event bus for real-time event streaming
+			eventBus := events.NewEventBus()
+			logger.Info("Event bus created")
+
+			// Configure event bus on all components
+			engine.SetEventBus(eventBus)
+			resourceManager := srv.GetResourceManager()
+			if resourceManager != nil {
+				resourceManager.SetEventBus(eventBus)
+			}
+			if workflowExec != nil {
+				workflowExec.SetEventBus(eventBus)
+			}
+			logger.Info("Event bus configured on all components")
+
+			// Create SSE broker for streaming events to clients
+			sseBroker := events.NewSSEBroker(eventBus)
+			srv.SetSSEBroker(sseBroker)
+			logger.Info("SSE broker created and configured")
+
+			// Start engine in background
+			go func() {
+				ctx := context.Background()
+				engine.Start(ctx)
+			}()
+
+			logger.Info("Orchestration engine started successfully")
+		}
 	}
 
 	// Initialize AI service (optional - continues without AI if not configured)
@@ -325,15 +411,17 @@ func main() {
 	logger.Info("Embedded swagger files filesystem configured")
 
 	// Set embedded web-ui files filesystem
-	webUISubFS, err := fs.Sub(webUIFS, "web-ui-out")
-	if err != nil {
-		logger.WarnWithFields("Failed to create web-ui sub-filesystem", map[string]interface{}{
-			"error": err.Error(),
-		})
-	} else {
-		srv.SetWebUIFS(webUISubFS)
-		logger.Info("Embedded web-ui filesystem configured")
-	}
+	// DEVELOPMENT: Force filesystem mode by skipping embedded FS setup
+	// webUISubFS, err := fs.Sub(webUIFS, "web-ui-out")
+	// if err != nil {
+	// 	logger.WarnWithFields("Failed to create web-ui sub-filesystem", map[string]interface{}{
+	// 		"error": err.Error(),
+	// 	})
+	// } else {
+	// 	srv.SetWebUIFS(webUISubFS)
+	// 	logger.Info("Embedded web-ui filesystem configured")
+	// }
+	logger.Info("Using filesystem mode for web-ui (development)")
 
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
 	withTrace := func(h http.HandlerFunc) http.HandlerFunc {
@@ -370,6 +458,10 @@ func main() {
 	http.HandleFunc("/auth/oidc/login", withTrace(srv.HandleOIDCLogin))
 	http.HandleFunc("/auth/callback", withTrace(srv.HandleOIDCCallback))
 
+	// OIDC CLI authentication routes (for CLI PKCE flow)
+	http.HandleFunc("/api/oidc/config", withTraceCORS(srv.HandleOIDCConfig))
+	http.HandleFunc("/api/oidc/token", withTraceCORS(srv.HandleOIDCTokenExchange))
+
 	// API routes (with trace ID, logging, CORS, and authentication)
 	// Applications endpoints (preferred)
 	http.HandleFunc("/api/applications", withTraceCORSAuth(srv.HandleApplications))
@@ -377,6 +469,16 @@ func main() {
 	// Deprecated: /api/specs endpoints (kept for backward compatibility)
 	http.HandleFunc("/api/specs", withTraceCORSAuth(srv.HandleSpecsDeprecated))
 	http.HandleFunc("/api/specs/", withTraceCORSAuth(srv.HandleSpecDetailDeprecated))
+
+	// SSE endpoint for real-time event streaming
+	http.HandleFunc("/api/events/stream", func(w http.ResponseWriter, r *http.Request) {
+		// Apply middleware manually but allow SSE to stream without typical middleware interference
+		if srv.GetSSEBroker() != nil {
+			srv.GetSSEBroker().ServeHTTP(w, r)
+		} else {
+			http.Error(w, "Event streaming not available", http.StatusServiceUnavailable)
+		}
+	})
 
 	http.HandleFunc("/api/environments", withTraceCORSAuth(srv.HandleEnvironments))
 	http.HandleFunc("/api/workflows", withTraceCORSAuth(srv.HandleWorkflows))
@@ -409,6 +511,7 @@ func main() {
 
 	// Profile management routes (authenticated users only)
 	http.HandleFunc("/api/profile", withTraceCORSAuth(srv.HandleGetProfile))
+	http.HandleFunc("/api/auth/whoami", withTraceCORSAuth(srv.HandleGetProfile)) // Alias for AI assistant
 	http.HandleFunc("/api/profile/api-keys", withTraceCORSAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -662,7 +765,7 @@ func main() {
 		"commit":           commit,
 		"port":             *port,
 		"address":          "http://localhost" + addr,
-		"database_enabled": !*disableDB,
+		"database_enabled": true, // PostgreSQL is always required
 		"tracing_enabled":  tp.IsEnabled(),
 	})
 
@@ -685,7 +788,7 @@ func main() {
 		Addr:         addr,
 		Handler:      nil,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 120 * time.Second, // Increased for AI operations (30-90s)
 		IdleTimeout:  60 * time.Second,
 	}
 

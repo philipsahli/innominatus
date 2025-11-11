@@ -1,0 +1,113 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-keycloak-group
+  description: Delete Keycloak group and remove role mappings
+
+parameters:
+  - name: group_name
+    type: string
+    required: true
+    description: Name of the group/team to delete
+
+  - name: realm
+    type: string
+    required: false
+    default: "demo-realm"
+    description: Keycloak realm
+
+steps:
+  - name: delete-group
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        echo "🗑️  Deleting Keycloak group: {{ .parameters.group_name }}"
+
+        KEYCLOAK_URL="${KEYCLOAK_URL:-http://keycloak.localtest.me}"
+        KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+        KEYCLOAK_PASSWORD="${KEYCLOAK_PASSWORD:-adminpassword}"
+        REALM="{{ .parameters.realm }}"
+        GROUP_NAME="{{ .parameters.group_name }}"
+
+        # Get admin access token
+        echo "🔐 Authenticating with Keycloak..."
+        TOKEN_RESPONSE=$(curl -s -X POST \
+          "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "username=$KEYCLOAK_ADMIN" \
+          -d "password=$KEYCLOAK_PASSWORD" \
+          -d "grant_type=password" \
+          -d "client_id=admin-cli")
+
+        ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+        if [ -z "$ACCESS_TOKEN" ]; then
+          echo "❌ Failed to authenticate with Keycloak"
+          exit 1
+        fi
+
+        echo "✅ Authentication successful"
+
+        # Find group ID
+        echo "🔍 Finding group '$GROUP_NAME'..."
+        GROUPS_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          "$KEYCLOAK_URL/admin/realms/$REALM/groups")
+
+        HTTP_CODE=$(echo "$GROUPS_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+        GROUPS_BODY=$(echo "$GROUPS_RESPONSE" | sed '/HTTP_CODE:/d')
+
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "❌ Failed to query groups (HTTP $HTTP_CODE)"
+          exit 1
+        fi
+
+        # Extract group ID
+        GROUP_EXISTS=$(echo "$GROUPS_BODY" | grep -o "\"name\":\"$GROUP_NAME\"" || echo "")
+
+        if [ -z "$GROUP_EXISTS" ]; then
+          echo "⚠️  Group '$GROUP_NAME' does not exist or already deleted"
+          cat <<EOF
+        {
+          "group_name": "$GROUP_NAME",
+          "realm": "$REALM",
+          "status": "not_found"
+        }
+        EOF
+          exit 0
+        fi
+
+        GROUP_ID=$(echo "$GROUPS_BODY" | grep -B5 "\"name\":\"$GROUP_NAME\"" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        echo "   Group ID: $GROUP_ID"
+
+        # Delete group
+        echo "🗑️  Deleting group..."
+        DELETE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+          -H "Authorization: Bearer $ACCESS_TOKEN" \
+          -X DELETE \
+          "$KEYCLOAK_URL/admin/realms/$REALM/groups/$GROUP_ID")
+
+        HTTP_CODE=$(echo "$DELETE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+
+        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ Group deleted successfully"
+          cat <<EOF
+        {
+          "group_id": "$GROUP_ID",
+          "group_name": "$GROUP_NAME",
+          "realm": "$REALM",
+          "status": "deleted"
+        }
+        EOF
+        else
+          echo "❌ Failed to delete group (HTTP $HTTP_CODE)"
+          exit 1
+        fi
+
+outputs:
+  group_name: "{{ .parameters.group_name }}"
+  realm: "{{ .parameters.realm }}"
+  deleted: "true"

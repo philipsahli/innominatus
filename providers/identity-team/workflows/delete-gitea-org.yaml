@@ -1,0 +1,90 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-gitea-org
+  description: Delete Gitea organization and remove members
+
+parameters:
+  - name: org_name
+    type: string
+    required: true
+    description: Name of the organization to delete
+
+  - name: force
+    type: boolean
+    required: false
+    default: false
+    description: Force delete even if organization has repositories
+
+steps:
+  - name: delete-organization
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        echo "🗑️  Deleting Gitea organization: {{ .parameters.org_name }}"
+
+        GITEA_URL="${GITEA_URL:-http://gitea.localtest.me}"
+        GITEA_USER="${GITEA_USER:-giteaadmin}"
+        GITEA_PASSWORD="${GITEA_PASSWORD:-admin123}"
+
+        # Check if organization exists
+        HTTP_CODE=$(curl -s -o /tmp/gitea_org_check.json -w "%{http_code}" \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          "$GITEA_URL/api/v1/orgs/{{ .parameters.org_name }}")
+
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "⚠️  Organization '{{ .parameters.org_name }}' does not exist or already deleted"
+          cat <<EOF
+        {
+          "org_name": "{{ .parameters.org_name }}",
+          "status": "not_found"
+        }
+        EOF
+          exit 0
+        fi
+
+        # List repositories in organization (for logging)
+        echo "📋 Checking repositories in organization..."
+        REPOS_RESPONSE=$(curl -s \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          "$GITEA_URL/api/v1/orgs/{{ .parameters.org_name }}/repos")
+
+        REPO_COUNT=$(echo "$REPOS_RESPONSE" | grep -o '"id":[0-9]*' | wc -l)
+        echo "   Found $REPO_COUNT repositories"
+
+        {{ if not .parameters.force }}
+        if [ "$REPO_COUNT" -gt 0 ]; then
+          echo "❌ Organization has repositories. Use force=true to delete anyway"
+          exit 1
+        fi
+        {{ end }}
+
+        # Delete organization
+        echo "🗑️  Deleting organization..."
+        DELETE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" \
+          -u "$GITEA_USER:$GITEA_PASSWORD" \
+          -X DELETE \
+          "$GITEA_URL/api/v1/orgs/{{ .parameters.org_name }}")
+
+        HTTP_CODE=$(echo "$DELETE_RESPONSE" | grep "HTTP_CODE:" | cut -d: -f2)
+
+        if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+          echo "✅ Organization deleted successfully"
+          cat <<EOF
+        {
+          "org_name": "{{ .parameters.org_name }}",
+          "status": "deleted",
+          "repositories_deleted": $REPO_COUNT
+        }
+        EOF
+        else
+          echo "❌ Failed to delete organization (HTTP $HTTP_CODE)"
+          exit 1
+        fi
+
+outputs:
+  org_name: "{{ .parameters.org_name }}"
+  deleted: "true"

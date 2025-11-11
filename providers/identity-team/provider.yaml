@@ -10,17 +10,56 @@ compatibility:
   minCoreVersion: 1.0.0
   maxCoreVersion: 2.0.0
 
+capabilities:
+  # New operation-based capability format with CRUD workflows
+  resourceTypeCapabilities:
+    - type: gitea-org
+      operations:
+        create:
+          workflow: provision-gitea-org
+        delete:
+          workflow: delete-gitea-org
+    - type: keycloak-group
+      operations:
+        create:
+          workflow: provision-keycloak-group
+        delete:
+          workflow: delete-keycloak-group
+    - type: iam-group
+      aliasFor: keycloak-group
+
+  # Legacy format for backward compatibility
+  resourceTypes: [gitea-org, keycloak-group, iam-group]
+
 workflows:
   - name: provision-gitea-org
     file: ./workflows/provision-gitea-org.yaml
     description: Create Gitea organization for team collaboration
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [gitea, organization, git, collaboration]
+
+  - name: delete-gitea-org
+    file: ./workflows/delete-gitea-org.yaml
+    description: Delete Gitea organization and remove members
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [gitea, organization, cleanup]
 
   - name: provision-keycloak-group
     file: ./workflows/provision-keycloak-group.yaml
     description: Create Keycloak group/team for identity and access management
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [keycloak, identity, access-management, iam, group]
+
+  - name: delete-keycloak-group
+    file: ./workflows/delete-keycloak-group.yaml
+    description: Delete Keycloak group and remove role mappings
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [keycloak, identity, cleanup]

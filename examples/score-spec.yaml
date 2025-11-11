@@ -11,7 +11,7 @@ containers:
 resources:
   db:
     type: postgres
-    params:
+    properties:
       size: small
 environment:
   type: kubernetes

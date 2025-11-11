@@ -1,0 +1,36 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-gitea-repo
+  description: Delete Git repository from Gitea
+
+parameters:
+  - name: repo_name
+    type: string
+    required: true
+    description: Repository name
+
+  - name: org_name
+    type: string
+    required: true
+    description: Gitea organization name
+
+  - name: gitea_url
+    type: string
+    required: false
+    default: "http://gitea.localtest.me"
+    description: Gitea server URL
+
+steps:
+  - name: delete-repository
+    type: gitea-repo
+    config:
+      operation: delete
+      gitea_url: "{{ .parameters.gitea_url }}"
+      org_name: "{{ .parameters.org_name }}"
+      repo_name: "{{ .parameters.repo_name }}"
+
+outputs:
+  repo_name: "{{ .parameters.repo_name }}"
+  org_name: "{{ .parameters.org_name }}"
+  status: "deleted"

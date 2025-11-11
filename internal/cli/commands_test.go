@@ -301,12 +301,19 @@ workflows:
 }
 
 func TestListGoldenPathsCommand(t *testing.T) {
-	client := NewClient("http://localhost:8081")
+	// Create test server with empty golden paths
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, `{}`)
+	}))
+	defer server.Close()
 
-	// Test list golden paths - should error if file doesn't exist
+	client := NewClient(server.URL)
+
+	// Test list golden paths with empty response - should succeed with empty state
 	err := client.ListGoldenPathsCommand()
-	assert.Error(t, err) // Should error if goldenpaths.yaml doesn't exist
-	assert.Contains(t, err.Error(), "failed to load golden paths")
+	assert.NoError(t, err) // Should not error, just print empty state
 }
 
 func TestRunGoldenPathCommand(t *testing.T) {

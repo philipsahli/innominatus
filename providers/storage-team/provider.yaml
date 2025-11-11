@@ -10,10 +10,38 @@ compatibility:
   minCoreVersion: 1.0.0
   maxCoreVersion: 2.0.0
 
+capabilities:
+  # New operation-based capability format with CRUD workflows
+  resourceTypeCapabilities:
+    - type: s3
+      operations:
+        create:
+          workflow: provision-s3-bucket
+        delete:
+          workflow: delete-s3-bucket
+    - type: s3-bucket
+      aliasFor: s3
+    - type: object-storage
+      aliasFor: s3
+    - type: minio-bucket
+      aliasFor: s3
+
+  # Legacy format for backward compatibility
+  resourceTypes: [s3, s3-bucket, object-storage, minio-bucket]
+
 workflows:
   - name: provision-s3-bucket
     file: ./workflows/provision-s3-bucket.yaml
     description: Create S3 bucket on Minio with access credentials
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [s3, storage, minio, object-storage]
+
+  - name: delete-s3-bucket
+    file: ./workflows/delete-s3-bucket.yaml
+    description: Delete S3 bucket and remove access credentials
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [s3, storage, minio, cleanup]

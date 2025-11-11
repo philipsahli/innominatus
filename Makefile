@@ -22,6 +22,14 @@ COVERAGE_FILE := coverage.out
 export GO111MODULE=on
 export CGO_ENABLED=0
 
+# Database configuration - PostgreSQL by default
+export DB_HOST ?= localhost
+export DB_PORT ?= 5432
+export DB_USER ?= postgres
+export DB_PASSWORD ?= postgres
+export DB_NAME ?= idp_orchestrator2
+export DB_SSLMODE ?= disable
+
 ##@ Help
 
 .PHONY: help
@@ -43,7 +51,7 @@ install: ## Install all dependencies (Go + npm)
 	@echo "$(GREEN)✓ Dependencies installed$(NC)"
 
 .PHONY: build
-build: build-server build-cli build-ui ## Build all components (server, CLI, web UI)
+build: build-server build-cli build-mcp build-ui ## Build all components (server, CLI, MCP, web UI)
 
 .PHONY: prepare-embed
 prepare-embed: ## Prepare static files for Go embed (internal target)
@@ -58,8 +66,15 @@ build-server: prepare-embed ## Build the server binary
 .PHONY: build-cli
 build-cli: ## Build the CLI binary
 	@echo "$(GREEN)Building CLI...$(NC)"
-	@$(GO_CMD) build -o $(CLI_BINARY) cmd/cli/main.go
+	@$(GO_CMD) build -o $(CLI_BINARY) ./cmd/cli
 	@echo "$(GREEN)✓ CLI built: ./$(CLI_BINARY)$(NC)"
+
+.PHONY: build-mcp
+build-mcp: ## Build the MCP server binary (for Claude Desktop integration)
+	@echo "$(GREEN)Building MCP server...$(NC)"
+	@$(GO_CMD) build -o innominatus-mcp ./cmd/mcp-server
+	@echo "$(GREEN)✓ MCP server built: ./innominatus-mcp$(NC)"
+	@echo "$(YELLOW)See docs/MCP_SERVER_GO.md for installation instructions$(NC)"
 
 .PHONY: build-ui
 build-ui: ## Build the web UI
@@ -124,6 +139,12 @@ test-e2e-k8s: ## Run full E2E tests including Kubernetes demo tests
 	@echo "$(GREEN)Running full E2E tests (including Kubernetes)...$(NC)"
 	@echo "$(YELLOW)Note: Requires Docker Desktop with Kubernetes enabled$(NC)"
 	@$(GO_CMD) test ./tests/e2e -v -timeout 30m
+
+.PHONY: test-e2e-gitops
+test-e2e-gitops: ## Run GitOps E2E integration tests (requires Gitea + ArgoCD)
+	@echo "$(GREEN)Running GitOps E2E integration tests...$(NC)"
+	@echo "$(YELLOW)Prerequisites: Gitea, ArgoCD, GITEA_TOKEN environment variable$(NC)"
+	@./scripts/run-e2e-tests.sh
 
 .PHONY: test-ui
 test-ui: ## Run Web UI Playwright tests
@@ -272,6 +293,18 @@ version: ## Show version information
 	@echo "  Node version: $$(node --version 2>/dev/null || echo 'not installed')"
 	@echo "  npm version: $$($(NPM_CMD) --version 2>/dev/null || echo 'not installed')"
 	@echo "  Playwright: $$(cd $(WEB_UI_DIR) && npx playwright --version 2>/dev/null || echo 'not installed')"
+
+.PHONY: db-status
+db-status: ## Check PostgreSQL database connection
+	@echo "$(BLUE)Database Configuration:$(NC)"
+	@echo "  Host: $(DB_HOST)"
+	@echo "  Port: $(DB_PORT)"
+	@echo "  Database: $(DB_NAME)"
+	@echo "  User: $(DB_USER)"
+	@echo ""
+	@echo "$(GREEN)Testing database connection...$(NC)"
+	@psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -c "SELECT version();" 2>&1 | head -1 || \
+		echo "$(RED)✗ Cannot connect to PostgreSQL. Ensure PostgreSQL is running.$(NC)"
 
 .PHONY: deps-check
 deps-check: ## Check if all dependencies are installed

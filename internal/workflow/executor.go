@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"innominatus/internal/database"
+	"innominatus/internal/events"
 	"innominatus/internal/graph"
 	"innominatus/internal/logging"
 	"innominatus/internal/types"
@@ -12,7 +13,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
@@ -22,7 +25,8 @@ import (
 )
 
 // StepExecutorFunc defines the signature for step execution functions
-type StepExecutorFunc func(ctx context.Context, step types.Step, appName string, execID int64) error
+// stepID is the database ID of the workflow step for log persistence
+type StepExecutorFunc func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error
 
 // WorkflowRepositoryInterface defines the methods needed for workflow persistence
 type WorkflowRepositoryInterface interface {
@@ -37,6 +41,7 @@ type WorkflowRepositoryInterface interface {
 	GetFirstFailedStepNumber(executionID int64) (int, error)
 	CreateRetryExecution(parentID int64, appName, workflowName string, totalSteps, resumeFromStep int) (*database.WorkflowExecution, error)
 	ReconstructWorkflowFromExecution(executionID int64) (map[string]interface{}, error)
+	AddWorkflowStepLogs(stepID int64, logs string) error
 }
 
 // ResourceManager interface defines the methods needed for resource management
@@ -44,6 +49,7 @@ type ResourceManager interface {
 	GetResourcesByApplication(appName string) ([]*database.ResourceInstance, error)
 	ProvisionResource(resourceID int64, providerID string, providerMetadata map[string]interface{}, transitionedBy string) error
 	TransitionResourceState(resourceID int64, newState database.ResourceLifecycleState, reason string, transitionedBy string, metadata map[string]interface{}) error
+	UpdateResourceHealth(resourceID int64, healthStatus string, errorMessage *string) error
 }
 
 // WorkflowExecutor handles workflow execution with database persistence
@@ -52,6 +58,7 @@ type WorkflowExecutor struct {
 	resolver         *WorkflowResolver
 	resourceManager  ResourceManager
 	graphAdapter     *graph.Adapter
+	eventBus         events.EventBus
 	maxConcurrent    int
 	executionTimeout time.Duration
 	stepExecutors    map[string]StepExecutorFunc
@@ -128,6 +135,12 @@ func NewMultiTierWorkflowExecutorWithResourceManager(repo WorkflowRepositoryInte
 // SetGraphAdapter sets the graph adapter for workflow tracking
 func (e *WorkflowExecutor) SetGraphAdapter(adapter *graph.Adapter) {
 	e.graphAdapter = adapter
+}
+
+// SetEventBus sets the event bus for publishing workflow events
+func (e *WorkflowExecutor) SetEventBus(bus events.EventBus) {
+	e.eventBus = bus
+	e.logger.Info("Event bus configured for workflow executor")
 }
 
 // stepToConfig converts a Step struct to a map for storage in the database
@@ -306,6 +319,20 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		"total_steps":   len(workflow.Steps),
 	})
 
+	// Publish workflow started event
+	if e.eventBus != nil {
+		e.eventBus.Publish(events.NewEvent(
+			events.EventTypeWorkflowStarted,
+			appName,
+			"workflow-executor",
+			map[string]interface{}{
+				"workflow_name": workflowName,
+				"execution_id":  execution.ID,
+				"total_steps":   len(workflow.Steps),
+			},
+		))
+	}
+
 	// Create workflow node in graph (if graph adapter is available)
 	workflowNodeID := fmt.Sprintf("workflow-%d", execution.ID)
 	if e.graphAdapter != nil {
@@ -408,7 +435,22 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		spinner := NewSpinner(fmt.Sprintf("Initializing %s step...", step.Type))
 		spinner.Start()
 
-		err = runStepWithSpinner(step, appName, "default", spinner)
+		// Use the modern stepExecutors registry instead of old runStepWithSpinner
+		executor, exists := e.stepExecutors[step.Type]
+		if !exists {
+			spinner.Stop(false, fmt.Sprintf("Unsupported step type: %s", step.Type))
+			err = fmt.Errorf("unsupported step type: %s", step.Type)
+		} else {
+			// Execute step with context, passing stepID for log persistence
+			ctx := context.Background()
+			err = executor(ctx, step, appName, execution.ID, stepRecord.ID)
+			if err != nil {
+				spinner.Stop(false, fmt.Sprintf("Step '%s' failed", step.Name))
+			} else {
+				spinner.Stop(true, fmt.Sprintf("✅ Step '%s' completed successfully", step.Name))
+			}
+		}
+
 		if err != nil {
 			// Update step as failed
 			errorMsg := err.Error()
@@ -417,6 +459,9 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 			// Update workflow as failed
 			workflowErrorMsg := fmt.Sprintf("workflow failed at step '%s': %v", step.Name, err)
 			_ = e.repo.UpdateWorkflowExecution(execution.ID, database.WorkflowStatusFailed, &workflowErrorMsg)
+
+			// Update any linked resources to failed state
+			e.updateLinkedResourcesOnFailure(execution.ID, appName, workflowErrorMsg)
 
 			// Update step node state to failed in graph (triggers automatic propagation to workflow)
 			if e.graphAdapter != nil {
@@ -452,6 +497,20 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		fmt.Printf("Warning: failed to update workflow completion: %v\n", err)
 	}
 
+	// Publish workflow completed event
+	if e.eventBus != nil {
+		e.eventBus.Publish(events.NewEvent(
+			events.EventTypeWorkflowCompleted,
+			appName,
+			"workflow-executor",
+			map[string]interface{}{
+				"workflow_name": workflowName,
+				"execution_id":  execution.ID,
+				"total_steps":   len(workflow.Steps),
+			},
+		))
+	}
+
 	// Update workflow node state to succeeded in graph
 	if e.graphAdapter != nil {
 		if err := e.graphAdapter.UpdateNodeState(appName, workflowNodeID, sdk.NodeStateSucceeded); err != nil {
@@ -459,8 +518,170 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		}
 	}
 
+	// Update any linked resources to active state
+	e.updateLinkedResourcesOnCompletion(execution.ID, appName)
+
 	fmt.Println("🎉 Workflow completed successfully!")
 	return nil
+}
+
+// updateLinkedResourcesOnCompletion updates resources linked to a workflow execution
+// Transitions resources from provisioning to active state with healthy status
+func (e *WorkflowExecutor) updateLinkedResourcesOnCompletion(workflowExecutionID int64, appName string) {
+	if e.resourceManager == nil {
+		return // No resource manager available
+	}
+
+	e.logger.InfoWithFields("Updating linked resources after workflow completion", map[string]interface{}{
+		"workflow_execution_id": workflowExecutionID,
+		"app_name":              appName,
+	})
+
+	// Query for resources linked to this workflow execution
+	// This requires direct database access since ResourceManager doesn't have this query
+	// We'll transition all resources in provisioning state for this app
+	resources, err := e.resourceManager.GetResourcesByApplication(appName)
+	if err != nil {
+		e.logger.WarnWithFields("Failed to get resources for app", map[string]interface{}{
+			"app_name": appName,
+			"error":    err.Error(),
+		})
+		return
+	}
+
+	e.logger.InfoWithFields("Found resources for application", map[string]interface{}{
+		"app_name":       appName,
+		"resource_count": len(resources),
+	})
+
+	for _, resource := range resources {
+		e.logger.DebugWithFields("Checking resource", map[string]interface{}{
+			"resource_id":           resource.ID,
+			"resource_name":         resource.ResourceName,
+			"state":                 resource.State,
+			"workflow_execution_id": resource.WorkflowExecutionID,
+			"expected_workflow_id":  workflowExecutionID,
+			"workflow_id_match":     resource.WorkflowExecutionID != nil && *resource.WorkflowExecutionID == workflowExecutionID,
+			"is_provisioning_state": resource.State == database.ResourceStateProvisioning,
+		})
+
+		// Only update resources that are linked to this workflow and in provisioning state
+		if resource.WorkflowExecutionID != nil && *resource.WorkflowExecutionID == workflowExecutionID {
+			if resource.State == database.ResourceStateProvisioning {
+				e.logger.InfoWithFields("Transitioning resource to active", map[string]interface{}{
+					"resource_id":   resource.ID,
+					"resource_name": resource.ResourceName,
+					"resource_type": resource.ResourceType,
+				})
+
+				// Transition to active state
+				err := e.resourceManager.TransitionResourceState(
+					resource.ID,
+					database.ResourceStateActive,
+					"Resource provisioned successfully by workflow",
+					"workflow-executor",
+					map[string]interface{}{
+						"workflow_execution_id": workflowExecutionID,
+					},
+				)
+				if err != nil {
+					e.logger.ErrorWithFields("Failed to transition resource to active", map[string]interface{}{
+						"resource_id": resource.ID,
+						"error":       err.Error(),
+					})
+					continue
+				}
+
+				// Update health status to healthy
+				err = e.resourceManager.UpdateResourceHealth(resource.ID, "healthy", nil)
+				if err != nil {
+					e.logger.WarnWithFields("Failed to update resource health", map[string]interface{}{
+						"resource_id": resource.ID,
+						"error":       err.Error(),
+					})
+				}
+
+				e.logger.InfoWithFields("Successfully updated resource", map[string]interface{}{
+					"resource_id":   resource.ID,
+					"resource_name": resource.ResourceName,
+					"state":         "active",
+					"health":        "healthy",
+				})
+			}
+		}
+	}
+}
+
+// updateLinkedResourcesOnFailure updates resources linked to a failed workflow execution
+// Transitions resources from provisioning to failed state
+func (e *WorkflowExecutor) updateLinkedResourcesOnFailure(workflowExecutionID int64, appName string, errorMessage string) {
+	if e.resourceManager == nil {
+		return // No resource manager available
+	}
+
+	e.logger.InfoWithFields("Updating linked resources after workflow failure", map[string]interface{}{
+		"workflow_execution_id": workflowExecutionID,
+		"app_name":              appName,
+	})
+
+	// Query for resources linked to this workflow execution
+	resources, err := e.resourceManager.GetResourcesByApplication(appName)
+	if err != nil {
+		e.logger.WarnWithFields("Failed to get resources for app", map[string]interface{}{
+			"app_name": appName,
+			"error":    err.Error(),
+		})
+		return
+	}
+
+	for _, resource := range resources {
+		// Only update resources that are linked to this workflow and in provisioning state
+		if resource.WorkflowExecutionID != nil && *resource.WorkflowExecutionID == workflowExecutionID {
+			if resource.State == database.ResourceStateProvisioning {
+				e.logger.InfoWithFields("Transitioning resource to failed", map[string]interface{}{
+					"resource_id":   resource.ID,
+					"resource_name": resource.ResourceName,
+					"resource_type": resource.ResourceType,
+				})
+
+				// Transition to failed state
+				err := e.resourceManager.TransitionResourceState(
+					resource.ID,
+					database.ResourceStateFailed,
+					fmt.Sprintf("Provisioning workflow failed: %s", errorMessage),
+					"workflow-executor",
+					map[string]interface{}{
+						"workflow_execution_id": workflowExecutionID,
+						"error":                 errorMessage,
+					},
+				)
+				if err != nil {
+					e.logger.ErrorWithFields("Failed to transition resource to failed", map[string]interface{}{
+						"resource_id": resource.ID,
+						"error":       err.Error(),
+					})
+					continue
+				}
+
+				// Update health status to unhealthy
+				unhealthyErr := errorMessage
+				err = e.resourceManager.UpdateResourceHealth(resource.ID, "unhealthy", &unhealthyErr)
+				if err != nil {
+					e.logger.WarnWithFields("Failed to update resource health", map[string]interface{}{
+						"resource_id": resource.ID,
+						"error":       err.Error(),
+					})
+				}
+
+				e.logger.InfoWithFields("Successfully updated failed resource", map[string]interface{}{
+					"resource_id":   resource.ID,
+					"resource_name": resource.ResourceName,
+					"state":         "failed",
+					"health":        "unhealthy",
+				})
+			}
+		}
+	}
 }
 
 // GetWorkflowExecution retrieves a workflow execution by ID
@@ -808,7 +1029,7 @@ func (e *WorkflowExecutor) executeStepsSequentially(ctx context.Context, appName
 
 		// Execute the step
 		stepStartTime := time.Now()
-		if err := e.executeStepWithExecutor(ctx, step, appName, execID); err != nil {
+		if err := e.executeStepWithExecutor(ctx, step, appName, execID, stepRecord.ID); err != nil {
 			// Mark step as failed
 			errorMsg := err.Error()
 			_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
@@ -987,7 +1208,7 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 
 	// Execute the step
 	stepStartTime := time.Now()
-	if err := e.executeStepWithExecutor(ctx, step, appName, execID); err != nil {
+	if err := e.executeStepWithExecutor(ctx, step, appName, execID, stepRecord.ID); err != nil {
 		// Mark step as failed
 		errorMsg := err.Error()
 		_ = e.repo.UpdateWorkflowStepStatus(stepRecord.ID, database.StepStatusFailed, &errorMsg)
@@ -1061,7 +1282,7 @@ func (e *WorkflowExecutor) captureStepOutputs(step types.Step) {
 }
 
 // executeStepWithExecutor executes a step using registered executors
-func (e *WorkflowExecutor) executeStepWithExecutor(ctx context.Context, step types.Step, appName string, execID int64) error {
+func (e *WorkflowExecutor) executeStepWithExecutor(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 	e.mu.RLock()
 	executor, exists := e.stepExecutors[step.Type]
 	e.mu.RUnlock()
@@ -1075,13 +1296,13 @@ func (e *WorkflowExecutor) executeStepWithExecutor(ctx context.Context, step typ
 	stepCtx, cancel := context.WithTimeout(ctx, e.executionTimeout)
 	defer cancel()
 
-	return executor(stepCtx, step, appName, execID)
+	return executor(stepCtx, step, appName, execID, stepID)
 }
 
 // registerDefaultStepExecutors registers the default step executors
 func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 	// Resource provisioning executor
-	e.stepExecutors["resource-provisioning"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["resource-provisioning"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		if e.resourceManager == nil {
 			// Fallback to simulation if no resource manager
 			time.Sleep(2 * time.Second)
@@ -1135,14 +1356,14 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 	}
 
 	// Security scanning executor
-	e.stepExecutors["security"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["security"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(4 * time.Second)
 		fmt.Printf("      🔒 Security scan completed\n")
 		return nil
 	}
 
 	// Policy validation executor
-	e.stepExecutors["policy"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["policy"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		fmt.Printf("      📋 Executing policy script: %s\n", step.Name)
 
 		// Get script from config
@@ -1170,11 +1391,14 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			return fmt.Errorf("failed to make script executable: %w", err)
 		}
 
-		// Execute script
+		// Execute script and capture output
 		// #nosec G204 -- tmpFile.Name() is a controlled temporary file path
 		cmd := exec.Command("/bin/bash", tmpFile.Name())
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+
+		// Capture output for log persistence
+		var outputBuf strings.Builder
+		cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
 
 		// Set environment variables
 		cmd.Env = append(os.Environ(),
@@ -1182,7 +1406,14 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 		)
 
 		if err := cmd.Run(); err != nil {
+			// Store logs even on failure
+			_ = e.repo.AddWorkflowStepLogs(stepID, outputBuf.String())
 			return fmt.Errorf("policy script failed: %w", err)
+		}
+
+		// Store captured logs in database
+		if err := e.repo.AddWorkflowStepLogs(stepID, outputBuf.String()); err != nil {
+			fmt.Printf("      ⚠️  Warning: failed to store step logs: %v\n", err)
 		}
 
 		fmt.Printf("      ✅ Policy script completed successfully\n")
@@ -1190,49 +1421,49 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 	}
 
 	// Cost analysis executor
-	e.stepExecutors["cost-analysis"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["cost-analysis"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(2 * time.Second)
 		fmt.Printf("      💰 Cost analysis completed\n")
 		return nil
 	}
 
 	// Tagging executor
-	e.stepExecutors["tagging"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["tagging"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(1 * time.Second)
 		fmt.Printf("      🏷️  Resource tagging completed\n")
 		return nil
 	}
 
 	// Database migration executor
-	e.stepExecutors["database-migration"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["database-migration"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(3 * time.Second)
 		fmt.Printf("      🗃️  Database migration completed\n")
 		return nil
 	}
 
 	// Vault setup executor
-	e.stepExecutors["vault-setup"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["vault-setup"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(2 * time.Second)
 		fmt.Printf("      🔐 Vault configuration completed\n")
 		return nil
 	}
 
 	// Monitoring setup executor
-	e.stepExecutors["monitoring"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["monitoring"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(2 * time.Second)
 		fmt.Printf("      📊 Monitoring setup completed\n")
 		return nil
 	}
 
 	// Validation executor
-	e.stepExecutors["validation"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["validation"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(1 * time.Second)
 		fmt.Printf("      ✅ Validation completed\n")
 		return nil
 	}
 
 	// Terraform executor
-	e.stepExecutors["terraform"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["terraform"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		fmt.Printf("      🏗️  Executing Terraform step: %s\n", step.Name)
 
 		// Get operation (default: apply)
@@ -1322,7 +1553,7 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 	}
 
 	// Terraform-generate executor - generates Terraform code from Score resources
-	e.stepExecutors["terraform-generate"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	e.stepExecutors["terraform-generate"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		fmt.Printf("      📝 Generating Terraform code for: %s\n", step.Name)
 
 		// Get output directory (default: workspaces/{app}/terraform)
@@ -1360,6 +1591,193 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 		default:
 			return fmt.Errorf("unsupported resource type for terraform generation: %s", resourceType)
 		}
+	}
+
+	// Kubernetes executor - applies Kubernetes manifests
+	e.stepExecutors["kubernetes"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
+		fmt.Printf("      ☸️  Executing Kubernetes step: %s\n", step.Name)
+
+		// Get namespace (default to app name if not specified)
+		namespace := step.Namespace
+		if namespace == "" && step.Config != nil {
+			if ns, ok := step.Config["namespace"].(string); ok {
+				namespace = ns
+			}
+		}
+		if namespace == "" {
+			namespace = appName
+		}
+
+		// Get operation (default: apply)
+		operation := step.Operation
+		if operation == "" && step.Config != nil {
+			if op, ok := step.Config["operation"].(string); ok {
+				operation = op
+			}
+		}
+		if operation == "" {
+			operation = "apply"
+		}
+
+		fmt.Printf("      📋 Operation: %s\n", operation)
+		fmt.Printf("      🏷️  Namespace: %s\n", namespace)
+
+		// Handle different kubernetes operations
+		var logs string
+		var err error
+
+		switch operation {
+		case "create-namespace":
+			logs, err = e.kubernetesCreateNamespace(ctx, namespace)
+			if err != nil {
+				// Store logs even on failure
+				_ = e.repo.AddWorkflowStepLogs(stepID, logs)
+				return err
+			}
+
+		case "apply":
+			// Get manifest from config (inline YAML or file path)
+			manifest, ok := step.Config["manifest"].(string)
+			if !ok || manifest == "" {
+				return fmt.Errorf("kubernetes apply step requires 'manifest' in config")
+			}
+
+			// Get workflow variables from execution context
+			// These contain the resource properties passed from the orchestration engine
+			workflowVars := make(map[string]interface{})
+			for k, v := range e.execContext.WorkflowVariables {
+				workflowVars[k] = v
+			}
+
+			// Create template data with parameters from workflow variables
+			// Templates expect .parameters.field_name syntax
+			templateData := map[string]interface{}{
+				"parameters": workflowVars,
+			}
+
+			fmt.Printf("      🔍 DEBUG: Template parameters from workflow variables: %v\n", workflowVars)
+
+			// Render template with parameters
+			rendered, err := e.renderTemplate(manifest, templateData)
+			if err != nil {
+				return fmt.Errorf("failed to render manifest template: %w", err)
+			}
+
+			fmt.Printf("      📝 DEBUG: Rendered manifest (first 500 chars):\n%s\n", func() string {
+				if len(rendered) > 500 {
+					return rendered[:500] + "..."
+				}
+				return rendered
+			}())
+
+			logs, err = e.kubernetesApply(ctx, namespace, rendered)
+			if err != nil {
+				// Store logs even on failure
+				_ = e.repo.AddWorkflowStepLogs(stepID, logs)
+				return err
+			}
+
+		case "delete":
+			// Get manifest or resource identifier
+			manifest, ok := step.Config["manifest"].(string)
+			if !ok || manifest == "" {
+				return fmt.Errorf("kubernetes delete step requires 'manifest' in config")
+			}
+
+			// Render template
+			rendered, err := e.renderTemplate(manifest, step.Config)
+			if err != nil {
+				return fmt.Errorf("failed to render manifest template: %w", err)
+			}
+
+			return e.kubernetesDelete(ctx, namespace, rendered)
+
+		case "get":
+			// Get resource type and name
+			resourceType, ok := step.Config["resource_type"].(string)
+			if !ok || resourceType == "" {
+				return fmt.Errorf("kubernetes get step requires 'resource_type' in config")
+			}
+
+			resourceName, _ := step.Config["resource_name"].(string)
+
+			return e.kubernetesGet(ctx, namespace, resourceType, resourceName)
+
+		default:
+			return fmt.Errorf("unsupported kubernetes operation: %s (supported: apply, delete, get, create-namespace)", operation)
+		}
+
+		// Store captured logs in database
+		if err := e.repo.AddWorkflowStepLogs(stepID, logs); err != nil {
+			fmt.Printf("      ⚠️  Warning: failed to store step logs: %v\n", err)
+		}
+
+		return nil
+	}
+
+	// Ansible executor - runs Ansible playbooks
+	e.stepExecutors["ansible"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
+		fmt.Printf("      🤖 Executing Ansible step: %s\n", step.Name)
+
+		// Get playbook from config
+		playbook, ok := step.Config["playbook"].(string)
+		if !ok || playbook == "" {
+			// Try step.Playbook field for backward compatibility
+			playbook = step.Playbook
+			if playbook == "" {
+				return fmt.Errorf("ansible step requires 'playbook' in config")
+			}
+		}
+
+		// Check if playbook exists
+		if _, err := os.Stat(playbook); os.IsNotExist(err) {
+			return fmt.Errorf("ansible playbook does not exist: %s", playbook)
+		}
+
+		fmt.Printf("      📝 Playbook: %s\n", playbook)
+
+		// Run ansible-playbook
+		// #nosec G204 - playbook from validated workflow definition
+		cmd := exec.CommandContext(ctx, "ansible-playbook", playbook)
+
+		// Set working directory if specified
+		workingDir := step.WorkingDir
+		if workingDir == "" && step.Config != nil {
+			if wd, ok := step.Config["working_dir"].(string); ok {
+				workingDir = wd
+			}
+		}
+		if workingDir != "" {
+			cmd.Dir = workingDir
+		}
+
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("ansible-playbook failed: %w", err)
+		}
+
+		fmt.Printf("      ✅ Ansible playbook completed successfully\n")
+		return nil
+	}
+
+	// Gitea repository executor - creates/manages Gitea repositories
+	e.stepExecutors["gitea-repo"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
+		fmt.Printf("      🗂️  Executing Gitea repository step: %s\n", step.Name)
+
+		// This is a simplified version - full implementation would use Gitea API
+		// For now, we delegate to the legacy implementation for compatibility
+		return runStepWithSpinner(step, appName, "default", nil)
+	}
+
+	// ArgoCD application executor - creates/manages ArgoCD applications
+	e.stepExecutors["argocd-app"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
+		fmt.Printf("      🚀 Executing ArgoCD application step: %s\n", step.Name)
+
+		// This is a simplified version - full implementation would use ArgoCD API
+		// For now, we delegate to the legacy implementation for compatibility
+		return runStepWithSpinner(step, appName, "default", nil)
 	}
 }
 
@@ -1608,4 +2026,109 @@ output "bucket_arn" {
 func (e *WorkflowExecutor) generatePostgresTerraform(outputDir, appName string, step types.Step) error {
 	// Placeholder for future implementation
 	return fmt.Errorf("PostgreSQL Terraform generation not yet implemented")
+}
+
+// Kubernetes helper functions
+
+// kubernetesCreateNamespace creates a Kubernetes namespace and returns output logs
+func (e *WorkflowExecutor) kubernetesCreateNamespace(ctx context.Context, namespace string) (string, error) {
+	fmt.Printf("      🏗️  Creating namespace: %s\n", namespace)
+
+	// #nosec G204 - namespace is validated input from workflow config
+	cmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", namespace)
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	if err != nil && !strings.Contains(outputStr, "AlreadyExists") {
+		return outputStr, fmt.Errorf("failed to create namespace: %w, output: %s", err, outputStr)
+	}
+
+	if strings.Contains(outputStr, "AlreadyExists") {
+		fmt.Printf("      ℹ️  Namespace already exists: %s\n", namespace)
+	} else {
+		fmt.Printf("      ✅ Namespace created: %s\n", namespace)
+	}
+
+	return outputStr, nil
+}
+
+// kubernetesApply applies a Kubernetes manifest and returns output logs
+func (e *WorkflowExecutor) kubernetesApply(ctx context.Context, namespace, manifest string) (string, error) {
+	fmt.Printf("      📝 Applying Kubernetes manifest (workflow context namespace: %s)\n", namespace)
+
+	// Don't pass -n flag to kubectl - let the manifest specify its own namespace
+	// This avoids conflicts when the manifest has a namespace field in metadata
+	// #nosec G204 - validated inputs from workflow config
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	if err != nil {
+		return outputStr, fmt.Errorf("failed to apply manifest: %w, output: %s", err, outputStr)
+	}
+
+	fmt.Printf("      ✅ Manifest applied successfully\n")
+	fmt.Printf("      📋 Output: %s\n", outputStr)
+
+	return outputStr, nil
+}
+
+// kubernetesDelete deletes a Kubernetes resource
+func (e *WorkflowExecutor) kubernetesDelete(ctx context.Context, namespace, manifest string) error {
+	fmt.Printf("      🗑️  Deleting Kubernetes resources from namespace: %s\n", namespace)
+
+	// #nosec G204 - namespace is validated input from workflow config
+	cmd := exec.CommandContext(ctx, "kubectl", "delete", "-f", "-", "-n", namespace)
+	cmd.Stdin = strings.NewReader(manifest)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to delete resources: %w, output: %s", err, string(output))
+	}
+
+	fmt.Printf("      ✅ Resources deleted successfully\n")
+	fmt.Printf("      📋 Output: %s\n", string(output))
+
+	return nil
+}
+
+// kubernetesGet retrieves Kubernetes resource information
+func (e *WorkflowExecutor) kubernetesGet(ctx context.Context, namespace, resourceType, resourceName string) error {
+	fmt.Printf("      🔍 Getting Kubernetes resource: %s/%s\n", resourceType, resourceName)
+
+	args := []string{"get", resourceType}
+	if resourceName != "" {
+		args = append(args, resourceName)
+	}
+	args = append(args, "-n", namespace, "-o", "yaml")
+
+	// #nosec G204 - args are validated inputs from workflow config
+	cmd := exec.CommandContext(ctx, "kubectl", args...)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get resource: %w, output: %s", err, string(output))
+	}
+
+	fmt.Printf("      ✅ Resource retrieved successfully\n")
+	fmt.Printf("      📋 Output:\n%s\n", string(output))
+
+	return nil
+}
+
+// renderTemplate renders a Go template with the provided data
+func (e *WorkflowExecutor) renderTemplate(templateStr string, data map[string]interface{}) (string, error) {
+	tmpl, err := template.New("manifest").Parse(templateStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	var buf strings.Builder
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
 }

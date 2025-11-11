@@ -27,18 +27,24 @@ const (
 // CorsMiddleware adds CORS headers to allow cross-origin requests from the frontend
 func (s *Server) CorsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow requests from localhost:3000 or localhost:3001 (Next.js dev server) or same-origin
+		// SECURITY: Explicit origin whitelist - never use wildcard with credentials
 		origin := r.Header.Get("Origin")
-		//nolint:staticcheck // Multiple OR conditions are clearer than switch for CORS origins - QF1003
-		if origin == "http://localhost:3000" || origin == "http://localhost:3001" || origin == "http://localhost:8081" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-		} else if origin == "" {
-			// Same-origin requests (no Origin header) - allow them
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+		allowedOrigins := map[string]bool{
+			"http://localhost:3000":           true, // Next.js dev server
+			"http://localhost:3001":           true, // Alternative dev port
+			"http://localhost:8081":           true, // Same-origin
+			"http://innominatus.localtest.me": true, // Demo environment
 		}
+
+		if allowedOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+		// SECURITY: No CORS headers for requests without Origin (same-origin requests don't need CORS)
+		// Browsers automatically allow same-origin requests
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Trace-Id")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Expose-Headers", "X-Trace-Id")
 
 		// Handle preflight OPTIONS request
@@ -205,7 +211,8 @@ func (s *Server) isPublicPath(path string) bool {
 	}
 
 	// Allow static assets (if any)
-	return strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/v2/")
+	// SECURITY: Removed /v2/ wildcard - no internal routes use this prefix
+	return strings.HasPrefix(path, "/static/")
 }
 
 // isWebRequest determines if this is a web browser request vs API request

@@ -10,45 +10,5 @@ compatibility:
   minCoreVersion: 1.0.0
   maxCoreVersion: 2.0.0
 
-# NEW FORMAT: Unified workflows (provisioners + golden paths)
-workflows:
-  # Provisioner workflows: Create single resources
-  - name: postgres-cluster
-    file: ./workflows/postgres-cluster.yaml
-    description: PostgreSQL cluster provisioner
-    category: provisioner
-    version: 1.2.0
-    tags: [database, postgres, sql]
-
-  - name: redis-cache
-    file: ./workflows/redis-cache.yaml
-    description: Redis cache provisioner
-    category: provisioner
-    version: 1.1.0
-    tags: [cache, redis, nosql]
-
-  # Golden path workflows: Orchestrate multiple resources
-  - name: deploy-database
-    file: ./workflows/deploy-database.yaml
-    description: Deploy a managed database with backups
-    category: goldenpath
-    tags: [database, deployment, backup]
-
-  - name: deploy-cache
-    file: ./workflows/deploy-cache.yaml
-    description: Deploy a Redis cache cluster
-    category: goldenpath
-    tags: [cache, deployment, redis]
-
-# DEPRECATED: Old format (kept for backward compatibility)
-# These fields will be removed in v2.0. Use workflows[] instead.
-#
-# provisioners:
-#   - name: postgres-cluster
-#     type: database
-#     description: PostgreSQL cluster provisioner
-#     version: 1.2.0
-#
-# goldenpaths:
-#   - name: deploy-database
-#     description: Deploy a managed database with backups
+capabilities:
+  resourceTypes: []

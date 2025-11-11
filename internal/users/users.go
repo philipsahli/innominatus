@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
@@ -188,21 +189,27 @@ func (store *UserStore) GenerateAPIKey(username, keyName string, expiryDays int)
 	}
 
 	// Generate a cryptographically secure API key
-	key, err := generateAPIKey()
+	plaintextKey, err := generateAPIKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
-	// Create the API key with mandatory expiry
-	apiKey := APIKey{
-		Key:       key,
+	// SECURITY: Hash the API key with bcrypt before storage
+	hashedKey, err := bcrypt.GenerateFromPassword([]byte(plaintextKey), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash API key: %w", err)
+	}
+
+	// Store the HASH in users.yaml (not plaintext)
+	storedAPIKey := APIKey{
+		Key:       string(hashedKey), // Store bcrypt hash
 		Name:      keyName,
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().AddDate(0, 0, expiryDays),
 	}
 
 	// Add to user's API keys
-	store.Users[userIndex].APIKeys = append(store.Users[userIndex].APIKeys, apiKey)
+	store.Users[userIndex].APIKeys = append(store.Users[userIndex].APIKeys, storedAPIKey)
 
 	// Save changes
 	err = store.SaveUsers()
@@ -210,15 +217,25 @@ func (store *UserStore) GenerateAPIKey(username, keyName string, expiryDays int)
 		return nil, fmt.Errorf("failed to save API key: %w", err)
 	}
 
-	return &apiKey, nil
+	// Return plaintext key to caller (one-time display only)
+	// Note: The hash is stored in users.yaml, but we return plaintext for the user to save
+	return &APIKey{
+		Key:       plaintextKey, // Return plaintext for one-time display
+		Name:      keyName,
+		CreatedAt: storedAPIKey.CreatedAt,
+		ExpiresAt: storedAPIKey.ExpiresAt,
+	}, nil
 }
 
 // AuthenticateWithAPIKey checks if an API key is valid and returns the associated user
+// SECURITY: Uses bcrypt to compare hashed API keys (constant-time comparison)
 func (store *UserStore) AuthenticateWithAPIKey(apiKey string) (*User, error) {
 	for i, user := range store.Users {
 		for j, key := range user.APIKeys {
-			if key.Key == apiKey {
-				// Check if key is expired (all keys now have expiry dates)
+			// SECURITY: Compare using bcrypt (constant-time, prevents timing attacks)
+			err := bcrypt.CompareHashAndPassword([]byte(key.Key), []byte(apiKey))
+			if err == nil {
+				// Key matches! Check if expired
 				if time.Now().After(key.ExpiresAt) {
 					return nil, fmt.Errorf("API key expired")
 				}
@@ -229,6 +246,7 @@ func (store *UserStore) AuthenticateWithAPIKey(apiKey string) (*User, error) {
 
 				return &user, nil
 			}
+			// Continue checking other keys if this one doesn't match
 		}
 	}
 	return nil, fmt.Errorf("invalid API key")

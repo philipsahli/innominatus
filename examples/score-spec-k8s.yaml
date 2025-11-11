@@ -12,13 +12,13 @@ containers:
 resources:
   hostname:
     type: route
-    params:
+    properties:
       value: "web.example.com"
       port: 80
 
   db:
     type: postgres
-    params:
+    properties:
       host: "postgres-service"
       port: 5432
       name: "webdb"
@@ -27,7 +27,7 @@ resources:
 
   storage:
     type: volume
-    params:
+    properties:
       size: "2Gi"
       mountPath: "/var/www/html"
 

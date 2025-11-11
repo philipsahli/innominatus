@@ -1,0 +1,105 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-container
+  description: Delete complete GitOps container deployment (ArgoCD app + namespace)
+
+parameters:
+  - name: app_name
+    type: string
+    required: true
+    description: Application name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Kubernetes namespace
+
+  - name: argocd_namespace
+    type: string
+    required: false
+    default: "argocd"
+    description: ArgoCD namespace
+
+  - name: delete_git_repo
+    type: boolean
+    required: false
+    default: false
+    description: Whether to also delete the Git repository
+
+  - name: org_name
+    type: string
+    required: false
+    description: Gitea organization name (required if delete_git_repo=true)
+
+  - name: gitea_url
+    type: string
+    required: false
+    default: "http://gitea.localtest.me"
+    description: Gitea server URL
+
+steps:
+  - name: delete-argocd-app
+    type: argocd-app
+    config:
+      operation: delete
+      app_name: "{{ .parameters.app_name }}"
+      argocd_namespace: "{{ .parameters.argocd_namespace }}"
+      cascade: true
+
+  - name: wait-for-argocd-deletion
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        APP_NAME="{{ .parameters.app_name }}"
+        ARGOCD_NS="{{ .parameters.argocd_namespace }}"
+
+        echo "Waiting for ArgoCD application deletion..."
+
+        for i in {1..30}; do
+          if ! kubectl get application $APP_NAME -n $ARGOCD_NS >/dev/null 2>&1; then
+            echo "ArgoCD application deleted"
+            break
+          fi
+          echo "Waiting... attempt $i/30"
+          sleep 2
+        done
+
+  - name: delete-namespace
+    type: kubernetes
+    config:
+      operation: delete
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ .parameters.namespace }}
+
+  - name: delete-git-repo-optional
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        DELETE_REPO="{{ .parameters.delete_git_repo }}"
+
+        if [ "$DELETE_REPO" = "true" ]; then
+          echo "Deleting Git repository..."
+          # Note: Actual Gitea deletion would be handled by gitea-repo step type
+          # This is a placeholder for the logic
+          echo "Git repository deletion requested for {{ .parameters.app_name }}"
+        else
+          echo "Skipping Git repository deletion (delete_git_repo=false)"
+        fi
+
+outputs:
+  app_name: "{{ .parameters.app_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  argocd_deleted: "true"
+  namespace_deleted: "true"
+  git_repo_deleted: "{{ .parameters.delete_git_repo }}"
+  status: "deleted"

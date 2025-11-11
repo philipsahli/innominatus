@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/philipsahli/innominatus-graph/pkg/export"
+	"github.com/philipsahli/innominatus-graph/pkg/layout"
 	"github.com/philipsahli/innominatus-graph/pkg/storage"
 
 	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
@@ -18,8 +19,9 @@ import (
 // Adapter wraps the innominatus-graph SDK repository
 // and provides a clean API for the orchestrator
 type Adapter struct {
-	Repo   *storage.Repository
-	gormDB *gorm.DB
+	Repo      *storage.Repository
+	gormDB    *gorm.DB
+	observers []sdk.GraphObserver
 }
 
 // NewAdapter creates a new graph adapter using database connection parameters
@@ -63,8 +65,9 @@ func NewAdapter(sqlDB *sql.DB) (*Adapter, error) {
 	repo := storage.NewRepository(gormDB)
 
 	return &Adapter{
-		Repo:   repo,
-		gormDB: gormDB,
+		Repo:      repo,
+		gormDB:    gormDB,
+		observers: make([]sdk.GraphObserver, 0),
 	}, nil
 }
 
@@ -88,13 +91,13 @@ func (a *Adapter) AddNode(runID string, node *sdk.Node) error {
 		return fmt.Errorf("failed to load/create graph: %w", err)
 	}
 
-	// Add node to graph
+	// Add node to graph (observers will be notified automatically)
 	if err := graph.AddNode(node); err != nil {
 		return fmt.Errorf("failed to add node to graph: %w", err)
 	}
 
-	// Persist graph
-	if err := a.Repo.SaveGraph(runID, graph); err != nil {
+	// Persist underlying graph
+	if err := a.Repo.SaveGraph(runID, graph.Graph); err != nil {
 		return fmt.Errorf("failed to save graph: %w", err)
 	}
 
@@ -108,19 +111,19 @@ func (a *Adapter) AddEdge(runID string, edge *sdk.Edge) error {
 		return fmt.Errorf("edge cannot be nil")
 	}
 
-	// Load graph for this run
-	graph, err := a.Repo.LoadGraph(runID)
+	// Load or create observable graph for this run
+	graph, err := a.loadOrCreateGraph(runID)
 	if err != nil {
-		return fmt.Errorf("failed to load graph: %w", err)
+		return fmt.Errorf("failed to load/create graph: %w", err)
 	}
 
-	// Add edge to graph
+	// Add edge to graph (observers will be notified automatically)
 	if err := graph.AddEdge(edge); err != nil {
 		return fmt.Errorf("failed to add edge to graph: %w", err)
 	}
 
-	// Persist graph
-	if err := a.Repo.SaveGraph(runID, graph); err != nil {
+	// Persist underlying graph
+	if err := a.Repo.SaveGraph(runID, graph.Graph); err != nil {
 		return fmt.Errorf("failed to save graph: %w", err)
 	}
 
@@ -130,12 +133,12 @@ func (a *Adapter) AddEdge(runID string, edge *sdk.Edge) error {
 }
 
 // UpdateNodeState updates the state of a node in the graph
-// This will trigger state propagation according to SDK rules
+// This will trigger state propagation according to SDK rules and notify observers
 func (a *Adapter) UpdateNodeState(runID, nodeID string, state sdk.NodeState) error {
-	// Load graph for this run
-	graph, err := a.Repo.LoadGraph(runID)
+	// Load or create observable graph for this run
+	graph, err := a.loadOrCreateGraph(runID)
 	if err != nil {
-		return fmt.Errorf("failed to load graph: %w", err)
+		return fmt.Errorf("failed to load/create graph: %w", err)
 	}
 
 	// Get current node state for logging
@@ -146,13 +149,13 @@ func (a *Adapter) UpdateNodeState(runID, nodeID string, state sdk.NodeState) err
 
 	oldState := node.State
 
-	// Update node state (with automatic propagation)
+	// Update node state (with automatic propagation and observer notification)
 	if err := graph.UpdateNodeState(nodeID, state); err != nil {
 		return fmt.Errorf("failed to update node state: %w", err)
 	}
 
-	// Persist graph
-	if err := a.Repo.SaveGraph(runID, graph); err != nil {
+	// Persist underlying graph
+	if err := a.Repo.SaveGraph(runID, graph.Graph); err != nil {
 		return fmt.Errorf("failed to save graph: %w", err)
 	}
 
@@ -205,6 +208,75 @@ func (a *Adapter) ExportGraph(runID, format string) ([]byte, error) {
 	return data, nil
 }
 
+// ExportGraphJSON exports the graph as JSON with configurable options
+func (a *Adapter) ExportGraphJSON(runID string, options *export.JSONExportOptions) ([]byte, error) {
+	// Load graph for this run
+	graph, err := a.Repo.LoadGraph(runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load graph: %w", err)
+	}
+
+	// Use default options if none provided
+	if options == nil {
+		options = export.DefaultJSONOptions()
+	}
+
+	// Export using SDK JSON exporter
+	data, err := export.ExportGraphJSON(graph, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export graph as JSON: %w", err)
+	}
+
+	log.Printf("Graph: exported %s as JSON (metadata=%v, timing=%v)", runID, options.IncludeMetadata, options.IncludeTiming)
+	return data, nil
+}
+
+// ExportGraphMermaid exports the graph as a Mermaid diagram
+func (a *Adapter) ExportGraphMermaid(runID string, options *export.MermaidExportOptions) (string, error) {
+	// Load graph for this run
+	graph, err := a.Repo.LoadGraph(runID)
+	if err != nil {
+		return "", fmt.Errorf("failed to load graph: %w", err)
+	}
+
+	// Use default options if none provided
+	if options == nil {
+		options = export.DefaultMermaidOptions()
+	}
+
+	// Export using SDK Mermaid exporter
+	diagram, err := export.ExportGraphMermaid(graph, options)
+	if err != nil {
+		return "", fmt.Errorf("failed to export graph as Mermaid: %w", err)
+	}
+
+	log.Printf("Graph: exported %s as Mermaid %s diagram", runID, options.DiagramType)
+	return diagram, nil
+}
+
+// ComputeGraphLayout computes node positions for the graph using specified layout algorithm
+func (a *Adapter) ComputeGraphLayout(runID string, options *layout.LayoutOptions) (*layout.GraphLayout, error) {
+	// Load graph for this run
+	graph, err := a.Repo.LoadGraph(runID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load graph: %w", err)
+	}
+
+	// Use default options if none provided
+	if options == nil {
+		options = layout.DefaultLayoutOptions()
+	}
+
+	// Compute layout using SDK layout package
+	graphLayout, err := layout.ComputeLayout(graph, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute graph layout: %w", err)
+	}
+
+	log.Printf("Graph: computed %s layout for %s (%d nodes)", options.Type, runID, len(graphLayout.Nodes))
+	return graphLayout, nil
+}
+
 // GetGraph retrieves the full graph for a run
 func (a *Adapter) GetGraph(runID string) (*sdk.Graph, error) {
 	graph, err := a.Repo.LoadGraph(runID)
@@ -235,14 +307,39 @@ func (a *Adapter) GetNodesByType(runID string, nodeType sdk.NodeType) ([]*sdk.No
 }
 
 // loadOrCreateGraph loads an existing graph or creates a new one if it doesn't exist
-func (a *Adapter) loadOrCreateGraph(runID string) (*sdk.Graph, error) {
+// Returns an ObservableGraph with registered observers
+func (a *Adapter) loadOrCreateGraph(runID string) (*sdk.ObservableGraph, error) {
 	graph, err := a.Repo.LoadGraph(runID)
 	if err != nil {
 		// Graph doesn't exist, create a new one
 		graph = sdk.NewGraph(runID)
 		log.Printf("Graph: created new graph for %s", runID)
 	}
-	return graph, nil
+
+	// Wrap graph as observable and register observers
+	observableGraph := sdk.WrapGraphAsObservable(graph)
+	for _, observer := range a.observers {
+		observableGraph.AddObserver(observer)
+	}
+
+	return observableGraph, nil
+}
+
+// AddObserver registers an observer to receive graph update notifications
+func (a *Adapter) AddObserver(observer sdk.GraphObserver) {
+	a.observers = append(a.observers, observer)
+	log.Printf("Graph: registered observer (total: %d)", len(a.observers))
+}
+
+// RemoveObserver unregisters an observer
+func (a *Adapter) RemoveObserver(observer sdk.GraphObserver) {
+	for i, obs := range a.observers {
+		if obs == observer {
+			a.observers = append(a.observers[:i], a.observers[i+1:]...)
+			log.Printf("Graph: unregistered observer (total: %d)", len(a.observers))
+			break
+		}
+	}
 }
 
 // Close closes the adapter (if needed in the future)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,16 +10,19 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"regexp"
 	"sort"
 
 	"innominatus/internal/admin"
 	"innominatus/internal/auth"
 	"innominatus/internal/database"
 	"innominatus/internal/demo"
+	"innominatus/internal/events"
 	"innominatus/internal/goldenpaths"
 	"innominatus/internal/graph"
 	"innominatus/internal/health"
 	"innominatus/internal/metrics"
+	"innominatus/internal/orchestration"
 	"innominatus/internal/queue"
 	"innominatus/internal/resources"
 	"innominatus/internal/security"
@@ -36,7 +40,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/philipsahli/innominatus-graph/pkg/export"
 	sdk "github.com/philipsahli/innominatus-graph/pkg/graph"
+	"github.com/philipsahli/innominatus-graph/pkg/layout"
 	"github.com/rs/zerolog/log"
 
 	"gopkg.in/yaml.v3"
@@ -141,12 +147,14 @@ type Server struct {
 	healthChecker       *health.HealthChecker
 	rateLimiter         *RateLimiter
 	graphAdapter        *graph.Adapter
-	wsHub               *GraphWebSocketHub  // WebSocket hub for real-time graph updates
-	aiService           AIService           // AI assistant service (optional)
-	providerRegistry    ProviderRegistry    // Provider registry (optional)
-	providersReloadFunc ProvidersReloadFunc // Callback to reload providers from admin-config.yaml
-	swaggerFS           fs.FS               // Optional: embedded swagger files
-	webUIFS             fs.FS               // Optional: embedded web-ui files
+	wsHub               *GraphWebSocketHub      // WebSocket hub for real-time graph updates
+	sseBroker           *events.SSEBroker       // SSE broker for real-time event streaming
+	aiService           AIService               // AI assistant service (optional)
+	providerRegistry    ProviderRegistry        // Provider registry (optional)
+	providerResolver    *orchestration.Resolver // Resolver for matching resources to providers
+	providersReloadFunc ProvidersReloadFunc     // Callback to reload providers from admin-config.yaml
+	swaggerFS           fs.FS                   // Optional: embedded swagger files
+	webUIFS             fs.FS                   // Optional: embedded web-ui files
 	loginAttempts       map[string][]time.Time
 	loginMutex          sync.Mutex
 	// In-memory workflow tracking (when database is not available)
@@ -168,6 +176,11 @@ func (s *Server) SetProviderRegistry(registry ProviderRegistry) {
 	s.providerRegistry = registry
 }
 
+// SetProviderResolver sets the provider resolver for resource type validation
+func (s *Server) SetProviderResolver(resolver *orchestration.Resolver) {
+	s.providerResolver = resolver
+}
+
 // SetProvidersReloadFunc sets the callback function for reloading providers
 func (s *Server) SetProvidersReloadFunc(reloadFunc ProvidersReloadFunc) {
 	s.providersReloadFunc = reloadFunc
@@ -183,9 +196,57 @@ func (s *Server) SetWebUIFS(fsys fs.FS) {
 	s.webUIFS = fsys
 }
 
+// SetSSEBroker sets the SSE broker for real-time event streaming
+func (s *Server) SetSSEBroker(broker *events.SSEBroker) {
+	s.sseBroker = broker
+}
+
+// GetResourceManager returns the resource manager
+func (s *Server) GetResourceManager() *resources.Manager {
+	return s.resourceManager
+}
+
+// GetSSEBroker returns the SSE broker
+func (s *Server) GetSSEBroker() *events.SSEBroker {
+	return s.sseBroker
+}
+
 // GetWebUIFS returns the embedded web-ui files filesystem
 func (s *Server) GetWebUIFS() fs.FS {
 	return s.webUIFS
+}
+
+// HasDatabase returns true if the server has a database connection
+func (s *Server) HasDatabase() bool {
+	return s.db != nil
+}
+
+// GetDatabase returns the database instance
+func (s *Server) GetDatabase() *database.Database {
+	return s.db
+}
+
+// GetWorkflowRepository returns the workflow repository
+func (s *Server) GetWorkflowRepository() *database.WorkflowRepository {
+	return s.workflowRepo
+}
+
+// GetResourceRepository returns the resource repository
+func (s *Server) GetResourceRepository() *database.ResourceRepository {
+	if s.resourceManager == nil {
+		return nil
+	}
+	return s.resourceManager.GetRepository()
+}
+
+// GetWorkflowExecutor returns the workflow executor
+func (s *Server) GetWorkflowExecutor() *workflow.WorkflowExecutor {
+	return s.workflowExecutor
+}
+
+// GetGraphAdapter returns the graph adapter
+func (s *Server) GetGraphAdapter() *graph.Adapter {
+	return s.graphAdapter
 }
 
 // MemoryWorkflowExecution represents a workflow execution stored in memory
@@ -315,6 +376,10 @@ func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{
 	workflowQueue.Start()
 	fmt.Println("Async workflow queue initialized with 5 workers")
 
+	// Initialize WebSocket hub for real-time graph updates (before graph adapter)
+	wsHub := NewGraphWebSocketHub()
+	go wsHub.Run()
+
 	// Initialize graph adapter
 	graphAdapter, err := graph.NewAdapter(db.DB())
 	if err != nil {
@@ -322,6 +387,12 @@ func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{
 		fmt.Println("Continuing without graph tracking...")
 	} else {
 		fmt.Println("Graph adapter initialized successfully")
+
+		// Register graph observer for real-time WebSocket updates
+		graphObserver := orchestration.NewGraphObserver(graphAdapter, wsHub)
+		graphAdapter.AddObserver(graphObserver)
+		fmt.Println("Graph observer registered for real-time updates")
+
 		// Set graph adapter on workflow executor
 		workflowExecutor.SetGraphAdapter(graphAdapter)
 		// Set graph adapter on resource manager for resource tracking
@@ -332,10 +403,6 @@ func NewServerWithDBAndAdminConfig(db *database.Database, adminConfig interface{
 	// Register health checks
 	healthChecker.Register(health.NewAlwaysHealthyChecker("server"))
 	healthChecker.Register(health.NewDatabaseChecker(db.DB(), 5*time.Second))
-
-	// Initialize WebSocket hub for real-time graph updates
-	wsHub := NewGraphWebSocketHub()
-	go wsHub.Run()
 
 	server := &Server{
 		db:                db,
@@ -476,124 +543,241 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate that all resource types have registered providers
+	if err := s.validateResourceTypes(&spec); err != nil {
+		http.Error(w, fmt.Sprintf("Resource validation failed: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate that metadata.name is not empty
 	name := spec.Metadata.Name
+	if name == "" {
+		http.Error(w, "Error: metadata.name is required in Score specification", http.StatusBadRequest)
+		return
+	}
+
+	// Validate metadata.name format (RFC 1123 DNS label)
+	// Must be lowercase alphanumeric with hyphens, start/end with alphanumeric
+	if err := s.validateDNSLabel(name); err != nil {
+		http.Error(w, fmt.Sprintf("Error: metadata.name must be a valid DNS label: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate that at least one container is defined
+	if len(spec.Containers) == 0 {
+		http.Error(w, "Error: Score specification must define at least one container", http.StatusBadRequest)
+		return
+	}
+
+	// Validate container images
+	for containerName, container := range spec.Containers {
+		if container.Image == "" {
+			http.Error(w, fmt.Sprintf("Error: container '%s' must specify an image", containerName), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Validate no duplicate resource names
+	if err := s.validateUniqueResourceNames(&spec); err != nil {
+		http.Error(w, fmt.Sprintf("Error: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// CRITICAL FIX: Check if application exists (UPDATE vs CREATE)
+	existingApp, err := s.db.GetApplication(name)
+	isUpdate := (err == nil && existingApp != nil)
+
+	if isUpdate {
+		fmt.Printf("📝 Updating existing application: %s\n", name)
+	} else {
+		fmt.Printf("🆕 Creating new application: %s\n", name)
+	}
+
+	// Store/update application spec (UPSERT)
 	err = s.db.AddApplication(name, &spec, user.Team, user.Username)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error storing application: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Create resource instances if database is available
-	if s.resourceManager != nil && s.db != nil {
-		fmt.Printf("Creating resource instances for app '%s'...\n", name)
-		err = s.resourceManager.CreateResourceFromSpec(name, &spec, user.Username)
-		if err != nil {
-			fmt.Printf("Warning: Failed to create resource instances: %v\n", err)
-			// Don't fail the deployment - continue with workflows
+	// Create spec node in graph
+	if s.graphAdapter != nil {
+		specNodeID := fmt.Sprintf("spec:%s", name)
+		specNode := &sdk.Node{
+			ID:    specNodeID,
+			Type:  sdk.NodeTypeSpec,
+			Name:  fmt.Sprintf("%s Score Spec", name),
+			State: sdk.NodeStateSucceeded,
+			Properties: map[string]interface{}{
+				"app_name":    name,
+				"team":        user.Team,
+				"created_by":  user.Username,
+				"api_version": spec.APIVersion,
+			},
 		}
+		if err := s.graphAdapter.AddNode(name, specNode); err != nil {
+			fmt.Printf("Warning: failed to add spec node to graph: %v\n", err)
+		} else {
+			fmt.Printf("📊 Created spec node in graph for: %s\n", name)
+		}
+	}
 
-		// If environment type is kubernetes, create GitOps pipeline resources automatically
-		if spec.Environment != nil && spec.Environment.Type == "kubernetes" {
-			fmt.Printf("\n🚀 Creating GitOps pipeline for '%s'...\n", name)
+	// Create resource instances if database is available
+	// CRITICAL FIX: For updates, only create NEW resources that don't exist yet
+	if s.resourceManager != nil && s.db != nil {
+		if isUpdate {
+			fmt.Printf("Checking for new resources to add to app '%s'...\n", name)
 
-			// Step 1: Create Gitea repository for application manifests
-			fmt.Printf("\n📚 Step 1/3: Creating Gitea repository for '%s'...\n", name)
-			giteaResource, err := s.resourceManager.CreateResourceInstance(
-				name,
-				fmt.Sprintf("%s-gitea", name), // unique resource name
-				"gitea-repo",
-				map[string]interface{}{
-					"repo_name":   name,
-					"description": fmt.Sprintf("GitOps repository for %s", name),
-					"private":     false,
-				},
-			)
-
+			// Get existing resources
+			existingResources, err := s.resourceManager.GetResourcesByApplication(name)
 			if err != nil {
-				fmt.Printf("⚠️  Warning: Failed to create gitea-repo resource: %v\n", err)
-			} else {
-				fmt.Printf("✅ Created gitea-repo resource instance: %d\n", giteaResource.ID)
+				fmt.Printf("Warning: Failed to get existing resources: %v\n", err)
+				existingResources = []*database.ResourceInstance{} // Treat as empty
+			}
 
-				err = s.resourceManager.ProvisionResource(
-					giteaResource.ID,
-					"gitea-provisioner",
+			// Build map of existing resource names
+			existingNames := make(map[string]bool)
+			for _, res := range existingResources {
+				existingNames[res.ResourceName] = true
+			}
+
+			// Create only NEW resources
+			newResourceCount := 0
+			for resourceName, resource := range spec.Resources {
+				if existingNames[resourceName] {
+					fmt.Printf("⏭️  Resource '%s' already exists, skipping\n", resourceName)
+					continue
+				}
+
+				fmt.Printf("➕ Creating new resource: %s (%s)\n", resourceName, resource.Type)
+
+				// Build configuration
+				config := map[string]interface{}{
+					"type":     resource.Type,
+					"app_name": name,
+				}
+				if resource.Params != nil {
+					for key, value := range resource.Params {
+						config[key] = value
+					}
+				}
+				if resource.Properties != nil {
+					for key, value := range resource.Properties {
+						config[key] = value
+					}
+				}
+
+				// Create resource instance
+				_, err := s.resourceManager.CreateResourceInstance(name, resourceName, resource.Type, config)
+				if err != nil {
+					http.Error(w, fmt.Sprintf("Failed to create resource '%s': %v", resourceName, err), http.StatusInternalServerError)
+					return
+				}
+				newResourceCount++
+			}
+
+			if newResourceCount > 0 {
+				fmt.Printf("✅ Successfully created %d new resource(s) for app '%s'\n", newResourceCount, name)
+			} else {
+				fmt.Printf("ℹ️  No new resources to create for app '%s'\n", name)
+			}
+		} else {
+			// New application - create all resources
+			fmt.Printf("Creating resource instances for new app '%s'...\n", name)
+			err = s.resourceManager.CreateResourceFromSpec(name, &spec, user.Username)
+			if err != nil {
+				// CRITICAL FIX: Fail deployment if resources cannot be created
+				http.Error(w, fmt.Sprintf("Failed to create resource instances: %v", err), http.StatusInternalServerError)
+				return
+			}
+			fmt.Printf("✅ Successfully created resource instances for app '%s'\n", name)
+		}
+	}
+
+	// If environment type is kubernetes, create GitOps pipeline resources automatically
+	// CRITICAL FIX: Only create resources in 'requested' state - orchestration engine handles provisioning
+	// For updates, skip if GitOps resources already exist
+	if s.resourceManager != nil && spec.Environment != nil && spec.Environment.Type == "kubernetes" {
+		giteaName := fmt.Sprintf("%s-gitea", name)
+		k8sName := fmt.Sprintf("%s-k8s", name)
+		argocdName := fmt.Sprintf("%s-argocd", name)
+
+		// Check if GitOps resources already exist (for updates)
+		giteaExists, _ := s.resourceManager.GetResourceByName(name, giteaName)
+		k8sExists, _ := s.resourceManager.GetResourceByName(name, k8sName)
+		argocdExists, _ := s.resourceManager.GetResourceByName(name, argocdName)
+
+		if isUpdate && giteaExists != nil && k8sExists != nil && argocdExists != nil {
+			fmt.Printf("\nℹ️  GitOps pipeline resources already exist for '%s', skipping creation\n\n", name)
+		} else {
+			fmt.Printf("\n🚀 Creating GitOps pipeline resources for '%s' (will be auto-provisioned)...\n", name)
+
+			// Step 1: Create Gitea repository resource (if not exists)
+			if giteaExists == nil {
+				fmt.Printf("\n📚 Step 1/3: Creating Gitea repository resource for '%s'...\n", name)
+				_, err := s.resourceManager.CreateResourceInstance(
+					name,
+					giteaName,
+					"gitea-repo",
 					map[string]interface{}{
 						"repo_name":   name,
 						"description": fmt.Sprintf("GitOps repository for %s", name),
 						"private":     false,
 					},
-					user.Username,
 				)
 				if err != nil {
-					fmt.Printf("⚠️  Warning: Gitea repository provisioning failed: %v\n", err)
+					http.Error(w, fmt.Sprintf("Failed to create gitea-repo resource: %v", err), http.StatusInternalServerError)
+					return
 				}
+				fmt.Printf("✅ Created gitea-repo resource (state: requested)\n")
+			} else {
+				fmt.Printf("\n📚 Step 1/3: Gitea repository resource already exists\n")
 			}
 
-			// Step 2: Create Kubernetes deployment
-			fmt.Printf("\n☸️  Step 2/3: Creating Kubernetes deployment for '%s'...\n", name)
-			k8sResource, err := s.resourceManager.CreateResourceInstance(
-				name,
-				fmt.Sprintf("%s-k8s", name), // unique resource name
-				"kubernetes",
-				map[string]interface{}{
-					"namespace":  name,
-					"score_spec": &spec,
-				},
-			)
-
-			if err != nil {
-				fmt.Printf("⚠️  Warning: Failed to create kubernetes resource: %v\n", err)
-			} else {
-				fmt.Printf("✅ Created kubernetes resource instance: %d\n", k8sResource.ID)
-
-				err = s.resourceManager.ProvisionResource(
-					k8sResource.ID,
-					"kubernetes-provisioner",
+			// Step 2: Create Kubernetes deployment resource (if not exists)
+			if k8sExists == nil {
+				fmt.Printf("\n☸️  Step 2/3: Creating Kubernetes deployment resource for '%s'...\n", name)
+				_, err := s.resourceManager.CreateResourceInstance(
+					name,
+					k8sName,
+					"kubernetes",
 					map[string]interface{}{
 						"namespace":  name,
 						"score_spec": &spec,
 					},
-					user.Username,
 				)
 				if err != nil {
-					fmt.Printf("⚠️  Warning: Kubernetes provisioning failed: %v\n", err)
+					http.Error(w, fmt.Sprintf("Failed to create kubernetes resource: %v", err), http.StatusInternalServerError)
+					return
 				}
+				fmt.Printf("✅ Created kubernetes resource (state: requested)\n")
+			} else {
+				fmt.Printf("\n☸️  Step 2/3: Kubernetes deployment resource already exists\n")
 			}
 
-			// Step 3: Create ArgoCD Application
-			fmt.Printf("\n🔄 Step 3/3: Creating ArgoCD Application for '%s'...\n", name)
-			argoResource, err := s.resourceManager.CreateResourceInstance(
-				name,
-				fmt.Sprintf("%s-argocd", name), // unique resource name
-				"argocd-app",
-				map[string]interface{}{
-					"repo_name":   name,
-					"namespace":   name,
-					"sync_policy": "manual", // Start with manual sync
-				},
-			)
-
-			if err != nil {
-				fmt.Printf("⚠️  Warning: Failed to create argocd-app resource: %v\n", err)
-			} else {
-				fmt.Printf("✅ Created argocd-app resource instance: %d\n", argoResource.ID)
-
-				err = s.resourceManager.ProvisionResource(
-					argoResource.ID,
-					"argocd-provisioner",
+			// Step 3: Create ArgoCD Application resource (if not exists)
+			if argocdExists == nil {
+				fmt.Printf("\n🔄 Step 3/3: Creating ArgoCD Application resource for '%s'...\n", name)
+				_, err := s.resourceManager.CreateResourceInstance(
+					name,
+					argocdName,
+					"argocd-app",
 					map[string]interface{}{
 						"repo_name":   name,
 						"namespace":   name,
-						"sync_policy": "manual",
+						"sync_policy": "manual", // Start with manual sync
 					},
-					user.Username,
 				)
 				if err != nil {
-					fmt.Printf("⚠️  Warning: ArgoCD application provisioning failed: %v\n", err)
+					http.Error(w, fmt.Sprintf("Failed to create argocd-app resource: %v", err), http.StatusInternalServerError)
+					return
 				}
+				fmt.Printf("✅ Created argocd-app resource (state: requested)\n")
+			} else {
+				fmt.Printf("\n🔄 Step 3/3: ArgoCD Application resource already exists\n")
 			}
 
-			fmt.Printf("\n✅ GitOps pipeline creation completed for '%s'\n\n", name)
+			fmt.Printf("\n✅ GitOps pipeline resources ready - orchestration engine will provision new ones\n\n")
 		}
 	}
 
@@ -675,6 +859,75 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
+}
+
+// validateResourceTypes validates that all resource types in the spec have registered providers
+func (s *Server) validateResourceTypes(spec *types.ScoreSpec) error {
+	if s.providerResolver == nil {
+		return nil // Skip validation if no resolver (backward compatible)
+	}
+
+	var unknownTypes []string
+	for resourceName, resource := range spec.Resources {
+		_, _, err := s.providerResolver.ResolveProviderForResource(resource.Type)
+		if err != nil {
+			unknownTypes = append(unknownTypes, fmt.Sprintf(
+				"%s (type: %s)", resourceName, resource.Type))
+		}
+	}
+
+	if len(unknownTypes) > 0 {
+		return fmt.Errorf(
+			"unknown resource types (no provider registered): %s",
+			strings.Join(unknownTypes, ", "))
+	}
+
+	return nil
+}
+
+// validateDNSLabel validates that a string is a valid RFC 1123 DNS label
+// Must be lowercase alphanumeric with hyphens, start/end with alphanumeric
+// Maximum 63 characters
+func (s *Server) validateDNSLabel(label string) error {
+	if len(label) == 0 {
+		return fmt.Errorf("label cannot be empty")
+	}
+	if len(label) > 63 {
+		return fmt.Errorf("label must be 63 characters or less, got %d", len(label))
+	}
+
+	// RFC 1123 DNS label regex: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+	// - Must start with alphanumeric
+	// - Can contain alphanumeric and hyphens
+	// - Must end with alphanumeric (no trailing hyphen)
+	matched, err := regexp.MatchString(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, label)
+	if err != nil {
+		return fmt.Errorf("regex error: %w", err)
+	}
+	if !matched {
+		return fmt.Errorf("'%s' is not a valid DNS label (must be lowercase alphanumeric with hyphens, no trailing hyphen)", label)
+	}
+
+	return nil
+}
+
+// validateUniqueResourceNames validates that all resource names in the spec are unique
+func (s *Server) validateUniqueResourceNames(spec *types.ScoreSpec) error {
+	if spec == nil || len(spec.Resources) == 0 {
+		return nil
+	}
+
+	// Map to track seen resource names
+	seen := make(map[string]bool, len(spec.Resources))
+
+	for resourceName := range spec.Resources {
+		if seen[resourceName] {
+			return fmt.Errorf("duplicate resource name '%s' found in Score specification", resourceName)
+		}
+		seen[resourceName] = true
+	}
+
+	return nil
 }
 
 func (s *Server) HandleSpecDetail(w http.ResponseWriter, r *http.Request) {
@@ -801,6 +1054,16 @@ func (s *Server) HandleGraph(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Check if it's a layout request
+		if strings.Contains(remainder, "/layout") {
+			parts := strings.Split(remainder, "/layout")
+			if len(parts) == 2 && parts[0] != "" {
+				appName := parts[0]
+				s.handleGraphLayout(w, r, appName)
+				return
+			}
+		}
+
 		// Check if it's a history request
 		if strings.Contains(remainder, "/history") {
 			parts := strings.Split(remainder, "/history")
@@ -903,12 +1166,6 @@ func (s *Server) handleGraphExport(w http.ResponseWriter, r *http.Request, appNa
 		return
 	}
 
-	sdkGraph, err := s.graphAdapter.GetGraph(appName)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Application '%s' not found", appName), http.StatusNotFound)
-		return
-	}
-
 	// Get format from query parameter (default: mermaid)
 	format := r.URL.Query().Get("format")
 	if format == "" {
@@ -916,9 +1173,9 @@ func (s *Server) handleGraphExport(w http.ResponseWriter, r *http.Request, appNa
 	}
 
 	switch format {
-	case "mermaid":
-		exporter := graph.NewMermaidExporter()
-		mermaidDiagram, err := exporter.ExportGraph(sdkGraph)
+	case "mermaid", "mermaid-flowchart":
+		// Use new SDK Mermaid export with flowchart type
+		mermaidDiagram, err := s.graphAdapter.ExportGraphMermaid(appName, nil) // Uses defaults (flowchart)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
 			return
@@ -930,16 +1187,38 @@ func (s *Server) handleGraphExport(w http.ResponseWriter, r *http.Request, appNa
 			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
 		}
 
-	case "mermaid-simple":
-		exporter := graph.NewMermaidExporter()
-		mermaidDiagram, err := exporter.ExportGraphSimple(sdkGraph)
+	case "mermaid-state":
+		// Use SDK Mermaid export with state diagram type
+		options := &export.MermaidExportOptions{
+			DiagramType:   export.MermaidStateDiagram,
+			IncludeTiming: true,
+		}
+		mermaidDiagram, err := s.graphAdapter.ExportGraphMermaid(appName, options)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph-simple.mmd", appName))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-state.mmd", appName))
+		if _, err := fmt.Fprint(w, mermaidDiagram); err != nil {
+			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
+		}
+
+	case "mermaid-gantt":
+		// Use SDK Mermaid export with Gantt chart type
+		options := &export.MermaidExportOptions{
+			DiagramType:   export.MermaidGantt,
+			IncludeTiming: true,
+		}
+		mermaidDiagram, err := s.graphAdapter.ExportGraphMermaid(appName, options)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-gantt.mmd", appName))
 		if _, err := fmt.Fprint(w, mermaidDiagram); err != nil {
 			log.Error().Err(err).Msg("Failed to write Mermaid diagram response")
 		}
@@ -966,16 +1245,81 @@ func (s *Server) handleGraphExport(w http.ResponseWriter, r *http.Request, appNa
 		}
 
 	case "json":
-		// Export as JSON (same as regular graph endpoint)
-		response := convertSDKGraphToFrontend(sdkGraph)
+		// Use SDK JSON export with full metadata and timing information
+		options := &export.JSONExportOptions{
+			PrettyPrint:     true,
+			IncludeMetadata: true,
+			IncludeTiming:   true,
+		}
+		data, err := s.graphAdapter.ExportGraphJSON(appName, options)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to export graph as JSON: %v", err), http.StatusInternalServerError)
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s-graph.json", appName))
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
+		if _, err := w.Write(data); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write JSON response: %v\n", err)
 		}
 
 	default:
-		http.Error(w, fmt.Sprintf("Unsupported format: %s. Supported formats: mermaid, mermaid-simple, svg, png, dot, json", format), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Unsupported format: %s. Supported formats: mermaid, mermaid-flowchart, mermaid-state, mermaid-gantt, svg, png, dot, json", format), http.StatusBadRequest)
+	}
+}
+
+// handleGraphLayout handles /api/graph/<app>/layout requests
+func (s *Server) handleGraphLayout(w http.ResponseWriter, r *http.Request, appName string) {
+	// Get the graph from the database via graph adapter
+	if s.graphAdapter == nil {
+		http.Error(w, "Graph adapter not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	// Get layout type from query parameter (default: hierarchical)
+	layoutType := r.URL.Query().Get("type")
+	if layoutType == "" {
+		layoutType = "hierarchical"
+	}
+
+	// Create layout options based on query parameters
+	options := &layout.LayoutOptions{
+		Type: layout.LayoutType(layoutType),
+	}
+
+	// Allow customization via query parameters
+	if spacing := r.URL.Query().Get("nodeSpacing"); spacing != "" {
+		if val, err := strconv.ParseFloat(spacing, 64); err == nil {
+			options.NodeSpacing = val
+		}
+	}
+	if spacing := r.URL.Query().Get("levelSpacing"); spacing != "" {
+		if val, err := strconv.ParseFloat(spacing, 64); err == nil {
+			options.LevelSpacing = val
+		}
+	}
+	if width := r.URL.Query().Get("width"); width != "" {
+		if val, err := strconv.ParseFloat(width, 64); err == nil {
+			options.Width = val
+		}
+	}
+	if height := r.URL.Query().Get("height"); height != "" {
+		if val, err := strconv.ParseFloat(height, 64); err == nil {
+			options.Height = val
+		}
+	}
+
+	// Compute layout
+	graphLayout, err := s.graphAdapter.ComputeGraphLayout(appName, options)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to compute graph layout: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Return layout as JSON
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(graphLayout); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to encode layout response: %v\n", err)
 	}
 }
 
@@ -2962,6 +3306,48 @@ func (s *Server) runWorkflowStepWithTracking(step types.Step, appName string, en
 	}
 }
 
+// validateSafePath checks if a path is safe and doesn't contain traversal sequences
+// SECURITY: Prevents path traversal attacks by validating paths don't escape base directory
+func validateSafePath(path string, baseDir string) error {
+	// Clean the path to remove . and .. elements
+	cleanPath := filepath.Clean(path)
+
+	// Convert to absolute path for comparison
+	absPath := cleanPath
+	if !filepath.IsAbs(cleanPath) {
+		absPath = filepath.Join(baseDir, cleanPath)
+	}
+	absPath = filepath.Clean(absPath)
+
+	// Ensure the path doesn't escape the base directory
+	if baseDir != "" {
+		absBase := filepath.Clean(baseDir)
+		if !strings.HasPrefix(absPath, absBase) {
+			return fmt.Errorf("path traversal detected: %s escapes %s", path, baseDir)
+		}
+	}
+
+	// Check for suspicious patterns
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path contains directory traversal: %s", path)
+	}
+
+	return nil
+}
+
+// sanitizeAnsibleVars safely formats Ansible extra vars
+// SECURITY: Prevents command injection in ansible-playbook -e arguments
+func sanitizeAnsibleVars(vars map[string]string) string {
+	// Use JSON format which is safer than key=value format
+	// Ansible accepts both formats: -e '{"key":"value"}' or -e 'key=value'
+	jsonBytes, err := json.Marshal(vars)
+	if err != nil {
+		// Fallback to empty vars if marshaling fails
+		return "{}"
+	}
+	return string(jsonBytes)
+}
+
 // executeCommand runs a command and captures output to the log buffer
 func (s *Server) executeCommand(command string, args []string, workDir string, logBuffer *LogBuffer) error {
 	cmd := exec.Command(command, args...)
@@ -3153,8 +3539,20 @@ func (s *Server) executeTerraformStep(step types.Step, appName string, envType s
 
 	// Copy terraform files from step.Path to workspace
 	if step.Path != "" {
-		_, _ = fmt.Fprintf(logBuffer, "Copying terraform files from %s to %s", step.Path, workDir)
-		err := s.executeCommand("cp", []string{"-r", step.Path + "/.", workDir}, "", logBuffer)
+		// SECURITY: Validate path to prevent directory traversal
+		if err := validateSafePath(step.Path, "./"); err != nil {
+			errMsg := fmt.Sprintf("Invalid path: %v", err)
+			_, _ = logBuffer.Write([]byte(errMsg))
+			return fmt.Errorf("%s", errMsg)
+		}
+
+		// Use filepath.Clean to normalize the path
+		cleanPath := filepath.Clean(step.Path)
+		_, _ = fmt.Fprintf(logBuffer, "Copying terraform files from %s to %s", cleanPath, workDir)
+
+		// Construct safe source path
+		sourcePath := filepath.Join(cleanPath, ".")
+		err := s.executeCommand("cp", []string{"-r", sourcePath, workDir}, "", logBuffer)
 		if err != nil {
 			return err
 		}
@@ -3460,7 +3858,12 @@ func (s *Server) executeAnsibleStep(step types.Step, appName string, envType str
 	}
 
 	// Set environment variables for ansible
-	extraVars := fmt.Sprintf("app_name=%s env_type=%s", appName, envType)
+	// SECURITY: Use JSON format to safely pass variables (prevents injection)
+	vars := map[string]string{
+		"app_name": appName,
+		"env_type": envType,
+	}
+	extraVars := sanitizeAnsibleVars(vars)
 
 	return s.executeCommand("ansible-playbook", []string{playbookPath, "-e", extraVars}, "", logBuffer)
 }
@@ -3860,8 +4263,28 @@ func generateAPIKeyString() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// hashAPIKey creates a SHA-256 hash of an API key
+// hashAPIKey creates an HMAC-SHA256 hash of an API key
+// SECURITY: Uses HMAC with server secret to prevent rainbow table attacks
+// while maintaining deterministic hashing for database lookups
 func hashAPIKey(apiKey string) string {
-	hash := sha256.Sum256([]byte(apiKey))
-	return hex.EncodeToString(hash[:])
+	// Use server-side secret for HMAC (prevents rainbow tables)
+	// In production, this should be loaded from secure configuration
+	secret := getAPIKeyHashSecret()
+
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write([]byte(apiKey))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getAPIKeyHashSecret returns the secret key for API key hashing
+// SECURITY: This secret should be stored securely (env var, secrets manager, etc.)
+func getAPIKeyHashSecret() string {
+	// TODO: Load from environment variable or secrets manager
+	// For now, use a default (should be changed in production)
+	secret := os.Getenv("API_KEY_HASH_SECRET")
+	if secret == "" {
+		// Default secret (CHANGE THIS IN PRODUCTION)
+		secret = "innominatus-api-key-secret-change-me-in-production"
+	}
+	return secret
 }

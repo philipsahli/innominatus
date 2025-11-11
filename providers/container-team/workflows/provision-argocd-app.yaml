@@ -51,7 +51,7 @@ steps:
   - name: wait-for-sync
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
         echo "Waiting for ArgoCD app to sync..."

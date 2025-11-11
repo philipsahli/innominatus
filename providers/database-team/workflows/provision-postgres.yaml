@@ -5,20 +5,22 @@ metadata:
   description: Create PostgreSQL database using Zalando operator
 
 parameters:
-  - name: db_name
+  # Standard parameters provided by orchestration engine
+  - name: app_name
     type: string
     required: true
-    description: Database cluster name
+    description: Application name (used as namespace)
 
-  - name: namespace
+  - name: resource_name
     type: string
     required: true
-    description: Namespace to create database in
+    description: Resource name (used as database name)
 
-  - name: team_id
+  - name: resource_type
     type: string
-    required: true
-    description: Team identifier (used in cluster name)
+    required: false
+    default: "postgres"
+    description: Resource type
 
   - name: size
     type: string
@@ -39,6 +41,19 @@ parameters:
     description: PostgreSQL version
 
 steps:
+  - name: create-namespace
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ .parameters.app_name }}
+          labels:
+            managed-by: innominatus
+            app: {{ .parameters.app_name }}
+
   - name: create-postgres-cluster
     type: kubernetes
     config:
@@ -47,13 +62,13 @@ steps:
         apiVersion: "acid.zalan.do/v1"
         kind: postgresql
         metadata:
-          name: {{ .parameters.team_id }}-{{ .parameters.db_name }}
-          namespace: {{ .parameters.namespace }}
+          name: {{ .parameters.app_name }}-{{ .parameters.resource_name }}
+          namespace: {{ .parameters.app_name }}
           labels:
             managed-by: innominatus
-            team: {{ .parameters.team_id }}
+            app: {{ .parameters.app_name }}
         spec:
-          teamId: {{ .parameters.team_id }}
+          teamId: {{ .parameters.app_name }}
           numberOfInstances: {{ .parameters.replicas }}
           postgresql:
             version: "{{ .parameters.version }}"
@@ -67,23 +82,23 @@ steps:
               cpu: {{ if eq .parameters.size "small" }}500m{{ else if eq .parameters.size "medium" }}2000m{{ else }}4000m{{ end }}
               memory: {{ if eq .parameters.size "small" }}512Mi{{ else if eq .parameters.size "medium" }}2Gi{{ else }}8Gi{{ end }}
           users:
-            {{ .parameters.db_name }}_owner:
+            {{ .parameters.resource_name }}_owner:
             - superuser
             - createdb
-            {{ .parameters.db_name }}_app:
+            {{ .parameters.resource_name }}_app:
             - login
           databases:
-            {{ .parameters.db_name }}: {{ .parameters.db_name }}_owner
+            {{ .parameters.resource_name }}: {{ .parameters.resource_name }}_owner
 
   - name: wait-for-database
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
         echo "Waiting for PostgreSQL cluster to be ready..."
         for i in {1..60}; do
-          if kubectl get postgresql {{ .parameters.team_id }}-{{ .parameters.db_name }} -n {{ .parameters.namespace }} -o jsonpath='{.status.PostgresClusterStatus}' 2>/dev/null | grep -q "Running"; then
+          if kubectl get postgresql {{ .parameters.app_name }}-{{ .parameters.resource_name }} -n {{ .parameters.app_name }} -o jsonpath='{.status.PostgresClusterStatus}' 2>/dev/null | grep -q "Running"; then
             echo "PostgreSQL cluster is running"
             exit 0
           fi
@@ -96,7 +111,7 @@ steps:
   - name: get-credentials
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 
@@ -104,22 +119,22 @@ steps:
         sleep 5
 
         # Get database credentials from secret
-        DB_SECRET="{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.db_name }}-app.credentials"
+        DB_SECRET="{{ .parameters.app_name }}-{{ .parameters.resource_name }}.{{ .parameters.resource_name }}-app.credentials"
 
         # Wait for secret to exist
         for i in {1..30}; do
-          if kubectl get secret $DB_SECRET -n {{ .parameters.namespace }} >/dev/null 2>&1; then
+          if kubectl get secret $DB_SECRET -n {{ .parameters.app_name }} >/dev/null 2>&1; then
             break
           fi
           echo "Waiting for credentials secret... attempt $i/30"
           sleep 2
         done
 
-        DB_USER=$(kubectl get secret $DB_SECRET -n {{ .parameters.namespace }} -o jsonpath='{.data.username}' | base64 -d)
-        DB_PASSWORD=$(kubectl get secret $DB_SECRET -n {{ .parameters.namespace }} -o jsonpath='{.data.password}' | base64 -d)
-        DB_HOST="{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.namespace }}.svc.cluster.local"
+        DB_USER=$(kubectl get secret $DB_SECRET -n {{ .parameters.app_name }} -o jsonpath='{.data.username}' | base64 -d)
+        DB_PASSWORD=$(kubectl get secret $DB_SECRET -n {{ .parameters.app_name }} -o jsonpath='{.data.password}' | base64 -d)
+        DB_HOST="{{ .parameters.app_name }}-{{ .parameters.resource_name }}.{{ .parameters.app_name }}.svc.cluster.local"
         DB_PORT="5432"
-        DB_NAME="{{ .parameters.db_name }}"
+        DB_NAME="{{ .parameters.resource_name }}"
 
         # Output as JSON for next steps
         cat <<EOF
@@ -134,12 +149,12 @@ steps:
         EOF
 
 outputs:
-  database_name: "{{ .parameters.db_name }}"
-  cluster_name: "{{ .parameters.team_id }}-{{ .parameters.db_name }}"
-  namespace: "{{ .parameters.namespace }}"
-  host: "{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.namespace }}.svc.cluster.local"
+  database_name: "{{ .parameters.resource_name }}"
+  cluster_name: "{{ .parameters.app_name }}-{{ .parameters.resource_name }}"
+  namespace: "{{ .parameters.app_name }}"
+  host: "{{ .parameters.app_name }}-{{ .parameters.resource_name }}.{{ .parameters.app_name }}.svc.cluster.local"
   port: "5432"
-  credentials_secret: "{{ .parameters.team_id }}-{{ .parameters.db_name }}.{{ .parameters.db_name }}-app.credentials"
+  credentials_secret: "{{ .parameters.app_name }}-{{ .parameters.resource_name }}.{{ .parameters.resource_name }}-app.credentials"
   username: "{{ .steps.get-credentials.output.username }}"
   password: "{{ .steps.get-credentials.output.password }}"
   connection_string: "{{ .steps.get-credentials.output.connection_string }}"

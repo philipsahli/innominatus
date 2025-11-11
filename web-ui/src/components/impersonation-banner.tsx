@@ -19,10 +19,18 @@ export function ImpersonationBanner() {
 
   useEffect(() => {
     fetchStatus();
-    // Poll every 5 seconds to keep status updated
-    const interval = setInterval(fetchStatus, 5000);
-    return () => clearInterval(interval);
   }, []);
+
+  // Only poll when actually impersonating
+  useEffect(() => {
+    if (!status?.is_impersonating) {
+      return;
+    }
+
+    // Poll every 30 seconds to keep status updated (reduced from 5s)
+    const interval = setInterval(fetchStatus, 30000);
+    return () => clearInterval(interval);
+  }, [status?.is_impersonating]);
 
   const handleStopImpersonation = async () => {
     setLoading(true);

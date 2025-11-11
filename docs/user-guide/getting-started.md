@@ -134,16 +134,18 @@ containers:
 resources:
   route:
     type: route
-    params:
+    properties:
       host: my-first-app.yourcompany.com
 EOF
 ```
 
-Deploy it:
+Deploy it with real-time watch:
 
 ```bash
-innominatus-ctl deploy my-first-app.yaml
+innominatus-ctl deploy my-first-app.yaml -w
 ```
+
+> **Tip:** Use the `-w` flag for real-time deployment progress. Great for demos!
 
 Output:
 ```

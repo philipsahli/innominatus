@@ -1,0 +1,76 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-s3-bucket
+  description: Delete S3 bucket and remove access credentials
+
+parameters:
+  - name: bucket_name
+    type: string
+    required: true
+    description: Name of S3 bucket to delete
+
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace containing credentials secret
+
+  - name: force
+    type: boolean
+    required: false
+    default: false
+    description: Force delete even if bucket contains objects
+
+steps:
+  - name: delete-credentials-secret
+    type: kubernetes
+    config:
+      operation: delete
+      manifest: |
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: {{ .parameters.bucket_name }}-s3-credentials
+          namespace: {{ .parameters.namespace }}
+
+  - name: delete-minio-bucket
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        # Configure Minio client (mc)
+        mc alias set minio http://minio.minio.svc.cluster.local:9000 minioadmin minioadmin
+
+        # Delete bucket contents if force flag is set
+        {{ if .parameters.force }}
+        echo "Force delete enabled - removing all objects..."
+        mc rm --recursive --force minio/{{ .parameters.bucket_name }} || echo "Bucket may be empty"
+        {{ end }}
+
+        # Delete bucket
+        mc rb minio/{{ .parameters.bucket_name }} {{ if .parameters.force }}--force{{ end }} || echo "Bucket may not exist"
+
+        echo "Bucket deleted successfully"
+
+  - name: verify-cleanup
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        # Verify bucket is deleted
+        mc alias set minio http://minio.minio.svc.cluster.local:9000 minioadmin minioadmin
+
+        if mc ls minio/{{ .parameters.bucket_name }} 2>/dev/null; then
+          echo "WARNING: Bucket still exists"
+          exit 1
+        else
+          echo "Cleanup verified - bucket deleted"
+        fi
+
+outputs:
+  bucket_name: "{{ .parameters.bucket_name }}"
+  deleted: "true"

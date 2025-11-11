@@ -13,8 +13,9 @@ export function LayoutContent({ children }: LayoutContentProps) {
   const { isAuthenticated } = useAuth();
   const pathname = usePathname();
 
-  // Don't show navigation on login page or if not authenticated
-  const shouldShowNavigation = isAuthenticated && pathname !== '/login';
+  // Don't show navigation on login page, /dev routes, or if not authenticated
+  const shouldShowNavigation =
+    isAuthenticated && pathname !== '/login' && !pathname.startsWith('/dev');
 
   return (
     <div className="flex min-h-screen">

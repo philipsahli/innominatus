@@ -437,6 +437,13 @@ export default function ResourcesPage() {
                               <div className="space-y-1">
                                 <p className="font-medium text-sm">{resource.resource_name}</p>
                                 <p className="text-xs text-muted-foreground">ID: {resource.id}</p>
+                                {resource.state === 'failed' && resource.error_message && (
+                                  <div className="mt-1 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                                    <p className="text-xs text-red-600 dark:text-red-300">
+                                      {resource.error_message}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>

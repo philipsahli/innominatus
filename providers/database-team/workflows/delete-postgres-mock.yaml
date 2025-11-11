@@ -1,0 +1,61 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-postgres-mock
+  description: Delete mock PostgreSQL instance (testing only)
+
+parameters:
+  - name: db_name
+    type: string
+    required: true
+    description: Database name
+
+  - name: namespace
+    type: string
+    required: false
+    default: "default"
+    description: Namespace (for consistency)
+
+  - name: team_id
+    type: string
+    required: false
+    default: "test-team"
+    description: Team identifier
+
+steps:
+  - name: delete-mock-database
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        DB_NAME="{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+        TEAM_ID="{{ .parameters.team_id }}"
+
+        echo "Deleting mock PostgreSQL database: $DB_NAME"
+        echo "Team: $TEAM_ID"
+        echo "Namespace: $NAMESPACE"
+
+        # Simulate deletion delay
+        sleep 2
+
+        echo "Mock database deletion completed"
+
+        cat <<EOF
+        {
+          "database_name": "$DB_NAME",
+          "team_id": "$TEAM_ID",
+          "namespace": "$NAMESPACE",
+          "status": "deleted",
+          "deleted_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+
+outputs:
+  database_name: "{{ .parameters.db_name }}"
+  team_id: "{{ .parameters.team_id }}"
+  namespace: "{{ .parameters.namespace }}"
+  status: "deleted"
+  deleted_at: "{{ .steps.delete-mock-database.output.deleted_at }}"

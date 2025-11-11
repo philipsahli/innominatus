@@ -354,11 +354,293 @@ jobs:
           done
 ```
 
-## Examples
+## Real-World Verification Examples
 
-See `verification/examples/` for complete examples:
-- **test-verification.mjs** - Example API endpoint verification
-- More examples coming soon...
+### Example 1: Provider Registration Verification
+
+**File:** `verification/examples/test-provider-registration.mjs`
+
+**What it tests:**
+- Provider loading from filesystem and Git sources
+- Capability registration without conflicts
+- Provider resolution algorithm (resource type → provider)
+- Workflow retrieval for resource types
+
+**Usage:**
+```bash
+node verification/examples/test-provider-registration.mjs
+```
+
+**Expected outputs:**
+```
+✅ List Providers: 6 providers found (database-team, container-team, storage-team, etc.)
+✅ Provider Capabilities: No conflicts detected, 30+ resource types covered
+✅ Provider Resolution: postgres → database-team, s3 → storage-team, etc.
+✅ Provisioner Workflows: All providers have provisioner workflows
+```
+
+**Verification criteria:**
+- All providers load successfully
+- No capability conflicts (one resource type = one provider)
+- Resource types resolve to correct providers
+- Each provider with capabilities has at least one provisioner workflow
+
+**Output directory:** `docs/verification/provider-registration/`
+
+---
+
+### Example 2: Workflow Execution End-to-End
+
+**File:** `verification/examples/test-workflow-execution.mjs`
+
+**What it tests:**
+- Complete orchestration flow: Score spec → Resource → Provider → Workflow
+- Resource state transitions: requested → provisioning → active
+- Workflow execution: steps, logs, status updates
+- Graph relationship creation: spec → resource → provider → workflow
+
+**Usage:**
+```bash
+node verification/examples/test-workflow-execution.mjs
+```
+
+**Flow:**
+```
+1. Submit Score spec with postgres resource
+2. Verify resource created (state='requested')
+3. Wait for orchestration engine to pick up resource (polls every 5s)
+4. Monitor workflow execution (step-by-step status)
+5. Verify resource becomes 'active'
+6. Verify graph relationships created
+7. Cleanup (delete spec)
+```
+
+**Expected outputs:**
+```
+✅ Submit Score Spec: verification-test-app created
+✅ Resource Created: postgres resource (state='requested')
+✅ Orchestration Pickup: Engine assigned workflow execution ID
+✅ Workflow Execution: provision-postgres completed
+✅ Resource Active: Resource state = 'active'
+✅ Graph Relationships: 4 nodes, 3 edges created
+✅ Cleanup: Spec deleted
+```
+
+**Verification criteria:**
+- Spec submission successful
+- Resource created with state='requested'
+- Orchestration engine picks up resource within 10s
+- Workflow executes all steps successfully
+- Resource state becomes 'active'
+- Graph has complete dependency chain
+
+**Output directory:** `docs/verification/workflow-execution/`
+
+---
+
+### Example 3: API Endpoints Health Check
+
+**File:** `verification/examples/test-api-endpoints.mjs`
+
+**What it tests:**
+- All API endpoints respond correctly
+- Authentication works (file-based, API key, OIDC)
+- Data structures match expected schema
+- Swagger documentation accessible
+- WebSocket connectivity
+
+**Usage:**
+```bash
+export INNOMINATUS_API_KEY=your-api-key
+node verification/examples/test-api-endpoints.mjs
+```
+
+**Endpoints tested:**
+```
+✅ /health                          (200 OK)
+✅ /ready                           (200 OK)
+✅ /metrics                         (200 OK, Prometheus format)
+✅ /swagger-user                    (200 OK, API docs)
+✅ /swagger-admin                   (200 OK, Admin API docs)
+✅ GET /api/specs                   (200 OK, array)
+✅ GET /api/workflows               (200 OK, array)
+✅ GET /api/resources               (200 OK, array)
+✅ GET /api/providers               (200 OK, array)
+✅ GET /api/providers/{name}        (200 OK, provider details)
+✅ GET /api/workflows/{id}          (200 OK, execution details)
+✅ GET /api/workflows/{id}/graph    (200 OK, graph nodes/edges)
+✅ GET /api/resources/{id}/graph    (200 OK, resource graph)
+```
+
+**Verification criteria:**
+- All endpoints return expected status codes
+- Response structures match API specification
+- Authentication required for protected endpoints
+- Swagger documentation accessible
+
+**Output directory:** `docs/verification/api-endpoints/`
+
+---
+
+### Example 4: Provider Resolution Algorithm
+
+**Scenario:** Verify that requesting a 'postgres' resource automatically triggers the correct provider
+
+**Verification script:**
+```javascript
+// 1. Submit Score spec with postgres resource
+const scoreSpec = {
+  apiVersion: 'score.dev/v1b1',
+  metadata: { name: 'test-db-app' },
+  resources: {
+    database: {
+      type: 'postgres',  // Key: resource type
+      properties: { version: '15' }
+    }
+  }
+};
+
+await submitSpec(scoreSpec);
+
+// 2. Wait for orchestration engine
+await sleep(6000);  // Wait > 5s (poll interval)
+
+// 3. Check resource was assigned to correct provider
+const resource = await getResource('test-db-app', 'postgres');
+const execution = await getWorkflowExecution(resource.workflow_execution_id);
+
+// Assertions:
+assert(execution.workflow_name === 'provision-postgres');
+assert(execution.provider === 'database-team');
+assert(resource.state === 'provisioning' || resource.state === 'active');
+```
+
+**What it verifies:**
+- Provider resolver correctly maps 'postgres' → 'database-team'
+- Orchestration engine triggers 'provision-postgres' workflow
+- Resource state transitions from 'requested' → 'provisioning' → 'active'
+
+---
+
+### Example 5: Graph Integrity Verification
+
+**Scenario:** Verify that graph relationships are created correctly for multi-resource specs
+
+**Verification script:**
+```javascript
+// Submit spec with multiple resources
+const scoreSpec = {
+  metadata: { name: 'full-stack-app' },
+  resources: {
+    database: { type: 'postgres' },
+    storage: { type: 's3-bucket' },
+    namespace: { type: 'kubernetes-namespace' }
+  }
+};
+
+await submitSpec(scoreSpec);
+
+// Wait for all resources to be provisioned
+await waitForAllResourcesActive('full-stack-app');
+
+// Get graph
+const graph = await getSpecGraph('full-stack-app');
+
+// Expected structure:
+// spec: full-stack-app
+//   ↓ contains
+// resource: postgres
+//   ↓ requires
+// provider: database-team
+//   ↓ executes
+// workflow: provision-postgres
+
+// Assertions:
+const specNode = graph.nodes.find(n => n.node_type === 'spec');
+const resourceNodes = graph.nodes.filter(n => n.node_type === 'resource');
+const providerNodes = graph.nodes.filter(n => n.node_type === 'provider');
+const workflowNodes = graph.nodes.filter(n => n.node_type === 'workflow');
+
+assert(resourceNodes.length === 3, 'Should have 3 resources');
+assert(providerNodes.length === 3, 'Should have 3 providers');
+assert(workflowNodes.length === 3, 'Should have 3 workflows');
+
+// Verify edges
+const containsEdges = graph.edges.filter(e => e.edge_type === 'contains');
+const requiresEdges = graph.edges.filter(e => e.edge_type === 'requires');
+
+assert(containsEdges.length === 3, 'Spec should contain 3 resources');
+assert(requiresEdges.length === 6, '3 resources → 3 providers → 3 workflows');
+```
+
+**What it verifies:**
+- Graph nodes created for spec, resources, providers, workflows
+- Edge types correct ('contains', 'requires')
+- Complete dependency chain for each resource
+- No orphaned edges (foreign key constraints)
+
+---
+
+### Example 6: OIDC Authentication Flow
+
+**Scenario:** Verify OIDC authentication and token validation
+
+**Verification script:**
+```javascript
+// 1. Initiate OIDC login
+const authURL = `${API_BASE}/auth/login`;
+const response = await fetch(authURL);
+
+// Should redirect to OIDC provider
+assert(response.status === 302);
+const location = response.headers.get('location');
+assert(location.includes('keycloak.example.com'));
+
+// 2. Simulate OIDC callback (in real test, use Playwright)
+const callbackURL = `${API_BASE}/auth/callback?code=test-code&state=test-state`;
+const callbackResponse = await fetch(callbackURL);
+
+// Should set session cookie
+const cookies = callbackResponse.headers.get('set-cookie');
+assert(cookies.includes('session='));
+
+// 3. Verify authenticated request works
+const apiResponse = await fetch(`${API_BASE}/api/specs`, {
+  headers: { 'Cookie': cookies }
+});
+
+assert(apiResponse.status === 200);
+
+// 4. Verify unauthenticated request fails
+const unauthResponse = await fetch(`${API_BASE}/api/specs`);
+assert(unauthResponse.status === 401 || unauthResponse.status === 403);
+```
+
+**What it verifies:**
+- OIDC redirect flow works
+- Session cookie created after authentication
+- Authenticated requests succeed
+- Unauthenticated requests blocked
+
+---
+
+## Complete Verification Examples
+
+All examples are in `verification/examples/`:
+
+| File | What It Tests | Duration |
+|------|--------------|----------|
+| `test-provider-registration.mjs` | Provider loading, capability resolution | 5-10s |
+| `test-workflow-execution.mjs` | End-to-end orchestration flow | 30-60s |
+| `test-api-endpoints.mjs` | All API endpoints health check | 10-15s |
+
+**Run all verifications:**
+```bash
+for script in verification/examples/*.mjs; do
+  echo "Running $(basename $script)..."
+  node "$script" || echo "❌ FAILED"
+done
+```
 
 ## Tips
 
@@ -367,9 +649,12 @@ See `verification/examples/` for complete examples:
 - **Keep It Fast**: Verifications should run in seconds, not minutes
 - **Make It Repeatable**: Verification should pass every time if feature works
 - **Use Real Environment**: Verify against actual server, not mocks
+- **Save Outputs**: Store verification results in `docs/verification/` for AI analysis
+- **Clean Up**: Always delete test data to avoid polluting database
 
 ## References
 
 - **CLAUDE.md** - Verification-First Development Protocol section
 - **verification/template.mjs** - Copy this to start new verification
 - **verification/examples/** - See complete examples
+- **docs/verification/** - Verification output directory

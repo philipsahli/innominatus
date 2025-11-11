@@ -57,11 +57,11 @@ You're building an Internal Developer Platform.
 
 ## What is innominatus?
 
-innominatus orchestrates complex deployment workflows from [Score specifications](https://score.dev).
+innominatus orchestrates complex deployment workflows from [Score specifications](https://score.dev) with **event-driven automatic resource provisioning**.
 
 **Core Value:**
-- **For Platform Teams:** Centralized workflow orchestration with audit trails and observability
-- **For Developers:** Self-service deployment via simple Score specs - no infrastructure knowledge required
+- **For Platform Teams:** Centralized workflow orchestration with audit trails, observability, and provider-based extensibility
+- **For Developers:** Self-service deployment via simple Score specs - resources automatically provisioned
 - **For Organizations:** Standardized golden paths with compliance and governance built-in
 
 ### How it Works
@@ -69,19 +69,28 @@ innominatus orchestrates complex deployment workflows from [Score specifications
 ```mermaid
 graph LR
     A[Developer] -->|Score Spec| B[innominatus]
-    B -->|Orchestrates| C[Kubernetes]
+    B -->|Auto-provisions| I[Providers]
+    I -->|database-team| C[Kubernetes/PostgreSQL]
+    I -->|storage-team| J[MinIO/S3]
+    I -->|container-team| K[ArgoCD/Gitea]
     B -->|Orchestrates| D[Terraform]
     B -->|Orchestrates| E[Ansible]
-    B -->|Orchestrates| F[ArgoCD/Git]
     B -->|Tracks| G[(PostgreSQL)]
     B -->|Metrics| H[Prometheus]
 ```
 
-**Example:** Deploy app with database and monitoring in one command:
+**Example:** Deploy app with postgres database - it auto-provisions:
 
 ```bash
+# Score spec declares: resources.db.type = "postgres"
 innominatus-ctl deploy my-app.yaml
-# → Creates: Namespace, Database, Deployment, Ingress, Monitoring
+
+# → Automatic flow:
+#   1. Spec stored, resource created (state=requested)
+#   2. Orchestration engine detects pending resource
+#   3. Resolver matches 'postgres' → database-team provider
+#   4. Executes provision-postgres workflow (Zalando operator)
+#   5. Database becomes active, app can use it
 ```
 
 ---
@@ -94,15 +103,18 @@ innominatus-ctl deploy my-app.yaml
 - ✅ **Golden Paths** - Pre-defined workflows for common use cases (deploy, ephemeral environments, database lifecycle)
 - ✅ **Self-Service** - Deploy without waiting for Platform Team approval
 - ✅ **Visibility** - Real-time status, logs, and workflow history via Web UI or CLI
+- ✅ **Graph Visualization** - Interactive workflow graphs with real-time updates, multiple export formats (Mermaid, SVG, PNG), and layout algorithms
 - ✅ **Modern CLI** - Powered by Cobra with shell completion, hierarchical subcommands, and comprehensive help
 
 ### For Platform Teams
 
+- ✅ **Event-Driven Orchestration** - Automatic resource provisioning based on Score specs
+- ✅ **Provider Architecture** - Extensible provider system with capability-based routing
 - ✅ **Multi-Step Workflows** - Kubernetes, Terraform, Ansible, ArgoCD, Git operations
-- ✅ **Database Persistence** - Full audit trails and workflow history in PostgreSQL
+- ✅ **Database Persistence** - Full audit trails, workflow history, and dependency graphs in PostgreSQL
 - ✅ **RESTful API** - Integrate with Backstage, CNOE, custom IDPs, CI/CD pipelines
 - ✅ **Enterprise Ready** - OIDC/SSO authentication, RBAC, rate limiting, Prometheus metrics, HA deployment
-- ✅ **Extensible** - Custom workflow steps and golden path templates
+- ✅ **Conflict Detection** - Validates no duplicate provider capability claims at startup
 
 ---
 
@@ -120,6 +132,7 @@ innominatus-ctl deploy my-app.yaml
 
 - **[OIDC Authentication Guide](docs/OIDC_AUTHENTICATION.md)** - Enterprise SSO and API key management
 - **[Golden Paths Documentation](docs/GOLDEN_PATHS_PARAMETERS.md)** - Pre-defined workflow templates
+- **[Graph Visualization Guide](examples/graphs/README.md)** - Workflow graphs with real-time updates and exports
 - **[Health Monitoring](docs/HEALTH_MONITORING.md)** - Liveness, readiness, and metrics endpoints
 - **[Database Migrations](migrations/README.md)** - Schema management and API key storage
 - **[Score Specification](https://score.dev)** - Official Score documentation
@@ -166,11 +179,15 @@ containers:
 resources:
   route:
     type: route
-    params:
+    properties:
       host: my-app.yourcompany.com
 EOF
 
-# 4. Deploy using golden path
+# 4. Deploy (two options)
+# Option A: Direct deploy (recommended)
+innominatus-ctl deploy my-app.yaml -w
+
+# Option B: Golden path workflow
 innominatus-ctl run deploy-app my-app.yaml
 
 # 5. Check status

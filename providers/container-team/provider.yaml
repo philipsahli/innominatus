@@ -10,24 +10,124 @@ compatibility:
   minCoreVersion: 1.0.0
   maxCoreVersion: 2.0.0
 
+capabilities:
+  # New operation-based capability format with CRUD workflows
+  resourceTypeCapabilities:
+    - type: container
+      operations:
+        create:
+          workflow: provision-container
+        delete:
+          workflow: delete-container
+    - type: application
+      aliasFor: container
+    - type: namespace
+      operations:
+        create:
+          workflow: provision-namespace
+        delete:
+          workflow: delete-namespace
+    - type: kubernetes-namespace
+      aliasFor: namespace
+    - type: gitea-repo
+      operations:
+        create:
+          workflow: provision-gitea-repo
+        delete:
+          workflow: delete-gitea-repo
+    - type: git-repository
+      aliasFor: gitea-repo
+    - type: argocd-app
+      operations:
+        create:
+          workflow: provision-argocd-app
+        update:
+          workflow: update-argocd-app
+        delete:
+          workflow: delete-argocd-app
+    - type: argocd-application
+      aliasFor: argocd-app
+
+  # Legacy format for backward compatibility
+  resourceTypes:
+    - container
+    - application
+    - namespace
+    - kubernetes-namespace
+    - gitea-repo
+    - git-repository
+    - argocd-app
+    - argocd-application
+
 workflows:
+  - name: provision-container
+    file: ./workflows/provision-container.yaml
+    description: Complete GitOps flow - namespace + Git repo + K8s manifests + ArgoCD app
+    category: provisioner
+    operation: create
+    version: 1.0.0
+    tags: [gitops, kubernetes, deployment, argocd, gitea]
+
+  - name: delete-container
+    file: ./workflows/delete-container.yaml
+    description: Delete ArgoCD app, namespace, and optionally Git repository
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [gitops, kubernetes, cleanup, argocd]
+
   - name: provision-namespace
     file: ./workflows/provision-namespace.yaml
     description: Create Kubernetes namespace with resource quotas
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [kubernetes, namespace, quotas]
+
+  - name: delete-namespace
+    file: ./workflows/delete-namespace.yaml
+    description: Delete Kubernetes namespace and all resources
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [kubernetes, namespace, cleanup]
 
   - name: provision-gitea-repo
     file: ./workflows/provision-gitea-repo.yaml
     description: Create Git repository in Gitea organization
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [gitea, git, repository, source-control]
+
+  - name: delete-gitea-repo
+    file: ./workflows/delete-gitea-repo.yaml
+    description: Delete Git repository from Gitea organization
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [gitea, git, repository, cleanup]
 
   - name: provision-argocd-app
     file: ./workflows/provision-argocd-app.yaml
     description: Create ArgoCD application for GitOps deployment
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [argocd, gitops, deployment]
+
+  - name: update-argocd-app
+    file: ./workflows/update-argocd-app.yaml
+    description: Update ArgoCD application configuration (repo URL, path, sync policy)
+    category: provisioner
+    operation: update
+    version: 1.0.0
+    tags: [argocd, gitops, configuration]
+
+  - name: delete-argocd-app
+    file: ./workflows/delete-argocd-app.yaml
+    description: Delete ArgoCD application and optionally clean up deployed resources
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [argocd, gitops, cleanup]

@@ -1,0 +1,73 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: update-argocd-app
+  description: Update ArgoCD application configuration
+
+parameters:
+  - name: app_name
+    type: string
+    required: true
+    description: ArgoCD application name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Target namespace for deployment
+
+  - name: argocd_namespace
+    type: string
+    required: false
+    default: "argocd"
+    description: ArgoCD namespace
+
+  - name: repo_url
+    type: string
+    required: false
+    description: New Git repository URL (optional)
+
+  - name: target_revision
+    type: string
+    required: false
+    description: New target revision/branch (optional)
+
+  - name: path
+    type: string
+    required: false
+    description: New path within repository (optional)
+
+steps:
+  - name: update-application
+    type: argocd-app
+    config:
+      operation: update
+      app_name: "{{ .parameters.app_name }}"
+      namespace: "{{ .parameters.namespace }}"
+      argocd_namespace: "{{ .parameters.argocd_namespace }}"
+      repo_url: "{{ .parameters.repo_url }}"
+      target_revision: "{{ .parameters.target_revision }}"
+      path: "{{ .parameters.path }}"
+
+  - name: sync-application
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        APP_NAME="{{ .parameters.app_name }}"
+        ARGOCD_NS="{{ .parameters.argocd_namespace }}"
+
+        echo "Syncing ArgoCD application after update..."
+
+        # Trigger sync (requires argocd CLI or kubectl patch)
+        kubectl patch application $APP_NAME -n $ARGOCD_NS \
+          --type merge \
+          -p '{"operation":{"sync":{"revision":"HEAD"}}}' 2>/dev/null || true
+
+        echo "Sync triggered for $APP_NAME"
+
+outputs:
+  app_name: "{{ .parameters.app_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  status: "updated"

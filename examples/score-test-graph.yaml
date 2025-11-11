@@ -11,13 +11,8 @@ containers:
 resources:
   db:
     type: postgres
-    params:
+    properties:
       size: small
 environment:
   type: kubernetes
   ttl: 1h
-workflow:
-  steps:
-    - name: validate-spec
-      type: validation
-      description: Validate the Score specification

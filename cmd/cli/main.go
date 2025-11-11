@@ -396,7 +396,25 @@ var fixGiteaOAuthCmd = &cobra.Command{
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate and store API key locally",
+	Long: `Authenticate with the innominatus server and store credentials locally.
+
+By default, uses username/password authentication. Use the --sso flag for
+browser-based OIDC/Keycloak authentication.
+
+Examples:
+  # Password-based login
+  innominatus-ctl login
+
+  # SSO login (opens browser)
+  innominatus-ctl login --sso
+
+  # Specify API key name and expiry
+  innominatus-ctl login --sso --name my-laptop --expiry-days 30`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		sso, _ := cmd.Flags().GetBool("sso")
+		if sso {
+			return client.LoginSSOCommand(args)
+		}
 		return client.LoginCommand(args)
 	},
 }
@@ -446,6 +464,12 @@ var providerCmd = &cobra.Command{
 
 func init() {
 	// Add flags to specific commands
+
+	// Login command flags
+	loginCmd.Flags().BoolP("sso", "s", false, "Use SSO (OIDC) authentication instead of password")
+	loginCmd.Flags().String("name", "", "Name for API key (default: cli-<hostname>-<timestamp>)")
+	loginCmd.Flags().Int("expiry-days", 90, "Days until API key expires")
+
 	validateCmd.Flags().BoolVar(&validateExplain, "explain", false, "Show detailed validation explanations")
 	validateCmd.Flags().StringVar(&validateFormat, "format", "text", "Output format (text, json, simple)")
 

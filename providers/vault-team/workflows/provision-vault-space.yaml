@@ -25,7 +25,7 @@ steps:
   - name: enable-kv-engine
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 
@@ -38,7 +38,7 @@ steps:
   - name: configure-kubernetes-auth
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 
@@ -61,7 +61,7 @@ steps:
   - name: create-vault-policy
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 
@@ -81,7 +81,7 @@ steps:
   - name: create-kubernetes-role
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 

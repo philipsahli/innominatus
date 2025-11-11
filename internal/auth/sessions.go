@@ -126,7 +126,7 @@ func (sm *SessionManager) SetSessionCookie(w http.ResponseWriter, session *Sessi
 		Expires:  session.ExpiresAt,
 		HttpOnly: true,
 		Path:     "/",
-		Secure:   false, // Set to true in production with HTTPS
+		Secure:   true, // SECURITY: Always use Secure flag to prevent transmission over HTTP
 		SameSite: http.SameSiteLaxMode,
 	}
 	http.SetCookie(w, cookie)
@@ -140,6 +140,7 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
 		Path:     "/",
+		Secure:   true, // SECURITY: Match Secure flag from SetSessionCookie
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, cookie)

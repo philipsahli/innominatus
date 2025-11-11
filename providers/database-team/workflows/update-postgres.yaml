@@ -1,0 +1,144 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: update-postgres
+  description: Update PostgreSQL configuration (scale replicas, change resources)
+
+parameters:
+  - name: db_name
+    type: string
+    required: true
+    description: Database cluster name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace where database exists
+
+  - name: team_id
+    type: string
+    required: true
+    description: Team identifier (used in cluster name)
+
+  - name: replicas
+    type: number
+    required: false
+    description: New number of replicas (optional)
+
+  - name: size
+    type: string
+    required: false
+    description: New database size (small/medium/large) (optional)
+
+  - name: version
+    type: string
+    required: false
+    description: New PostgreSQL version (optional)
+
+steps:
+  - name: get-current-config
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLUSTER_NAME="{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+
+        echo "Getting current PostgreSQL cluster configuration..."
+
+        # Get current configuration
+        CURRENT_REPLICAS=$(kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.spec.numberOfInstances}' 2>/dev/null || echo "2")
+        CURRENT_VERSION=$(kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.spec.postgresql.version}' 2>/dev/null || echo "15")
+        CURRENT_VOLUME=$(kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.spec.volume.size}' 2>/dev/null || echo "5Gi")
+
+        cat <<EOF
+        {
+          "current_replicas": "$CURRENT_REPLICAS",
+          "current_version": "$CURRENT_VERSION",
+          "current_volume": "$CURRENT_VOLUME"
+        }
+        EOF
+
+  - name: update-postgres-cluster
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: "acid.zalan.do/v1"
+        kind: postgresql
+        metadata:
+          name: {{ .parameters.team_id }}-{{ .parameters.db_name }}
+          namespace: {{ .parameters.namespace }}
+          labels:
+            managed-by: innominatus
+            team: {{ .parameters.team_id }}
+            updated-at: "{{ now }}"
+        spec:
+          teamId: {{ .parameters.team_id }}
+          numberOfInstances: {{ if .parameters.replicas }}{{ .parameters.replicas }}{{ else }}{{ .steps.get-current-config.output.current_replicas }}{{ end }}
+          postgresql:
+            version: "{{ if .parameters.version }}{{ .parameters.version }}{{ else }}{{ .steps.get-current-config.output.current_version }}{{ end }}"
+          volume:
+            size: {{ if .parameters.size }}{{ if eq .parameters.size "small" }}5Gi{{ else if eq .parameters.size "medium" }}20Gi{{ else }}100Gi{{ end }}{{ else }}{{ .steps.get-current-config.output.current_volume }}{{ end }}
+          resources:
+            requests:
+              cpu: {{ if .parameters.size }}{{ if eq .parameters.size "small" }}100m{{ else if eq .parameters.size "medium" }}500m{{ else }}2000m{{ end }}{{ else }}100m{{ end }}
+              memory: {{ if .parameters.size }}{{ if eq .parameters.size "small" }}256Mi{{ else if eq .parameters.size "medium" }}1Gi{{ else }}4Gi{{ end }}{{ else }}256Mi{{ end }}
+            limits:
+              cpu: {{ if .parameters.size }}{{ if eq .parameters.size "small" }}500m{{ else if eq .parameters.size "medium" }}2000m{{ else }}4000m{{ end }}{{ else }}500m{{ end }}
+              memory: {{ if .parameters.size }}{{ if eq .parameters.size "small" }}512Mi{{ else if eq .parameters.size "medium" }}2Gi{{ else }}8Gi{{ end }}{{ else }}512Mi{{ end }}
+          users:
+            {{ .parameters.db_name }}_owner:
+            - superuser
+            - createdb
+            {{ .parameters.db_name }}_app:
+            - login
+          databases:
+            {{ .parameters.db_name }}: {{ .parameters.db_name }}_owner
+
+  - name: wait-for-update
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLUSTER_NAME="{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+
+        echo "Waiting for PostgreSQL cluster update to complete..."
+
+        for i in {1..120}; do
+          STATUS=$(kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.status.PostgresClusterStatus}' 2>/dev/null || echo "Unknown")
+
+          if [ "$STATUS" = "Running" ]; then
+            echo "PostgreSQL cluster update completed successfully"
+
+            # Verify replica count if specified
+            {{- if .parameters.replicas }}
+            CURRENT_REPLICAS=$(kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE -o jsonpath='{.spec.numberOfInstances}')
+            if [ "$CURRENT_REPLICAS" = "{{ .parameters.replicas }}" ]; then
+              echo "Replica count verified: $CURRENT_REPLICAS"
+            else
+              echo "Warning: Replica count mismatch. Expected {{ .parameters.replicas }}, got $CURRENT_REPLICAS"
+            fi
+            {{- end }}
+
+            exit 0
+          fi
+
+          echo "Current status: $STATUS - Waiting... attempt $i/120"
+          sleep 5
+        done
+
+        echo "Timeout waiting for PostgreSQL cluster update"
+        exit 1
+
+outputs:
+  cluster_name: "{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  updated_replicas: "{{ if .parameters.replicas }}{{ .parameters.replicas }}{{ else }}{{ .steps.get-current-config.output.current_replicas }}{{ end }}"
+  updated_version: "{{ if .parameters.version }}{{ .parameters.version }}{{ else }}{{ .steps.get-current-config.output.current_version }}{{ end }}"
+  status: "updated"

@@ -3,6 +3,7 @@ package resources
 import (
 	"fmt"
 	"innominatus/internal/database"
+	"innominatus/internal/events"
 	"innominatus/internal/graph"
 	"innominatus/internal/types"
 
@@ -21,6 +22,7 @@ type Manager struct {
 	resourceRepo *database.ResourceRepository
 	provisioners map[string]Provisioner
 	graphAdapter *graph.Adapter
+	eventBus     events.EventBus
 }
 
 // NewManager creates a new resource manager with built-in provisioners
@@ -49,6 +51,17 @@ func (m *Manager) RegisterProvisioner(resourceType string, provisioner Provision
 func (m *Manager) SetGraphAdapter(adapter *graph.Adapter) {
 	m.graphAdapter = adapter
 	fmt.Println("Graph adapter set for resource manager")
+}
+
+// SetEventBus sets the event bus for publishing resource events
+func (m *Manager) SetEventBus(bus events.EventBus) {
+	m.eventBus = bus
+	fmt.Println("Event bus configured for resource manager")
+}
+
+// GetRepository returns the resource repository
+func (m *Manager) GetRepository() *database.ResourceRepository {
+	return m.resourceRepo
 }
 
 // GetProvisioner returns the provisioner for a given resource type
@@ -99,11 +112,31 @@ func (m *Manager) CreateResourceFromSpec(appName string, spec *types.ScoreSpec, 
 	}
 
 	for resourceName, resource := range spec.Resources {
-		// Create configuration from resource parameters
+		// Create configuration from resource type and app_name
 		config := map[string]interface{}{
 			"type":     resource.Type,
-			"params":   resource.Params,
 			"app_name": appName,
+		}
+
+		// Add all params as individual keys in configuration (backward compatibility)
+		if resource.Params != nil {
+			for key, value := range resource.Params {
+				config[key] = value
+			}
+		}
+
+		// Add all properties as individual keys in configuration
+		// Properties contain the actual resource configuration (db_name, namespace, team_id, etc.)
+		// This is the standard Score spec format
+		if resource.Properties != nil {
+			for key, value := range resource.Properties {
+				config[key] = value
+			}
+		}
+
+		// For backward compatibility, if no params or properties, add empty params
+		if resource.Params == nil && resource.Properties == nil {
+			config["params"] = nil
 		}
 
 		// Create resource instance in database
@@ -113,9 +146,26 @@ func (m *Manager) CreateResourceFromSpec(appName string, spec *types.ScoreSpec, 
 			return fmt.Errorf("failed to create resource instance %s: %w", resourceName, err)
 		}
 
+		// Publish resource created event
+		if m.eventBus != nil {
+			m.eventBus.Publish(events.NewEvent(
+				events.EventTypeResourceCreated,
+				appName,
+				"resource-manager",
+				map[string]interface{}{
+					"resource_id":   resourceInstance.ID,
+					"resource_name": resourceName,
+					"resource_type": resource.Type,
+					"state":         "requested",
+					"created_by":    createdBy,
+				},
+			))
+		}
+
 		// Add resource node to graph
 		if m.graphAdapter != nil {
-			resourceNodeID := fmt.Sprintf("resource-%d", resourceInstance.ID)
+			// Use consistent node ID format: resource:{app}:{name}
+			resourceNodeID := fmt.Sprintf("resource:%s:%s", appName, resourceName)
 			resourceNode := &sdk.Node{
 				ID:    resourceNodeID,
 				Type:  sdk.NodeTypeResource,
@@ -133,20 +183,29 @@ func (m *Manager) CreateResourceFromSpec(appName string, spec *types.ScoreSpec, 
 			} else {
 				fmt.Printf("📊 Added resource node to graph: %s\n", resourceName)
 			}
+
+			// Add spec→resource edge
+			specNodeID := fmt.Sprintf("spec:%s", appName)
+			edgeID := fmt.Sprintf("%s->%s", specNodeID, resourceNodeID)
+			edge := &sdk.Edge{
+				ID:         edgeID,
+				FromNodeID: specNodeID,
+				ToNodeID:   resourceNodeID,
+				Type:       sdk.EdgeTypeContains, // Spec contains resources
+				Properties: map[string]interface{}{
+					"relationship": "defines",
+				},
+			}
+			if err := m.graphAdapter.AddEdge(appName, edge); err != nil {
+				fmt.Printf("Warning: failed to add spec→resource edge: %v\n", err)
+			} else {
+				fmt.Printf("📊 Added edge: spec → resource (%s)\n", resourceName)
+			}
 		}
 
-		// Transition to provisioning state
-		err = m.TransitionResourceState(resourceInstance.ID,
-			database.ResourceStateProvisioning,
-			"Resource created from Score specification",
-			createdBy, map[string]interface{}{
-				"source": "score_spec",
-			})
-		if err != nil {
-			return fmt.Errorf("failed to transition resource %s to provisioning: %w", resourceName, err)
-		}
-
-		fmt.Printf("✅ Created resource instance: %s (%s) - ID: %d\n", resourceName, resource.Type, resourceInstance.ID)
+		// Keep resource in requested state - orchestration engine will transition to provisioning
+		// when it picks up the resource and starts the workflow
+		fmt.Printf("✅ Created resource instance: %s (%s) - ID: %d (state: requested)\n", resourceName, resource.Type, resourceInstance.ID)
 	}
 
 	return nil
@@ -169,6 +228,38 @@ func (m *Manager) TransitionResourceState(resourceID int64, newState database.Re
 	err = m.resourceRepo.UpdateResourceInstanceState(resourceID, newState, reason, transitionedBy, metadata)
 	if err != nil {
 		return err
+	}
+
+	// Publish state transition event
+	if m.eventBus != nil {
+		var eventType events.EventType
+		switch newState {
+		case database.ResourceStateRequested:
+			eventType = events.EventTypeResourceRequested
+		case database.ResourceStateProvisioning:
+			eventType = events.EventTypeResourceProvisioning
+		case database.ResourceStateActive:
+			eventType = events.EventTypeResourceActive
+		case database.ResourceStateFailed:
+			eventType = events.EventTypeResourceFailed
+		default:
+			eventType = events.EventTypeResourceRequested
+		}
+
+		m.eventBus.Publish(events.NewEvent(
+			eventType,
+			resource.ApplicationName,
+			"resource-manager",
+			map[string]interface{}{
+				"resource_id":     resourceID,
+				"resource_name":   resource.ResourceName,
+				"resource_type":   resource.ResourceType,
+				"old_state":       resource.State,
+				"new_state":       string(newState),
+				"reason":          reason,
+				"transitioned_by": transitionedBy,
+			},
+		))
 	}
 
 	// Update graph node state if graph adapter is available

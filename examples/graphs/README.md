@@ -15,59 +15,118 @@ Innominatus provides powerful graph visualization to help understand:
 ### 1. View Graph Data (JSON)
 
 ```bash
-# Get graph for an application
+# Get graph for an application (frontend format)
 curl -H "Authorization: Bearer $API_TOKEN" \
   http://localhost:8081/api/graph/my-app
 
-# Returns:
+# Returns: (NEW: includes timing metadata)
 {
+  "app_name": "my-app",
   "nodes": [
     {
       "id": "workflow-1",
       "name": "deploy-app",
       "type": "workflow",
-      "status": "running",
-      "metadata": {...}
+      "state": "running",
+      "started_at": "2025-10-30T10:00:00Z",
+      "created_at": "2025-10-30T09:59:55Z",
+      "updated_at": "2025-10-30T10:00:00Z"
     },
     {
       "id": "step-1",
       "name": "provision-database",
       "type": "step",
-      "status": "succeeded",
-      "metadata": {...}
+      "state": "succeeded",
+      "started_at": "2025-10-30T10:00:05Z",
+      "completed_at": "2025-10-30T10:02:30Z",
+      "duration": "2m25s"
     }
   ],
   "edges": [
     {
       "id": "edge-1",
-      "source_id": "workflow-1",
-      "target_id": "step-1",
+      "from_node_id": "workflow-1",
+      "to_node_id": "step-1",
       "type": "contains"
     }
   ]
 }
 ```
 
-### 2. Export Graph (Multiple Formats)
-
-#### Mermaid Diagram (Default)
+### 2. Compute Graph Layout (NEW)
 
 ```bash
-# Export as Mermaid flowchart
+# Compute hierarchical layout (default)
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "http://localhost:8081/api/graph/my-app/layout?type=hierarchical"
+
+# Compute radial layout with custom spacing
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "http://localhost:8081/api/graph/my-app/layout?type=radial&nodeSpacing=120&width=800&height=600"
+
+# Returns: Node positions for visualization
+{
+  "nodes": {
+    "workflow-1": {
+      "node_id": "workflow-1",
+      "position": {"x": 600, "y": 50},
+      "level": 0
+    },
+    "step-1": {
+      "node_id": "step-1",
+      "position": {"x": 400, "y": 200},
+      "level": 1
+    }
+  }
+}
+```
+
+**Supported Layout Algorithms:**
+- `hierarchical` - Top-down tree layout (default)
+- `radial` - Circular layout from center
+- `force` - Force-directed physics simulation
+- `grid` - Grid-based positioning
+
+**Query Parameters:**
+- `type` - Layout algorithm (default: hierarchical)
+- `nodeSpacing` - Space between nodes (default: 100)
+- `levelSpacing` - Space between levels (default: 150)
+- `width` - Canvas width (default: 1200)
+- `height` - Canvas height (default: 800)
+
+### 3. Export Graph (Multiple Formats)
+
+#### Mermaid Flowchart (Default)
+
+```bash
+# Export as Mermaid flowchart with styling
 curl -H "Authorization: Bearer $API_TOKEN" \
   "http://localhost:8081/api/graph/my-app/export?format=mermaid" \
   -o my-app-graph.mmd
 
-# Mermaid diagram with full styling and state indicators
+# Result: Flowchart diagram with node states and color coding
 ```
 
-#### Simplified Mermaid
+#### Mermaid State Diagram (NEW)
 
 ```bash
-# Export as simplified horizontal layout
+# Export as Mermaid state diagram showing transitions
 curl -H "Authorization: Bearer $API_TOKEN" \
-  "http://localhost:8081/api/graph/my-app/export?format=mermaid-simple" \
-  -o my-app-graph-simple.mmd
+  "http://localhost:8081/api/graph/my-app/export?format=mermaid-state" \
+  -o my-app-state.mmd
+
+# Result: State diagram showing workflow progression
+```
+
+#### Mermaid Gantt Chart (NEW)
+
+```bash
+# Export as Mermaid Gantt chart showing timeline
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "http://localhost:8081/api/graph/my-app/export?format=mermaid-gantt" \
+  -o my-app-timeline.mmd
+
+# Result: Gantt chart with execution timeline and durations
 ```
 
 #### SVG Export
@@ -97,25 +156,54 @@ curl -H "Authorization: Bearer $API_TOKEN" \
   -o my-app-graph.dot
 ```
 
-#### JSON Export
+#### JSON Export (Enhanced)
 
 ```bash
-# Export as JSON (with download headers)
+# Export as JSON with timing metadata and pretty formatting (NEW)
 curl -H "Authorization: Bearer $API_TOKEN" \
   "http://localhost:8081/api/graph/my-app/export?format=json" \
   -o my-app-graph.json
+
+# Returns enriched JSON with:
+# - Node timing (started_at, completed_at, duration)
+# - Execution metadata
+# - Complete graph structure
+```
+
+### 4. Real-time WebSocket Updates (NEW)
+
+```bash
+# Connect to WebSocket for live graph updates
+wscat -H "Authorization: Bearer $API_TOKEN" \
+  -c "ws://localhost:8081/api/graph/my-app/ws"
+
+# Receive real-time notifications when:
+# - Node states change (waiting → running → succeeded)
+# - Edges are added
+# - Timing information updates
+```
+
+**JavaScript Example:**
+```javascript
+const ws = new WebSocket('ws://localhost:8081/api/graph/my-app/ws');
+ws.onmessage = (event) => {
+  const graphData = JSON.parse(event.data);
+  console.log('Graph updated:', graphData);
+  updateVisualization(graphData);
+};
 ```
 
 ## Supported Export Formats
 
-| Format | Content-Type | Use Case |
-|--------|-------------|----------|
-| `mermaid` | `text/plain` | Documentation, Markdown files, interactive diagrams |
-| `mermaid-simple` | `text/plain` | Simplified horizontal layout for quick reference |
-| `svg` | `image/svg+xml` | Vector graphics, web embedding, high-quality prints |
-| `png` | `image/png` | Raster images, presentations, reports |
-| `dot` | `text/plain` | Graphviz processing, custom rendering |
-| `json` | `application/json` | Data analysis, custom visualization tools |
+| Format | Content-Type | Use Case | New |
+|--------|-------------|----------|-----|
+| `mermaid` | `text/plain` | Flowchart diagrams for documentation | |
+| `mermaid-state` | `text/plain` | State transition diagrams | ✅ |
+| `mermaid-gantt` | `text/plain` | Timeline/Gantt charts | ✅ |
+| `svg` | `image/svg+xml` | Vector graphics, web embedding | |
+| `png` | `image/png` | Raster images, presentations | |
+| `dot` | `text/plain` | Graphviz processing, custom rendering | |
+| `json` | `application/json` | Enhanced with timing metadata | ✅ |
 
 ## Mermaid Diagram Features
 
@@ -179,11 +267,12 @@ http://localhost:8081/graph/<app-name>
 ```
 
 Features:
-- **Real-time updates**: Nodes update as workflow progresses
+- **Real-time updates**: Nodes update automatically via WebSocket (NEW)
+- **Layout algorithms**: Choose from 4 layout types (NEW)
 - **Interactive**: Zoom, pan, drag nodes
 - **Legend**: Color-coded node types and states
-- **Export**: Download graph data as JSON
-- **Refresh**: Manual refresh to sync latest state
+- **Export**: Download graph in multiple formats (NEW)
+- **Timing information**: View execution duration for completed nodes (NEW)
 
 ## Integration Examples
 
@@ -256,14 +345,33 @@ If the graph has no nodes/edges, the application may not have been deployed yet,
 HTTP 400 - Unsupported format
 ```
 
-**Solution**: Use one of the supported formats: `mermaid`, `mermaid-simple`, `svg`, `png`, `dot`, `json`
+**Solution**: Use one of the supported formats: `mermaid`, `mermaid-state`, `mermaid-gantt`, `svg`, `png`, `dot`, `json`
+
+### WebSocket Connection Fails
+
+```
+WebSocket connection failed or immediately closes
+```
+
+**Solution**:
+- Ensure application exists and has graph data
+- Check WebSocket hub is running (server logs: "WebSocket hub started")
+- Verify authorization token is valid
+- Check browser console for CORS errors
 
 ## Best Practices
 
 1. **Documentation**: Export Mermaid diagrams for technical documentation
-2. **Monitoring**: Use PNG exports for dashboards and reports
-3. **Analysis**: Use JSON exports for custom analytics
-4. **Troubleshooting**: View real-time graphs during deployments to identify bottlenecks
+   - Use `mermaid-state` for workflow progression
+   - Use `mermaid-gantt` for timeline visualization
+2. **Monitoring**: Use PNG/SVG exports for dashboards and reports
+3. **Analysis**: Use enhanced JSON exports with timing metadata for custom analytics
+4. **Real-time Monitoring**: Connect WebSocket for live deployment tracking
+5. **Troubleshooting**: View real-time graphs during deployments to identify bottlenecks
+6. **Layout Selection**:
+   - Use `hierarchical` for workflow dependencies
+   - Use `radial` for resource relationships
+   - Use `force` for complex interconnected systems
 
 ## See Also
 

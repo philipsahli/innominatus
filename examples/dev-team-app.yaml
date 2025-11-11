@@ -27,33 +27,33 @@ containers:
 # Resource declarations (provisioned by product teams)
 resources:
   # Vault team provides secret space
-  vault:
-    type: vault-space
-    params:
-      sync_to_namespace: true
-      auto_rotate: false
+#  vault:
+#    type: vault-space
+#    properties:
+#      sync_to_namespace: true
+#      auto_rotate: false
 
   # Database team provides PostgreSQL
   database:
-    type: postgres-db
-    params:
+    type: postgres
+    properties:
       size: small
       replicas: 2
       version: "15"
 
   # Storage team provides S3 bucket
-  storage:
-    type: s3-bucket
-    params:
-      versioning: true
-      public_access: false
+#  storage:
+#    type: s3-bucket
+#    properties:
+#      versioning: true
+#      public_access: false
 
   # Container team provides namespace and ArgoCD app
-  platform:
-    type: argocd-app
-    params:
-      sync_policy: auto
-
+#  platform:
+#    type: argocd-app
+#    properties:
+#      sync_policy: auto
+#
 # Environment configuration
 environment:
   type: development

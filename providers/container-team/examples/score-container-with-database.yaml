@@ -1,0 +1,174 @@
+# Score Specification Example: Container Application with PostgreSQL Database
+#
+# This example demonstrates the complete event-driven orchestration flow:
+#
+# 1. DATABASE PROVISIONING (database-team provider):
+#    - Detects resource type: postgres
+#    - Creates PostgreSQL cluster using Zalando operator
+#    - Extracts credentials from Kubernetes secret
+#    - Outputs: host, port, database_name, username, password, connection_string
+#
+# 2. CONTAINER DEPLOYMENT (container-team provider):
+#    - Detects resource type: container
+#    - Creates Kubernetes namespace
+#    - Creates Git repository in Gitea
+#    - Generates Kubernetes manifests (Deployment + Service) with DB credentials injected
+#    - Commits manifests to Git repo
+#    - Creates ArgoCD application pointing to Git repo
+#    - Waits for application to sync and become healthy
+#
+# Both providers work independently via event-driven orchestration.
+# The orchestration engine detects both pending resources and executes workflows in parallel.
+
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: my-app
+
+containers:
+  main:
+    image: nginx:latest
+    env:
+      # Database credentials automatically injected from database-team provider
+      DATABASE_HOST: ${resources.db.host}
+      DATABASE_PORT: ${resources.db.port}
+      DATABASE_NAME: ${resources.db.database_name}
+      DATABASE_USER: ${resources.db.username}
+      DATABASE_PASSWORD: ${resources.db.password}
+      DATABASE_URL: ${resources.db.connection_string}
+
+      # Application configuration
+      APP_ENV: production
+      LOG_LEVEL: info
+
+resources:
+  # PostgreSQL database - triggers database-team provider
+  db:
+    type: postgres
+    properties:
+      version: "15"
+      size: "medium"
+      replicas: 2
+
+  # Container deployment - triggers container-team provider
+  app:
+    type: container
+    properties:
+      namespace: production
+      team_id: platform
+      container_image: ${containers.main.image}
+      container_port: 80
+      service_port: 80
+      service_type: ClusterIP
+      cpu_request: "200m"
+      memory_request: "256Mi"
+      cpu_limit: "1000m"
+      memory_limit: "1Gi"
+      gitea_org: platform
+      argocd_project: default
+      sync_policy: automated
+
+---
+
+# Alternative Example: Development Environment with Minimal Configuration
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: dev-app
+
+containers:
+  web:
+    image: nginx:alpine
+    env:
+      DB_CONNECTION: ${resources.database.connection_string}
+
+resources:
+  database:
+    type: postgresql  # Alias for postgres
+    properties:
+      size: "small"
+      replicas: 1
+
+  deployment:
+    type: application  # Alias for container
+    properties:
+      namespace: development
+      team_id: dev-team
+
+---
+
+# Example: Multi-Container Application
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: microservices-app
+
+containers:
+  api:
+    image: myapi:v1.0.0
+    env:
+      DATABASE_URL: ${resources.db.connection_string}
+      REDIS_URL: redis://redis:6379
+
+  worker:
+    image: myworker:v1.0.0
+    env:
+      DATABASE_URL: ${resources.db.connection_string}
+      QUEUE_URL: amqp://rabbitmq:5672
+
+resources:
+  db:
+    type: postgres
+    properties:
+      version: "15"
+      size: "large"
+      replicas: 3
+
+  app:
+    type: container
+    properties:
+      namespace: microservices
+      team_id: backend-team
+      container_image: myapi:v1.0.0
+      container_port: 8080
+      service_port: 80
+      gitea_org: backend-team
+
+---
+
+# Example: Application with Custom Environment Variables
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: custom-env-app
+
+containers:
+  backend:
+    image: mybackend:latest
+    env:
+      DB_HOST: ${resources.database.host}
+      DB_PORT: ${resources.database.port}
+      DB_NAME: ${resources.database.database_name}
+      DB_USER: ${resources.database.username}
+      DB_PASSWORD: ${resources.database.password}
+      FEATURE_FLAG_NEW_UI: "true"
+      API_RATE_LIMIT: "1000"
+      SESSION_SECRET: ${resources.secrets.session_key}
+
+resources:
+  database:
+    type: postgres
+    properties:
+      version: "16"
+      size: "medium"
+
+  deployment:
+    type: container
+    properties:
+      namespace: apps
+      team_id: product-team
+      container_image: mybackend:latest
+      container_port: 3000
+      service_port: 80
+      cpu_request: "500m"
+      memory_request: "512Mi"

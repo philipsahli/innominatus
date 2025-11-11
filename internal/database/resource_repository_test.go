@@ -9,18 +9,9 @@ import (
 // ===== ResourceRepository Tests =====
 
 func setupTestResourceRepo(t *testing.T) *ResourceRepository {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
-	}
-
-	// Initialize schema (creates tables including hints column)
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewResourceRepository(db)
-	return repo
+	testDB := SetupTestDatabase(t)
+	t.Cleanup(func() { testDB.Close() })
+	return NewResourceRepository(testDB.DB)
 }
 
 // uniqueName generates a unique identifier for test data to prevent conflicts
@@ -44,16 +35,10 @@ func createTestResource(t *testing.T, repo *ResourceRepository, appName, resourc
 }
 
 func TestNewResourceRepository(t *testing.T) {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
-	}
+	testDB := SetupTestDatabase(t)
+	defer testDB.Close()
 
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewResourceRepository(db)
+	repo := NewResourceRepository(testDB.DB)
 	if repo == nil {
 		t.Fatal("NewResourceRepository() returned nil")
 	}

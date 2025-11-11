@@ -250,6 +250,11 @@ func (z *ZerologAdapter) FatalWithError(message string, err error) {
 	z.zlogger.Fatal().Err(err).Msg(message)
 }
 
+// FatalWithFields logs a fatal message with fields and exits
+func (z *ZerologAdapter) FatalWithFields(message string, fields map[string]interface{}) {
+	z.buildEvent(zerolog.FatalLevel, fields).Msg(message)
+}
+
 // Performance logs a performance metric
 func (z *ZerologAdapter) Performance(operation string, duration time.Duration) {
 	z.zlogger.Info().

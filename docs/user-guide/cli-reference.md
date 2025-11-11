@@ -70,6 +70,58 @@ source ~/.config/fish/config.fish
 
 ## Application Management
 
+### `deploy`
+
+Deploy a Score specification directly to the platform.
+
+```bash
+innominatus-ctl deploy <score-file.yaml> [flags]
+```
+
+**Flags:**
+- `-w, --watch` - Stream real-time deployment events and workflow progress
+- `--verbose` - Show detailed watch output with timestamps
+- `--timeout duration` - Custom timeout (default: 5m0s)
+
+**Examples:**
+```bash
+# Basic deployment
+innominatus-ctl deploy myapp.yaml
+
+# Deploy with real-time watch (recommended)
+innominatus-ctl deploy myapp.yaml -w
+
+# Deploy with verbose output and custom timeout
+innominatus-ctl deploy myapp.yaml -w --verbose --timeout 10m
+
+# Incremental deployment (add S3 to existing app)
+innominatus-ctl deploy myapp-v2.yaml -w
+```
+
+**Watch Mode Output:**
+```
+✅ Score specification deployed: my-app
+   📦 Resource detected: db (postgres)
+   🔄 Workflow executing: provision-postgres (workflow ID: 123)
+
+🔄 Workflow Executing: provision-postgres
+✅ Step 1: create-namespace (completed in 2.3s)
+✅ Step 2: create-postgres-cluster (completed in 15.7s)
+✅ Step 3: wait-for-database (completed in 23.4s)
+✅ Workflow completed successfully
+
+   Resource db: requested → provisioning → active
+   📊 View details: http://localhost:8081/resources/5
+```
+
+**Notes:**
+- Resources are declared in Score specs, not created via CLI commands
+- Idempotent: deploying same spec multiple times is safe
+- Existing resources are detected and skipped automatically
+- Use `-w` flag for real-time feedback (recommended for demos)
+
+---
+
 ### `list`
 
 List all deployed applications.
@@ -283,23 +335,43 @@ innominatus-ctl resource [subcommands]
 
 ### `graph-export`
 
-Export workflow graph visualization.
+Export workflow graph visualization in multiple formats.
 
 ```bash
 innominatus-ctl graph-export <app-name> [flags]
 ```
 
 **Flags:**
-- `--format <format>` - Output format: svg, png, dot (default: svg)
+- `--format <format>` - Output format (default: svg)
+  - `svg` - Scalable Vector Graphics
+  - `png` - PNG image
+  - `dot` - GraphViz DOT format
+  - `json` - Enhanced JSON with timing metadata (NEW)
+  - `mermaid` - Mermaid flowchart diagram (NEW)
+  - `mermaid-state` - Mermaid state diagram (NEW)
+  - `mermaid-gantt` - Mermaid Gantt timeline (NEW)
 - `--output <path>` - Output file path (default: stdout)
 
 **Examples:**
 ```bash
+# Traditional formats
 innominatus-ctl graph-export my-app                          # SVG to stdout
 innominatus-ctl graph-export my-app --format png             # PNG to stdout
 innominatus-ctl graph-export my-app --output graph.svg       # SVG to file
 innominatus-ctl graph-export my-app --format dot --output graph.dot
+
+# NEW: Enhanced formats with timing and visualization
+innominatus-ctl graph-export my-app --format json --output graph.json
+innominatus-ctl graph-export my-app --format mermaid --output flowchart.mmd
+innominatus-ctl graph-export my-app --format mermaid-state --output state.mmd
+innominatus-ctl graph-export my-app --format mermaid-gantt --output timeline.mmd
 ```
+
+**Format Details:**
+- **json**: Includes node timing (started_at, completed_at, duration), metadata, and complete graph structure
+- **mermaid**: Flowchart with color-coded nodes by state (running/succeeded/failed)
+- **mermaid-state**: State transition diagram showing workflow progression
+- **mermaid-gantt**: Timeline chart with execution durations and dependencies
 
 ---
 
@@ -311,9 +383,32 @@ Show workflow graph status and statistics.
 innominatus-ctl graph-status <app-name>
 ```
 
+**Output Includes:**
+- Total nodes and breakdown by type (workflow, step, resource)
+- Node states (running, succeeded, failed, waiting)
+- Total edges and relationship types
+- Execution timing statistics (if available)
+
 **Examples:**
 ```bash
 innominatus-ctl graph-status my-app
+
+# Expected output:
+# Graph Status for Application: my-app
+#
+# Total Nodes: 12
+#
+# Node Counts by Type:
+#   workflow: 1
+#   step: 8
+#   resource: 3
+#
+# Node Counts by State:
+#   succeeded: 10
+#   running: 1
+#   waiting: 1
+#
+# Total Edges: 11
 ```
 
 ---

@@ -361,7 +361,10 @@ class ApiClient {
   async deployApplication(scoreSpec: string): Promise<ApiResponse<{ message: string }>> {
     return this.request('/applications', {
       method: 'POST',
-      body: JSON.stringify({ spec: scoreSpec }),
+      headers: {
+        'Content-Type': 'application/yaml',
+      },
+      body: scoreSpec,
     });
   }
 
@@ -579,6 +582,23 @@ class ApiClient {
     return this.request<ResourceInstance>(`/resources/${id}`);
   }
 
+  async createResource(
+    applicationName: string,
+    resourceName: string,
+    resourceType: string,
+    configuration?: Record<string, any>
+  ): Promise<ApiResponse<ResourceInstance>> {
+    return this.request<ResourceInstance>('/resources', {
+      method: 'POST',
+      body: JSON.stringify({
+        application_name: applicationName,
+        resource_name: resourceName,
+        resource_type: resourceType,
+        configuration: configuration || {},
+      }),
+    });
+  }
+
   // Workflow Analysis
   async analyzeWorkflow(yamlContent: string): Promise<ApiResponse<any>> {
     return this.request('/workflow-analysis', {
@@ -673,6 +693,11 @@ class ApiClient {
   async getProviderStats(): Promise<ApiResponse<ProviderStats>> {
     return this.request('/providers/stats');
   }
+
+  // Alias for deployApplication - used by deploy wizard
+  async submitSpec(scoreSpec: string): Promise<ApiResponse<{ message: string }>> {
+    return this.deployApplication(scoreSpec);
+  }
 }
 
 export interface ConversationMessage {
@@ -680,6 +705,7 @@ export interface ConversationMessage {
   content: string;
   timestamp: string;
   spec?: string;
+  citations?: string[];
 }
 
 export interface AIStatusResponse {
@@ -688,6 +714,7 @@ export interface AIStatusResponse {
   documents_loaded: number;
   status: string;
   message?: string;
+  missing_keys?: string[];
 }
 
 export interface AIChatResponse {
@@ -719,6 +746,14 @@ export interface ImpersonationStatus {
   };
 }
 
+export interface WorkflowSummary {
+  name: string;
+  description: string;
+  category: string;
+  version?: string;
+  tags?: string[];
+}
+
 export interface ProviderSummary {
   name: string;
   version: string;
@@ -726,6 +761,7 @@ export interface ProviderSummary {
   description: string;
   provisioners: number;
   golden_paths: number;
+  workflows: WorkflowSummary[];
 }
 
 export interface ProviderStats {

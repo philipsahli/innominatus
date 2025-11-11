@@ -19,8 +19,9 @@ type Container struct {
 }
 
 type Resource struct {
-	Type   string                 `yaml:"type"`
-	Params map[string]interface{} `yaml:"params,omitempty"`
+	Type       string                 `yaml:"type"`
+	Params     map[string]interface{} `yaml:"params,omitempty"`
+	Properties map[string]interface{} `yaml:"properties,omitempty"`
 }
 
 type Environment struct {

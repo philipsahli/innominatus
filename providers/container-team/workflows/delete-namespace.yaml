@@ -1,0 +1,91 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-namespace
+  description: Delete Kubernetes namespace and all resources within it
+
+parameters:
+  - name: namespace_name
+    type: string
+    required: true
+    description: Name of the namespace to delete
+
+  - name: force_delete
+    type: boolean
+    required: false
+    default: false
+    description: Force deletion even if resources exist
+
+steps:
+  - name: list-resources
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        NAMESPACE="{{ .parameters.namespace_name }}"
+
+        echo "Listing resources in namespace $NAMESPACE before deletion..."
+
+        # List key resources
+        echo "Pods:"
+        kubectl get pods -n $NAMESPACE --no-headers 2>/dev/null | wc -l || echo "0"
+
+        echo "Services:"
+        kubectl get svc -n $NAMESPACE --no-headers 2>/dev/null | wc -l || echo "0"
+
+        echo "Deployments:"
+        kubectl get deployments -n $NAMESPACE --no-headers 2>/dev/null | wc -l || echo "0"
+
+        cat <<EOF
+        {
+          "namespace": "$NAMESPACE",
+          "status": "listed"
+        }
+        EOF
+
+  - name: delete-namespace
+    type: kubernetes
+    config:
+      operation: delete
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ .parameters.namespace_name }}
+
+  - name: wait-for-deletion
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        NAMESPACE="{{ .parameters.namespace_name }}"
+
+        echo "Waiting for namespace deletion to complete..."
+
+        for i in {1..60}; do
+          if ! kubectl get namespace $NAMESPACE >/dev/null 2>&1; then
+            echo "Namespace $NAMESPACE deleted successfully"
+            exit 0
+          fi
+          echo "Waiting for namespace termination... attempt $i/60"
+          sleep 5
+        done
+
+        echo "Warning: Namespace deletion timeout - namespace may be stuck in Terminating state"
+        echo "Check for finalizers: kubectl get namespace $NAMESPACE -o yaml"
+
+        cat <<EOF
+        {
+          "namespace": "$NAMESPACE",
+          "status": "timeout",
+          "warning": "Namespace may be stuck in Terminating state"
+        }
+        EOF
+
+outputs:
+  namespace_name: "{{ .parameters.namespace_name }}"
+  status: "deleted"

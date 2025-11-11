@@ -9,56 +9,31 @@ import (
 )
 
 func TestNewDatabase(t *testing.T) {
-	// Test with environment variables not set (should use defaults)
-	_ = os.Unsetenv("DB_HOST")
-	_ = os.Unsetenv("DB_PORT")
-	_ = os.Unsetenv("DB_USER")
-	_ = os.Unsetenv("DB_PASSWORD")
-	_ = os.Unsetenv("DB_NAME")
-	_ = os.Unsetenv("DB_SSLMODE")
+	// Setup testcontainer
+	testDB := SetupTestDatabaseWithoutSchema(t)
+	defer testDB.Close()
 
-	// This will fail in most test environments since there's no postgres
-	// But we can test that the config is built correctly
-	db, err := NewDatabase()
-	if err != nil {
-		// Expected in test environment without postgres
-		assert.Contains(t, err.Error(), "failed to")
-		return
-	}
+	// Test that database connection works
+	assert.NotNil(t, testDB.DB)
 
-	// If we somehow have a postgres instance, test it works
-	assert.NotNil(t, db)
-	defer func() { _ = db.Close() }()
-
-	err = db.Ping()
+	err := testDB.DB.Ping()
 	assert.NoError(t, err)
 }
 
 func TestNewDatabaseWithConfig(t *testing.T) {
-	config := Config{
-		Host:     "localhost",
-		Port:     "5432",
-		User:     "testuser",
-		Password: "testpass",
-		DBName:   "testdb",
-		SSLMode:  "disable",
-	}
+	// Setup testcontainer
+	testDB := SetupTestDatabaseWithoutSchema(t)
+	defer testDB.Close()
 
-	// This will fail in most test environments since there's no postgres
-	// But we can test that the config is used correctly
-	db, err := NewDatabaseWithConfig(config)
-	if err != nil {
-		// Expected in test environment without postgres
-		assert.Contains(t, err.Error(), "failed to")
-		return
-	}
+	// Test that config is used correctly
+	assert.NotNil(t, testDB.DB)
 
-	// If we somehow have a postgres instance, test it works
-	assert.NotNil(t, db)
-	defer func() { _ = db.Close() }()
-
-	err = db.Ping()
+	err := testDB.DB.Ping()
 	assert.NoError(t, err)
+
+	// Test that we can get the underlying DB
+	sqlDB := testDB.DB.GetDB()
+	assert.NotNil(t, sqlDB)
 }
 
 func TestDatabaseConfig(t *testing.T) {
@@ -206,43 +181,45 @@ func TestDatabaseMethods(t *testing.T) {
 }
 
 func TestDatabaseConnectionPool(t *testing.T) {
-	// Test that connection pool settings are applied correctly
-	config := Config{
-		Host:     "localhost",
-		Port:     "5432",
-		User:     "postgres",
-		Password: "postgres",
-		DBName:   "test",
-		SSLMode:  "disable",
-	}
-
-	// This will likely fail in test environment, but that's ok
-	// We're just testing the code path
-	db, err := NewDatabaseWithConfig(config)
-	if err != nil {
-		// Expected in test environment without postgres
-		assert.Contains(t, err.Error(), "failed to")
-		return
-	}
-
-	defer func() { _ = db.Close() }()
+	// Setup testcontainer
+	testDB := SetupTestDatabaseWithoutSchema(t)
+	defer testDB.Close()
 
 	// Test that we can get the underlying DB
-	sqlDB := db.GetDB()
+	sqlDB := testDB.DB.GetDB()
 	assert.NotNil(t, sqlDB)
 
-	// Test connection pool settings (these should be set even if connection fails)
+	// Test connection pool settings
 	stats := sqlDB.Stats()
 	assert.Equal(t, 25, stats.MaxOpenConnections)
 }
 
 func TestInitSchema(t *testing.T) {
-	// Create a mock database that will fail
-	db := &Database{db: nil}
+	t.Run("nil database connection", func(t *testing.T) {
+		// Create a mock database that will fail
+		db := &Database{db: nil}
 
-	err := db.InitSchema()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "database connection is nil")
+		err := db.InitSchema()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "database connection is nil")
+	})
+
+	t.Run("successful schema initialization", func(t *testing.T) {
+		// Setup testcontainer without schema
+		testDB := SetupTestDatabaseWithoutSchema(t)
+		defer testDB.Close()
+
+		// Initialize schema
+		err := testDB.DB.InitSchema()
+		assert.NoError(t, err)
+
+		// Verify schema was created by checking for a table
+		var exists bool
+		err = testDB.DB.GetDB().QueryRow(
+			"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'workflow_executions')").Scan(&exists)
+		assert.NoError(t, err)
+		assert.True(t, exists, "workflow_executions table should exist after schema initialization")
+	})
 }
 
 func TestConnectionString(t *testing.T) {
@@ -354,41 +331,25 @@ func validateConfig(config Config) bool {
 }
 
 func TestDatabaseLifecycle(t *testing.T) {
-	// Test complete database lifecycle without actual connection
-	config := Config{
-		Host:     "localhost",
-		Port:     "5432",
-		User:     "test",
-		Password: "test",
-		DBName:   "test",
-		SSLMode:  "disable",
-	}
+	// Setup testcontainer
+	testDB := SetupTestDatabaseWithoutSchema(t)
 
-	// This will fail in CI, but we can test error handling
-	db, err := NewDatabaseWithConfig(config)
-	if err != nil {
-		// Expected failure in test environment
-		assert.Contains(t, err.Error(), "failed to")
-		return
-	}
-
-	// If connection succeeds, test full lifecycle
-	assert.NotNil(t, db)
+	// Test complete database lifecycle
+	assert.NotNil(t, testDB.DB)
 
 	// Test ping
-	err = db.Ping()
+	err := testDB.DB.Ping()
 	assert.NoError(t, err)
 
 	// Test schema initialization
-	err = db.InitSchema()
+	err = testDB.DB.InitSchema()
 	assert.NoError(t, err)
 
 	// Test close
-	err = db.Close()
+	err = testDB.DB.Close()
 	assert.NoError(t, err)
 
 	// Test that ping fails after close
-	err = db.Ping()
+	err = testDB.DB.Ping()
 	assert.Error(t, err)
 }
-

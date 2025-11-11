@@ -2,9 +2,12 @@ package providers
 
 import (
 	"fmt"
+	"innominatus/internal/types"
+	"innominatus/internal/workflow"
 	"innominatus/pkg/sdk"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"gopkg.in/yaml.v3"
@@ -48,6 +51,12 @@ func (l *Loader) LoadFromFile(path string) (*sdk.Provider, error) {
 	// Check version compatibility
 	if err := l.checkCompatibility(&provider); err != nil {
 		return nil, fmt.Errorf("provider compatibility check failed: %w", err)
+	}
+
+	// Validate all workflow files (use directory of provider.yaml as base)
+	providerDir := filepath.Dir(path)
+	if err := l.validateProviderWorkflows(providerDir, &provider); err != nil {
+		return nil, fmt.Errorf("provider workflow validation failed: %w", err)
 	}
 
 	return &provider, nil
@@ -94,7 +103,59 @@ func (l *Loader) LoadFromDirectory(dirPath string) ([]*sdk.Provider, error) {
 		return nil, fmt.Errorf("failed to walk directory %s: %w", dirPath, err)
 	}
 
+	// Early conflict detection: check for duplicate capability claims within loaded providers
+	if err := l.checkProviderConflicts(providers); err != nil {
+		return nil, fmt.Errorf("provider conflicts detected: %w", err)
+	}
+
 	return providers, nil
+}
+
+// checkProviderConflicts performs early conflict detection on loaded providers
+func (l *Loader) checkProviderConflicts(providers []*sdk.Provider) error {
+	// Build map of resource type -> set of providers claiming it
+	resourceTypeMap := make(map[string]map[string]bool)
+
+	for _, provider := range providers {
+		providerName := provider.Metadata.Name
+
+		// Check simple format
+		for _, resourceType := range provider.Capabilities.ResourceTypes {
+			if resourceTypeMap[resourceType] == nil {
+				resourceTypeMap[resourceType] = make(map[string]bool)
+			}
+			resourceTypeMap[resourceType][providerName] = true
+		}
+
+		// Check advanced format
+		for _, rtc := range provider.Capabilities.ResourceTypeCapabilities {
+			// Only check primary types, not aliases
+			if rtc.AliasFor == "" {
+				if resourceTypeMap[rtc.Type] == nil {
+					resourceTypeMap[rtc.Type] = make(map[string]bool)
+				}
+				resourceTypeMap[rtc.Type][providerName] = true
+			}
+		}
+	}
+
+	// Detect conflicts
+	var conflicts []string
+	for resourceType, providerSet := range resourceTypeMap {
+		if len(providerSet) > 1 {
+			providerList := make([]string, 0, len(providerSet))
+			for provider := range providerSet {
+				providerList = append(providerList, provider)
+			}
+			conflicts = append(conflicts, fmt.Sprintf("resource type '%s' claimed by: %v", resourceType, providerList))
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return fmt.Errorf("capability conflicts:\n  - %v", conflicts)
+	}
+
+	return nil
 }
 
 // checkCompatibility verifies the provider is compatible with the core version
@@ -195,4 +256,41 @@ func (l *Loader) migrateProvider(provider *sdk.Provider) {
 	// provisioners don't have a workflow file reference. Product teams should
 	// manually add workflow files and update their provider.yaml to use workflows.
 	// The old provisioners[] field will continue to work for backward compatibility.
+}
+
+// validateProviderWorkflows validates all workflow files referenced by a provider
+func (l *Loader) validateProviderWorkflows(providerDir string, provider *sdk.Provider) error {
+	validator := workflow.NewWorkflowValidator()
+	var allErrors []string
+
+	for _, workflowMeta := range provider.Workflows {
+		// Construct full path to workflow file
+		workflowPath := filepath.Join(providerDir, workflowMeta.File)
+
+		// Read and parse workflow YAML
+		data, err := os.ReadFile(workflowPath)
+		if err != nil {
+			return fmt.Errorf("workflow '%s': failed to read file %s: %w",
+				workflowMeta.Name, workflowPath, err)
+		}
+
+		var wf types.Workflow
+		if err := yaml.Unmarshal(data, &wf); err != nil {
+			return fmt.Errorf("workflow '%s': failed to parse YAML: %w",
+				workflowMeta.Name, err)
+		}
+
+		// Validate workflow
+		if errors := validator.ValidateWorkflow(&wf); len(errors) > 0 {
+			formatted := workflow.FormatValidationErrors(workflowMeta.Name, errors)
+			allErrors = append(allErrors, formatted)
+		}
+	}
+
+	if len(allErrors) > 0 {
+		return fmt.Errorf("provider has invalid workflows:\n%s",
+			strings.Join(allErrors, "\n"))
+	}
+
+	return nil
 }

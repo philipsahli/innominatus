@@ -1,0 +1,175 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-postgres
+  description: Delete PostgreSQL cluster and associated resources
+
+parameters:
+  - name: db_name
+    type: string
+    required: true
+    description: Database cluster name
+
+  - name: namespace
+    type: string
+    required: true
+    description: Namespace where database exists
+
+  - name: team_id
+    type: string
+    required: true
+    description: Team identifier (used in cluster name)
+
+  - name: cleanup_pvcs
+    type: boolean
+    required: false
+    default: true
+    description: Whether to delete PersistentVolumeClaims (data will be lost)
+
+steps:
+  - name: backup-database-info
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLUSTER_NAME="{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+
+        echo "Capturing database information before deletion..."
+
+        # Get cluster info
+        kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE -o yaml > /tmp/postgres-backup-$CLUSTER_NAME.yaml 2>/dev/null || true
+
+        # List PVCs
+        kubectl get pvc -n $NAMESPACE -l application=spilo,cluster-name=$CLUSTER_NAME --no-headers 2>/dev/null || true
+
+        cat <<EOF
+        {
+          "cluster_name": "$CLUSTER_NAME",
+          "namespace": "$NAMESPACE",
+          "backup_file": "/tmp/postgres-backup-$CLUSTER_NAME.yaml"
+        }
+        EOF
+
+  - name: delete-postgres-cluster
+    type: kubernetes
+    config:
+      operation: delete
+      manifest: |
+        apiVersion: "acid.zalan.do/v1"
+        kind: postgresql
+        metadata:
+          name: {{ .parameters.team_id }}-{{ .parameters.db_name }}
+          namespace: {{ .parameters.namespace }}
+
+  - name: wait-for-deletion
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLUSTER_NAME="{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+
+        echo "Waiting for PostgreSQL cluster deletion..."
+
+        for i in {1..60}; do
+          if ! kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE >/dev/null 2>&1; then
+            echo "PostgreSQL cluster deleted successfully"
+            break
+          fi
+          echo "Waiting for deletion... attempt $i/60"
+          sleep 5
+        done
+
+        # Verify deletion
+        if kubectl get postgresql $CLUSTER_NAME -n $NAMESPACE >/dev/null 2>&1; then
+          echo "Warning: PostgreSQL cluster still exists after timeout"
+        fi
+
+  - name: cleanup-pvcs
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLUSTER_NAME="{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+        CLEANUP_PVCS="{{ .parameters.cleanup_pvcs }}"
+
+        if [ "$CLEANUP_PVCS" = "true" ]; then
+          echo "Deleting PersistentVolumeClaims for cluster $CLUSTER_NAME..."
+
+          # Find and delete PVCs associated with this cluster
+          PVCS=$(kubectl get pvc -n $NAMESPACE -l application=spilo,cluster-name=$CLUSTER_NAME -o name 2>/dev/null || true)
+
+          if [ -n "$PVCS" ]; then
+            echo "Found PVCs to delete:"
+            echo "$PVCS"
+
+            for PVC in $PVCS; do
+              echo "Deleting $PVC..."
+              kubectl delete $PVC -n $NAMESPACE --wait=false || true
+            done
+
+            echo "PVC deletion initiated"
+          else
+            echo "No PVCs found for cluster $CLUSTER_NAME"
+          fi
+        else
+          echo "Skipping PVC cleanup (cleanup_pvcs=false)"
+          echo "Note: PVCs will remain and can be reattached to a new cluster"
+        fi
+
+        cat <<EOF
+        {
+          "cleanup_pvcs": "$CLEANUP_PVCS",
+          "status": "completed"
+        }
+        EOF
+
+  - name: cleanup-secrets
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLUSTER_NAME="{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+        NAMESPACE="{{ .parameters.namespace }}"
+
+        echo "Cleaning up secrets for cluster $CLUSTER_NAME..."
+
+        # Find and delete secrets associated with this cluster
+        SECRETS=$(kubectl get secrets -n $NAMESPACE -l application=spilo,cluster-name=$CLUSTER_NAME -o name 2>/dev/null || true)
+
+        if [ -n "$SECRETS" ]; then
+          echo "Found secrets to delete:"
+          echo "$SECRETS"
+
+          for SECRET in $SECRETS; do
+            echo "Deleting $SECRET..."
+            kubectl delete $SECRET -n $NAMESPACE --wait=false || true
+          done
+
+          echo "Secret cleanup completed"
+        else
+          echo "No secrets found for cluster $CLUSTER_NAME"
+        fi
+
+        cat <<EOF
+        {
+          "status": "completed"
+        }
+        EOF
+
+outputs:
+  cluster_name: "{{ .parameters.team_id }}-{{ .parameters.db_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  cleanup_pvcs: "{{ .parameters.cleanup_pvcs }}"
+  status: "deleted"
+  backup_file: "{{ .steps.backup-database-info.output.backup_file }}"

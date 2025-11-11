@@ -8,31 +8,16 @@ import (
 // ===== WorkflowRepository Tests =====
 
 func setupTestRepo(t *testing.T) *WorkflowRepository {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
-	}
-
-	// Initialize schema (creates tables)
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewWorkflowRepository(db)
-	return repo
+	testDB := SetupTestDatabase(t)
+	t.Cleanup(func() { testDB.Close() })
+	return NewWorkflowRepository(testDB.DB)
 }
 
 func TestNewWorkflowRepository(t *testing.T) {
-	db, err := NewDatabase()
-	if err != nil {
-		t.Skipf("Database connection failed: %v", err)
-	}
+	testDB := SetupTestDatabase(t)
+	defer testDB.Close()
 
-	if err := db.InitSchema(); err != nil {
-		t.Skipf("Schema initialization failed: %v", err)
-	}
-
-	repo := NewWorkflowRepository(db)
+	repo := NewWorkflowRepository(testDB.DB)
 	if repo == nil {
 		t.Fatal("NewWorkflowRepository() returned nil")
 	}
@@ -382,11 +367,11 @@ func TestWorkflowRepository_CountWorkflowExecutions(t *testing.T) {
 	_, _ = repo.CreateWorkflowExecution("app2", "deploy", 1)
 
 	tests := []struct {
-		name          string
-		appName       string
-		workflowName  string
-		status        string
-		expectedMin   int64
+		name         string
+		appName      string
+		workflowName string
+		status       string
+		expectedMin  int64
 	}{
 		{"count all", "", "", "", 3},
 		{"count by app", "app1", "", "", 2},

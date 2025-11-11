@@ -10,10 +10,36 @@ compatibility:
   minCoreVersion: 1.0.0
   maxCoreVersion: 2.0.0
 
+capabilities:
+  # New operation-based capability format with CRUD workflows
+  resourceTypeCapabilities:
+    - type: vault-space
+      operations:
+        create:
+          workflow: provision-vault-space
+        delete:
+          workflow: delete-vault-space
+    - type: vault-namespace
+      aliasFor: vault-space
+    - type: secrets
+      aliasFor: vault-space
+
+  # Legacy format for backward compatibility
+  resourceTypes: [vault-space, vault-namespace, secrets]
+
 workflows:
   - name: provision-vault-space
     file: ./workflows/provision-vault-space.yaml
     description: Create Vault namespace with KV engine and Kubernetes auth for VSO
     category: provisioner
+    operation: create
     version: 1.0.0
     tags: [vault, secrets, vso, kubernetes-auth]
+
+  - name: delete-vault-space
+    file: ./workflows/delete-vault-space.yaml
+    description: Delete Vault namespace, KV engine, and auth configuration
+    category: provisioner
+    operation: delete
+    version: 1.0.0
+    tags: [vault, secrets, cleanup]

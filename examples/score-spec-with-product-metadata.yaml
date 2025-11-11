@@ -19,21 +19,21 @@ resources:
   # Database resource for the ecommerce application
   database:
     type: postgres
-    params:
+    properties:
       size: "10GB"
       version: "13"
 
   # Redis cache for session storage
   cache:
     type: redis
-    params:
+    properties:
       memory: "1GB"
       version: "6.2"
 
   # Vault space for secrets management
   secrets:
     type: vault-space
-    params:
+    properties:
       secrets:
         - name: app-config
         - name: database-credentials
@@ -43,7 +43,7 @@ resources:
   # Ingress for external access
   ingress:
     type: route
-    params:
+    properties:
       host: ecommerce.localtest.me
       tls: true
 

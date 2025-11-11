@@ -12,32 +12,15 @@ containers:
 resources:
   dns:
     type: route
-    params:
+    properties:
       hostname: "myapp.example.com"
       port: 80
   storage:
     type: volume
-    params:
+    properties:
       size: "5Gi"
       path: "/var/www/html"
 
 environment:
   type: production
   ttl: 168h  # 1 week
-
-workflows:
-  prepare-env:
-    steps:
-     - name: "Create application repository"
-       type: "gitea-repo"
-       repoName: "sample-app"
-       description: "Sample application repository created via Score orchestrator"
-       private: false
-  deploy-web:
-    steps:
-      - name: terraform-infra
-        type: terraform
-        path: ./terraform/web
-      - name: ansible-config
-        type: ansible
-        playbook: ./ansible/web-config.yml

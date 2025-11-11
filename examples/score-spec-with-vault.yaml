@@ -16,11 +16,11 @@ containers:
 resources:
   db:
     type: postgres
-    params:
+    properties:
       size: small
   secrets:
     type: vault-space
-    params:
+    properties:
       secrets:
         - name: database-credentials
           keys:

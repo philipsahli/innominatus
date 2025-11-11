@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
-import { Bot, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bot, User, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 
 export interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -15,6 +17,7 @@ export interface ChatMessageProps {
 
 export function ChatMessage({ role, content, timestamp, citations }: ChatMessageProps) {
   const isUser = role === 'user';
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // Format ISO timestamp for display
   const formatTimestamp = (ts?: string) => {
@@ -24,6 +27,13 @@ export function ChatMessage({ role, content, timestamp, citations }: ChatMessage
     } catch {
       return ts; // Fallback to original string if parsing fails
     }
+  };
+
+  // Copy code block to clipboard
+  const handleCopyCode = (code: string, blockId: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(blockId);
+    setTimeout(() => setCopiedCode(null), 2000);
   };
 
   return (
@@ -49,6 +59,7 @@ export function ChatMessage({ role, content, timestamp, citations }: ChatMessage
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
               components={{
                 p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
                 ul: ({ children }) => (
@@ -61,23 +72,67 @@ export function ChatMessage({ role, content, timestamp, citations }: ChatMessage
                 h1: ({ children }) => <h1 className="text-xl font-bold mb-2 mt-2">{children}</h1>,
                 h2: ({ children }) => <h2 className="text-lg font-bold mb-2 mt-2">{children}</h2>,
                 h3: ({ children }) => <h3 className="text-base font-bold mb-1 mt-1">{children}</h3>,
-                code: ({ inline, children, ...props }: any) =>
-                  inline ? (
-                    <code
-                      className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-xs font-mono"
-                      {...props}
-                    >
-                      {children}
-                    </code>
-                  ) : (
-                    <code
-                      className="block bg-gray-900 dark:bg-black text-gray-100 p-2 rounded text-xs font-mono overflow-x-auto my-2"
-                      {...props}
-                    >
-                      {children}
-                    </code>
-                  ),
-                pre: ({ children }) => <pre className="my-2">{children}</pre>,
+                code: ({ inline, className, children, ...props }: any) => {
+                  const codeString = String(children).replace(/\n$/, '');
+                  const language = className?.replace(/language-/, '') || '';
+                  const blockId = `code-${Math.random().toString(36).substr(2, 9)}`;
+
+                  if (inline) {
+                    return (
+                      <code
+                        className="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono text-gray-900 dark:text-gray-100"
+                        {...props}
+                      >
+                        {children}
+                      </code>
+                    );
+                  }
+
+                  return (
+                    <div className="relative group my-2">
+                      {language && (
+                        <div className="flex items-center justify-between bg-gray-800 dark:bg-black px-3 py-1 rounded-t text-xs">
+                          <span className="text-gray-400 font-mono">{language}</span>
+                          <button
+                            onClick={() => handleCopyCode(codeString, blockId)}
+                            className="text-gray-400 hover:text-gray-200 transition-colors"
+                            title="Copy code"
+                          >
+                            {copiedCode === blockId ? (
+                              <Check className="w-4 h-4" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      )}
+                      <code
+                        className={cn(
+                          'block bg-gray-900 dark:bg-black text-gray-100 p-3 text-xs font-mono overflow-x-auto',
+                          language ? 'rounded-b' : 'rounded',
+                          !language && 'relative'
+                        )}
+                        {...props}
+                      >
+                        {!language && (
+                          <button
+                            onClick={() => handleCopyCode(codeString, blockId)}
+                            className="absolute top-2 right-2 text-gray-400 hover:text-gray-200 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Copy code"
+                          >
+                            {copiedCode === blockId ? (
+                              <Check className="w-4 h-4" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+                        {children}
+                      </code>
+                    </div>
+                  );
+                },
+                pre: ({ children }) => <>{children}</>,
                 blockquote: ({ children }) => (
                   <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-3 italic my-2">
                     {children}

@@ -151,7 +151,7 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 	query := `
 		SELECT id, application_name, resource_name, resource_type, state, health_status,
 		       configuration, provider_id, provider_metadata, type, provider, reference_url,
-		       external_state, last_sync, created_at, updated_at, last_health_check, error_message, hints
+		       external_state, last_sync, workflow_execution_id, created_at, updated_at, last_health_check, error_message, hints
 		FROM resource_instances WHERE application_name = $1 ORDER BY created_at ASC`
 
 	rows, err := r.db.db.Query(query, applicationName)
@@ -170,7 +170,7 @@ func (r *ResourceRepository) ListResourceInstances(applicationName string) ([]*R
 			&resource.ResourceType, &resource.State, &resource.HealthStatus,
 			&configJSON, &resource.ProviderID, &providerMetadataJSON,
 			&resource.Type, &resource.Provider, &resource.ReferenceURL,
-			&resource.ExternalState, &resource.LastSync,
+			&resource.ExternalState, &resource.LastSync, &resource.WorkflowExecutionID,
 			&resource.CreatedAt, &resource.UpdatedAt, &resource.LastHealthCheck,
 			&resource.ErrorMessage, &hintsJSON)
 

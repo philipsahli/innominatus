@@ -127,6 +127,44 @@ func (a *OIDCAuthenticator) Exchange(ctx context.Context, code string) (*oauth2.
 	return a.oauth2Config.Exchange(ctx, code)
 }
 
+// ExchangeWithPKCE exchanges the authorization code for a token using PKCE
+// This is used by CLI clients that perform PKCE authentication
+// SECURITY: Validates redirect URI to prevent authorization code interception
+func (a *OIDCAuthenticator) ExchangeWithPKCE(ctx context.Context, code, codeVerifier, redirectURI string) (*oauth2.Token, error) {
+	if !a.enabled {
+		return nil, fmt.Errorf("OIDC not enabled")
+	}
+
+	// SECURITY: Validate redirect URI (whitelist for CLI usage)
+	// Only allow localhost URIs to prevent authorization code theft
+	allowedRedirectURIs := []string{
+		"http://127.0.0.1:8082/callback", // CLI callback server
+		"http://localhost:8082/callback", // localhost alias
+	}
+
+	if redirectURI != "" {
+		isValid := false
+		for _, allowed := range allowedRedirectURIs {
+			if redirectURI == allowed {
+				isValid = true
+				break
+			}
+		}
+		if !isValid {
+			return nil, fmt.Errorf("invalid redirect URI: %s (must be localhost:8082)", redirectURI)
+		}
+	}
+
+	// Create a temporary config with the validated CLI redirect URI
+	config := *a.oauth2Config
+	if redirectURI != "" {
+		config.RedirectURL = redirectURI
+	}
+
+	// Exchange code for token with PKCE code_verifier parameter
+	return config.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
+}
+
 // VerifyIDToken verifies and parses the ID token
 func (a *OIDCAuthenticator) VerifyIDToken(ctx context.Context, rawIDToken string) (*UserInfo, error) {
 	if !a.enabled {

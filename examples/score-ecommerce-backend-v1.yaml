@@ -1,0 +1,25 @@
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: ecommerce-backend
+
+containers:
+  main:
+    image: myorg/ecommerce-backend:v1.0.0
+    env:
+      # Database credentials injected automatically
+      DATABASE_HOST: ${resources.db.host}
+      DATABASE_PORT: ${resources.db.port}
+      DATABASE_NAME: ${resources.db.database_name}
+      DATABASE_USER: ${resources.db.username}
+      DATABASE_PASSWORD: ${resources.db.password}
+      DATABASE_URL: ${resources.db.connection_string}
+
+resources:
+  # PostgreSQL database - provisioned by database-team provider
+  db:
+    type: postgres
+    properties:
+      version: "15"
+      size: "medium"
+      replicas: 2

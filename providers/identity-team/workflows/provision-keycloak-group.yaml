@@ -20,7 +20,7 @@ steps:
   - name: create-group
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 

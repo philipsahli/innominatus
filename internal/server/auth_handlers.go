@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"innominatus/internal/auth"
 	"innominatus/internal/users"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // HandleLogin handles the login page and authentication
@@ -434,7 +437,13 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request, userna
 			found = true
 			// Update user fields
 			if request.Password != nil {
-				store.Users[i].Password = *request.Password // Note: Consider hashing in production
+				// SECURITY: Hash password with bcrypt before storage
+				hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*request.Password), bcrypt.DefaultCost)
+				if err != nil {
+					http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+					return
+				}
+				store.Users[i].Password = string(hashedPassword)
 			}
 			if request.Team != nil {
 				store.Users[i].Team = *request.Team
@@ -999,4 +1008,121 @@ func determineRole(roles []string) string {
 		}
 	}
 	return "user"
+}
+
+// HandleOIDCConfig returns OIDC configuration for CLI authentication
+func (s *Server) HandleOIDCConfig(w http.ResponseWriter, r *http.Request) {
+	if s.oidcAuthenticator == nil || !s.oidcAuthenticator.IsEnabled() {
+		http.Error(w, "OIDC authentication not enabled", http.StatusNotFound)
+		return
+	}
+
+	// Get authorization URL without state (CLI will add its own state/PKCE params)
+	authURL := s.oidcAuthenticator.AuthCodeURL("")
+	// Remove the state parameter from URL since CLI will add its own
+	if idx := strings.Index(authURL, "&state="); idx != -1 {
+		authURL = authURL[:idx]
+	}
+
+	config := map[string]interface{}{
+		"enabled":   true,
+		"auth_url":  authURL,
+		"client_id": getClientID(s.oidcAuthenticator),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(config)
+}
+
+// HandleOIDCTokenExchange handles PKCE token exchange from CLI
+func (s *Server) HandleOIDCTokenExchange(w http.ResponseWriter, r *http.Request) {
+	if s.oidcAuthenticator == nil || !s.oidcAuthenticator.IsEnabled() {
+		http.Error(w, "OIDC authentication not enabled", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Code         string `json:"code"`
+		CodeVerifier string `json:"code_verifier"`
+		RedirectURI  string `json:"redirect_uri"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" || req.CodeVerifier == "" {
+		http.Error(w, "Missing required parameters", http.StatusBadRequest)
+		return
+	}
+
+	// Exchange authorization code for token with PKCE verifier
+	ctx := r.Context()
+	oauth2Token, err := s.oidcAuthenticator.ExchangeWithPKCE(ctx, req.Code, req.CodeVerifier, req.RedirectURI)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to exchange token: %v\n", err)
+		http.Error(w, "Token exchange failed", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract and verify ID token
+	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
+	if !ok {
+		http.Error(w, "No ID token in response", http.StatusInternalServerError)
+		return
+	}
+
+	userInfo, err := s.oidcAuthenticator.VerifyIDToken(ctx, rawIDToken)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to verify ID token: %v\n", err)
+		http.Error(w, "Token verification failed", http.StatusUnauthorized)
+		return
+	}
+
+	// Use preferred_username or email as username
+	username := userInfo.PreferredUsername
+	if username == "" {
+		username = userInfo.Email
+	}
+
+	// Create temporary session for API key generation
+	user := &users.User{
+		Username: username,
+		Team:     "oidc-users",
+		Role:     determineRole(userInfo.Roles),
+	}
+
+	session, err := s.sessionManager.CreateSession(user)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create session: %v\n", err)
+		http.Error(w, "Session creation failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Return access token (session ID) and username
+	response := map[string]interface{}{
+		"access_token": session.ID,
+		"token_type":   "Bearer",
+		"username":     username,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getClientID extracts client ID from OIDC authenticator (helper function)
+func getClientID(authenticator *auth.OIDCAuthenticator) string {
+	// This is a bit of a hack since we don't expose the oauth2Config
+	// but we can extract it from the AuthCodeURL
+	authURL := authenticator.AuthCodeURL("dummy")
+	if idx := strings.Index(authURL, "client_id="); idx != -1 {
+		start := idx + len("client_id=")
+		end := strings.Index(authURL[start:], "&")
+		if end == -1 {
+			return authURL[start:]
+		}
+		return authURL[start : start+end]
+	}
+	return ""
 }

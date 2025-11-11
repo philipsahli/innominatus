@@ -59,6 +59,23 @@ func (s *Service) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, err
 	// Build system prompt with tool awareness
 	systemPrompt := buildSystemPromptWithTools()
 
+	// Fetch and inject current user context if auth token is available
+	if req.AuthToken != "" {
+		executor := NewToolExecutor("http://localhost:8081", req.AuthToken)
+		userInfo, err := executor.getCurrentUser(ctx)
+		if err == nil {
+			systemPrompt += "\n\n**Current User Context:**\n" +
+				"You are currently assisting the following user:\n" +
+				userInfo + "\n\n" +
+				"All tool executions will be performed with this user's permissions and identity. " +
+				"If the user attempts an action they don't have permission for, the tool will fail with an authorization error."
+		} else {
+			log.Warn().
+				Err(err).
+				Msg("Failed to fetch current user context for AI assistant")
+		}
+	}
+
 	// Prepare initial messages with context
 	contextMessage := ragResponse.Context
 	if contextMessage != "" {

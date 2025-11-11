@@ -133,13 +133,18 @@ func (kl *KnowledgeLoader) loadDocs() ([]Document, error) {
 
 	// Exclude patterns to reduce token usage
 	excludePatterns := []string{
+		"_internal",                    // Internal docs not for users
 		"saas-agent-architecture.md",   // Very large file (1928 lines)
 		"kubernetes-deployment.md",     // Large deployment guide
 		"tool-calling-architecture.md", // Large technical doc
+		"archive",                      // Archived files not needed in RAG
 	}
 
-	// Maximum file size in bytes (roughly 2000 lines)
-	maxFileSize := int64(100000) // ~100KB
+	// Maximum file size in bytes to stay within embedding token limits
+	// OpenAI text-embedding-3-small has 8192 token limit
+	// Estimate 1 token ≈ 4 bytes, so 8192 tokens ≈ 32KB
+	// Use 20KB limit to be conservative
+	maxFileSize := int64(20000) // ~20KB (~5000 tokens)
 
 	err := filepath.Walk(kl.docsPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -241,6 +246,14 @@ func (kl *KnowledgeLoader) loadWorkflows() ([]Document, error) {
 		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
 			// Get relative path from workflows root
 			relPath, _ := filepath.Rel(kl.workflowsPath, path)
+
+			// Skip archived workflow files
+			if strings.Contains(relPath, "archive/") || strings.Contains(relPath, "archive\\") {
+				log.Debug().
+					Str("file", relPath).
+					Msg("Skipping archived workflow file")
+				return nil
+			}
 
 			// #nosec G304 - File path comes from filepath.Walk within trusted workflows directory
 			content, err := os.ReadFile(path)

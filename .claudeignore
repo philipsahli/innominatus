@@ -1,0 +1,67 @@
+# Build artifacts and binaries
+dist/
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+innominatus
+innominatus-ctl
+main
+web-ui/out/
+
+# Dependencies
+node_modules/
+vendor/
+web-ui/.next/
+
+# Test outputs and reports
+coverage/
+test-results/
+web-ui/test-results/
+playwright-report/
+web-ui/playwright-report/
+*.test.log
+*.coverage
+
+# Terraform state and cache
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Temporary files
+tmp/
+.tmp/
+*.tmp
+.env.local
+*.swp
+*.swo
+*~
+
+# IDE and editor files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Git internals
+.git/
+
+# Docker volumes
+.docker/
+
+# Generated documentation
+web-ui/.docusaurus/

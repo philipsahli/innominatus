@@ -1,0 +1,99 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-vault-space
+  description: Delete Vault namespace, KV engine, and auth configuration
+
+parameters:
+  - name: app_name
+    type: string
+    required: true
+    description: Application name (used for vault path)
+
+  - name: namespace
+    type: string
+    required: true
+    description: Kubernetes namespace
+
+  - name: force
+    type: boolean
+    required: false
+    default: false
+    description: Force delete even if secrets exist
+
+steps:
+  - name: delete-role
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        echo "🗑️  Deleting Vault role for {{ .parameters.app_name }}..."
+
+        # Delete Vault role
+        vault delete auth/kubernetes/role/{{ .parameters.app_name }} || echo "Role may not exist"
+
+        echo "✅ Vault role deleted"
+
+  - name: delete-policy
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        echo "🗑️  Deleting Vault policy for {{ .parameters.app_name }}..."
+
+        # Delete policy
+        vault policy delete {{ .parameters.app_name }} || echo "Policy may not exist"
+
+        echo "✅ Vault policy deleted"
+
+  - name: delete-kv-engine
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        export VAULT_ADDR=http://vault.localtest.me
+        export VAULT_TOKEN=root
+
+        echo "🗑️  Deleting KV engine for {{ .parameters.app_name }}..."
+
+        {{ if not .parameters.force }}
+        # Check if secrets exist
+        SECRET_COUNT=$(vault kv list -format=json secret/{{ .parameters.app_name }} 2>/dev/null | jq '. | length' || echo "0")
+        if [ "$SECRET_COUNT" -gt 0 ]; then
+          echo "❌ KV engine contains $SECRET_COUNT secrets. Use force=true to delete anyway"
+          exit 1
+        fi
+        {{ end }}
+
+        # Disable secrets engine
+        vault secrets disable secret/{{ .parameters.app_name }} || echo "KV engine may not exist"
+
+        echo "✅ KV engine deleted"
+
+  - name: delete-vso-secret
+    type: kubernetes
+    config:
+      operation: delete
+      manifest: |
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: {{ .parameters.app_name }}-vault-auth
+          namespace: {{ .parameters.namespace }}
+
+outputs:
+  app_name: "{{ .parameters.app_name }}"
+  namespace: "{{ .parameters.namespace }}"
+  deleted: "true"

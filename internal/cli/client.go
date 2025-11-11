@@ -603,3 +603,14 @@ func (c *Client) GetGoldenPaths() (map[string]*GoldenPathInfo, error) {
 	}
 	return paths, nil
 }
+
+// DeploySpec deploys a Score specification (alias for Deploy)
+func (c *Client) DeploySpec(yamlContent []byte) error {
+	_, err := c.Deploy(yamlContent)
+	return err
+}
+
+// GetAPIKey returns the current API key/token
+func (c *Client) GetAPIKey() string {
+	return c.token
+}

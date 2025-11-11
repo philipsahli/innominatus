@@ -213,6 +213,59 @@ export function WorkflowDetailView({ workflowId }: { workflowId: string }) {
             </div>
           </div>
 
+          {/* Progress Indicator for Running Workflows */}
+          {workflowDetail.status === 'running' && workflowDetail.steps && (
+            <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950">
+              <CardContent className="pt-6">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                      <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                        Workflow Executing
+                      </span>
+                    </div>
+                    <span className="text-sm text-blue-700 dark:text-blue-300">
+                      {workflowDetail.steps.filter((s) => s.status === 'completed').length} /{' '}
+                      {workflowDetail.steps.length} steps completed
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${(workflowDetail.steps.filter((s) => s.status === 'completed').length / workflowDetail.steps.length) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  {(() => {
+                    const runningStep = workflowDetail.steps.find((s) => s.status === 'running');
+                    if (runningStep) {
+                      const elapsedMs = runningStep.started_at
+                        ? Date.now() - new Date(runningStep.started_at).getTime()
+                        : 0;
+                      const elapsedSec = Math.floor(elapsedMs / 1000);
+                      return (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-blue-700 dark:text-blue-300">
+                            Currently executing:
+                          </span>
+                          <span className="font-medium text-blue-900 dark:text-blue-100">
+                            Step {runningStep.step_number} - {runningStep.step_name}
+                          </span>
+                          <span className="text-blue-600 dark:text-blue-400">
+                            ({elapsedSec}s elapsed)
+                          </span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Status Overview */}
           <div className="grid gap-4 md:grid-cols-4">
             <Card>
@@ -293,16 +346,50 @@ export function WorkflowDetailView({ workflowId }: { workflowId: string }) {
                         </div>
                       </div>
 
-                      {step.output_logs && (
+                      {/* Error Message for Failed Steps */}
+                      {step.status === 'failed' && step.error_message && (
+                        <div className="mt-3">
+                          <h5 className="text-sm font-medium mb-2 text-red-600 dark:text-red-400">
+                            Error Details:
+                          </h5>
+                          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                            <p className="text-sm text-red-600 dark:text-red-300">
+                              {step.error_message}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Output Logs */}
+                      {step.output_logs ? (
                         <div className="mt-3">
                           <h5 className="text-sm font-medium mb-2">Output:</h5>
                           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 max-h-64 overflow-y-auto">
-                            <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                            <pre className="text-xs text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-mono">
                               {step.output_logs}
                             </pre>
                           </div>
                         </div>
-                      )}
+                      ) : step.status === 'failed' ? (
+                        <div className="mt-3">
+                          <h5 className="text-sm font-medium mb-2">Output:</h5>
+                          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                              No logs available. Step may have failed before producing output. Check
+                              error message above.
+                            </p>
+                          </div>
+                        </div>
+                      ) : step.status === 'completed' && !step.output_logs ? (
+                        <div className="mt-3">
+                          <h5 className="text-sm font-medium mb-2">Output:</h5>
+                          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                              No output (step completed successfully without producing logs)
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

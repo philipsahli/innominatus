@@ -9,7 +9,18 @@ import { ChatInput } from '@/components/ai/chat-input';
 import { SpecPreview } from '@/components/ai/spec-preview';
 import { Alert } from '@/components/ui/alert';
 import { api, AIChatResponse, AIGenerateSpecResponse, ConversationMessage } from '@/lib/api';
-import { Bot, Sparkles, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Bot,
+  Sparkles,
+  AlertCircle,
+  RefreshCw,
+  Trash2,
+  CheckCircle,
+  X,
+  ExternalLink,
+  Network,
+} from 'lucide-react';
+import yaml from 'js-yaml';
 
 interface Message {
   id: string;
@@ -26,6 +37,23 @@ interface GeneratedSpec {
   citations?: string[];
 }
 
+interface DeploymentError {
+  type: 'api_error' | 'network_error' | 'validation_error';
+  message: string;
+  spec: string;
+  timestamp: string;
+  details?: string;
+}
+
+interface DeploymentSuccess {
+  appName: string;
+  message: string;
+  links: {
+    apps: string;
+    graph: string;
+  };
+}
+
 export default function AIAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,6 +65,8 @@ export default function AIAssistantPage() {
     documents_loaded?: number;
   } | null>(null);
   const [generatedSpec, setGeneratedSpec] = useState<GeneratedSpec | null>(null);
+  const [deploymentError, setDeploymentError] = useState<DeploymentError | null>(null);
+  const [deploymentSuccess, setDeploymentSuccess] = useState<DeploymentSuccess | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -163,8 +193,62 @@ export default function AIAssistantPage() {
   };
 
   const handleDeploy = async (spec: string) => {
-    // TODO: Implement deployment via API
-    alert('Deployment feature coming soon! For now, download the spec and deploy manually.');
+    setLoading(true);
+    setDeploymentError(null);
+    setDeploymentSuccess(null);
+
+    try {
+      // Extract app name from spec YAML
+      let appName = 'unknown-app';
+      try {
+        const parsedSpec = yaml.load(spec) as any;
+        appName = parsedSpec?.metadata?.name || 'unknown-app';
+      } catch (parseError) {
+        setDeploymentError({
+          type: 'validation_error',
+          message: 'Failed to parse Score specification',
+          spec: spec,
+          timestamp: new Date().toISOString(),
+          details: parseError instanceof Error ? parseError.message : 'Invalid YAML format',
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Deploy via API
+      const response = await api.deployApplication(spec);
+
+      if (response.success) {
+        setDeploymentSuccess({
+          appName,
+          message: `Successfully deployed ${appName}`,
+          links: {
+            apps: '/apps',
+            graph: `/graph/${appName}`,
+          },
+        });
+      } else {
+        setDeploymentError({
+          type: 'api_error',
+          message: response.error || 'Deployment failed',
+          spec: spec,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      setDeploymentError({
+        type: 'network_error',
+        message: err instanceof Error ? err.message : 'Unknown error occurred',
+        spec: spec,
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyError = (error: string) => {
+    navigator.clipboard.writeText(error);
   };
 
   const handleClearChat = () => {
@@ -304,6 +388,111 @@ export default function AIAssistantPage() {
                   citations={generatedSpec.citations}
                   onDeploy={handleDeploy}
                 />
+              )}
+
+              {/* Deployment Error Pane */}
+              {deploymentError && (
+                <Card className="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+                        <CardTitle className="text-base text-red-900 dark:text-red-400">
+                          Deployment Failed
+                        </CardTitle>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeploymentError(null)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-red-800 dark:text-red-300">
+                      {deploymentError.message}
+                    </p>
+                    {deploymentError.details && (
+                      <pre className="text-xs bg-red-100 dark:bg-red-900/30 p-2 rounded overflow-x-auto text-red-900 dark:text-red-200">
+                        {deploymentError.details}
+                      </pre>
+                    )}
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDeploy(deploymentError.spec)}
+                        className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Retry Deployment
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          handleCopyError(
+                            `Error: ${deploymentError.message}\n${deploymentError.details || ''}\nTimestamp: ${deploymentError.timestamp}`
+                          )
+                        }
+                        className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                      >
+                        Copy Error
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Deployment Success Pane */}
+              {deploymentSuccess && (
+                <Card className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/20">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        <CardTitle className="text-base text-green-900 dark:text-green-400">
+                          Deployment Successful
+                        </CardTitle>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeploymentSuccess(null)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-green-800 dark:text-green-300">
+                      {deploymentSuccess.message}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => (window.location.href = deploymentSuccess.links.apps)}
+                        className="bg-green-600 hover:bg-green-700 text-white dark:bg-green-700 dark:hover:bg-green-600"
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        View Applications
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => (window.location.href = deploymentSuccess.links.graph)}
+                        className="border-green-300 text-green-700 hover:bg-green-100 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-900/20"
+                      >
+                        <Network className="h-3 w-3 mr-1" />
+                        View Graph
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
 
               {/* Quick Actions */}

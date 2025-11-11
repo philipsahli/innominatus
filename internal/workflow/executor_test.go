@@ -211,6 +211,25 @@ func (m *MockWorkflowRepository) ReconstructWorkflowFromExecution(executionID in
 	return nil, fmt.Errorf("not implemented in mock")
 }
 
+func (m *MockWorkflowRepository) AddWorkflowStepLogs(stepID int64, logs string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	step, exists := m.steps[stepID]
+	if !exists {
+		return fmt.Errorf("step not found: %d", stepID)
+	}
+
+	if step.OutputLogs == nil {
+		step.OutputLogs = &logs
+	} else {
+		combined := *step.OutputLogs + logs
+		step.OutputLogs = &combined
+	}
+
+	return nil
+}
+
 // Helper to get timing information for parallel verification
 func (m *MockWorkflowRepository) GetStepOverlap(step1ID, step2ID int64) time.Duration {
 	m.mu.Lock()
@@ -249,7 +268,7 @@ func TestParallelExecutionTiming(t *testing.T) {
 	executor := NewWorkflowExecutor(repo)
 
 	// Register a test step executor that sleeps for a defined duration
-	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		duration := 100 * time.Millisecond
 		if step.Timeout > 0 {
 			duration = time.Duration(step.Timeout) * time.Millisecond
@@ -294,7 +313,7 @@ func TestSequentialExecution(t *testing.T) {
 	repo := NewMockWorkflowRepository()
 	executor := NewWorkflowExecutor(repo)
 
-	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(50 * time.Millisecond)
 		return nil
 	}
@@ -328,7 +347,7 @@ func TestMixedParallelSequential(t *testing.T) {
 	repo := NewMockWorkflowRepository()
 	executor := NewWorkflowExecutor(repo)
 
-	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		duration := 50 * time.Millisecond
 		if step.Timeout > 0 {
 			duration = time.Duration(step.Timeout) * time.Millisecond
@@ -369,7 +388,7 @@ func TestParallelGroups(t *testing.T) {
 	repo := NewMockWorkflowRepository()
 	executor := NewWorkflowExecutor(repo)
 
-	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(50 * time.Millisecond)
 		return nil
 	}
@@ -405,7 +424,7 @@ func TestParallelErrorHandling(t *testing.T) {
 	repo := NewMockWorkflowRepository()
 	executor := NewWorkflowExecutor(repo)
 
-	executor.stepExecutors["test-error"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-error"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		if step.Name == "failing-step" {
 			time.Sleep(10 * time.Millisecond)
 			return fmt.Errorf("intentional test error")
@@ -507,7 +526,7 @@ func TestParallelExecutionCompletes(t *testing.T) {
 	completedSteps := make(map[string]bool)
 	var mu sync.Mutex
 
-	executor.stepExecutors["test-track"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-track"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(30 * time.Millisecond)
 		mu.Lock()
 		completedSteps[step.Name] = true
@@ -547,7 +566,7 @@ func TestNoParallelFieldsUsesSequential(t *testing.T) {
 	repo := NewMockWorkflowRepository()
 	executor := NewWorkflowExecutor(repo)
 
-	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64) error {
+	executor.stepExecutors["test-sleep"] = func(ctx context.Context, step types.Step, appName string, execID int64, stepID int64) error {
 		time.Sleep(50 * time.Millisecond)
 		return nil
 	}

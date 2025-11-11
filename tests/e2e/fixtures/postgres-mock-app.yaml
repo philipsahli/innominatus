@@ -1,0 +1,21 @@
+apiVersion: score.dev/v1b1
+metadata:
+  name: demo-app-mock
+containers:
+  backend:
+    image: nginx:latest
+    env:
+      DATABASE_URL: ${resources.database.connection_string}
+      DB_USER: ${resources.database.username}
+      DB_PASSWORD: ${resources.database.password}
+      DB_NAME: ${resources.database.database_name}
+resources:
+  database:
+    type: postgres-mock
+    properties:
+      db_name: demo_db
+      namespace: demo-namespace
+      team_id: demo-team
+      size: small
+      replicas: 2
+      version: "15"

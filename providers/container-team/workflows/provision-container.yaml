@@ -1,0 +1,367 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: provision-container
+  description: Complete GitOps deployment flow - creates namespace, Git repo, generates K8s manifests, and provisions ArgoCD app
+
+parameters:
+  # Application metadata
+  - name: app_name
+    type: string
+    required: true
+    description: Application name
+
+  - name: namespace_name
+    type: string
+    required: false
+    default: "{{ .parameters.app_name }}"
+    description: Kubernetes namespace (defaults to app_name)
+
+  - name: team_id
+    type: string
+    required: true
+    description: Team identifier for ownership
+
+  # Container configuration
+  - name: container_image
+    type: string
+    required: true
+    description: Container image (e.g., nginx:latest)
+
+  - name: container_env
+    type: object
+    required: false
+    default: {}
+    description: Environment variables as key-value pairs
+
+  - name: container_port
+    type: number
+    required: false
+    default: 8080
+    description: Container port to expose
+
+  # Service configuration
+  - name: service_type
+    type: string
+    required: false
+    default: "ClusterIP"
+    description: Kubernetes Service type (ClusterIP, NodePort, LoadBalancer)
+
+  - name: service_port
+    type: number
+    required: false
+    default: 80
+    description: Service port
+
+  # Resource quotas
+  - name: cpu_request
+    type: string
+    required: false
+    default: "100m"
+    description: CPU request
+
+  - name: memory_request
+    type: string
+    required: false
+    default: "128Mi"
+    description: Memory request
+
+  - name: cpu_limit
+    type: string
+    required: false
+    default: "500m"
+    description: CPU limit
+
+  - name: memory_limit
+    type: string
+    required: false
+    default: "512Mi"
+    description: Memory limit
+
+  # Gitea configuration
+  - name: gitea_url
+    type: string
+    required: false
+    default: "http://gitea.localtest.me"
+    description: Gitea base URL
+
+  - name: gitea_org
+    type: string
+    required: false
+    default: "platform"
+    description: Gitea organization name
+
+  - name: gitea_token
+    type: string
+    required: false
+    description: Gitea API token from environment variable GITEA_TOKEN
+
+  # ArgoCD configuration
+  - name: argocd_namespace
+    type: string
+    required: false
+    default: "argocd"
+    description: ArgoCD installation namespace
+
+  - name: argocd_project
+    type: string
+    required: false
+    default: "default"
+    description: ArgoCD project name
+
+  - name: sync_policy
+    type: string
+    required: false
+    default: "automated"
+    description: ArgoCD sync policy (automated or manual)
+
+steps:
+  # Step 1: Create Kubernetes namespace
+  - name: create-namespace
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ .parameters.namespace_name }}
+          labels:
+            app: {{ .parameters.app_name }}
+            team: {{ .parameters.team_id }}
+            managed-by: innominatus
+
+  # Step 2: Create Git repository in Gitea
+  - name: create-git-repo
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        GITEA_URL="{{ .parameters.gitea_url }}"
+        GITEA_ORG="{{ .parameters.gitea_org }}"
+        GITEA_TOKEN="${GITEA_TOKEN:-{{ .parameters.gitea_token }}}"
+        REPO_NAME="{{ .parameters.app_name }}"
+
+        echo "Creating Git repository: $GITEA_ORG/$REPO_NAME"
+
+        # Check if repository already exists
+        REPO_CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: token $GITEA_TOKEN" \
+          "$GITEA_URL/api/v1/repos/$GITEA_ORG/$REPO_NAME")
+
+        if [ "$REPO_CHECK" = "200" ]; then
+          echo "Repository already exists, skipping creation"
+          REPO_URL="$GITEA_URL/$GITEA_ORG/$REPO_NAME"
+          CLONE_URL="$GITEA_URL/$GITEA_ORG/$REPO_NAME.git"
+        else
+          # Create repository
+          RESPONSE=$(curl -s -X POST "$GITEA_URL/api/v1/orgs/$GITEA_ORG/repos" \
+            -H "Authorization: token $GITEA_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"name\": \"$REPO_NAME\",
+              \"description\": \"GitOps repository for {{ .parameters.app_name }}\",
+              \"private\": false,
+              \"auto_init\": true,
+              \"default_branch\": \"main\"
+            }")
+
+          REPO_URL=$(echo "$RESPONSE" | jq -r '.html_url')
+          CLONE_URL=$(echo "$RESPONSE" | jq -r '.clone_url')
+          echo "Repository created: $REPO_URL"
+        fi
+
+        # Output as JSON
+        cat <<EOF
+        {
+          "repo_url": "$REPO_URL",
+          "clone_url": "$CLONE_URL",
+          "repo_name": "$REPO_NAME",
+          "org_name": "$GITEA_ORG"
+        }
+        EOF
+
+  # Step 3: Generate and commit Kubernetes manifests to Git repo
+  - name: generate-manifests
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        CLONE_URL="{{ .steps.create-git-repo.output.clone_url }}"
+        REPO_NAME="{{ .steps.create-git-repo.output.repo_name }}"
+        NAMESPACE="{{ .parameters.namespace_name }}"
+        APP_NAME="{{ .parameters.app_name }}"
+        CONTAINER_IMAGE="{{ .parameters.container_image }}"
+        GITEA_TOKEN="${GITEA_TOKEN:-{{ .parameters.gitea_token }}}"
+
+        echo "Generating Kubernetes manifests for $APP_NAME"
+
+        # Create temporary directory
+        TEMP_DIR=$(mktemp -d)
+        cd "$TEMP_DIR"
+
+        # Clone repository (using token for authentication)
+        CLONE_URL_WITH_AUTH=$(echo "$CLONE_URL" | sed "s|://|://$GITEA_TOKEN:x-oauth-basic@|")
+        git clone "$CLONE_URL_WITH_AUTH" repo
+        cd repo
+
+        # Configure git
+        git config user.name "Innominatus"
+        git config user.email "innominatus@platform.local"
+
+        # Create manifests directory
+        mkdir -p manifests
+
+        # Generate Deployment manifest
+        cat > manifests/deployment.yaml <<EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: $APP_NAME
+          namespace: $NAMESPACE
+          labels:
+            app: $APP_NAME
+            managed-by: innominatus
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: $APP_NAME
+          template:
+            metadata:
+              labels:
+                app: $APP_NAME
+            spec:
+              containers:
+              - name: main
+                image: $CONTAINER_IMAGE
+                ports:
+                - containerPort: {{ .parameters.container_port }}
+                  name: http
+                  protocol: TCP
+                resources:
+                  requests:
+                    cpu: {{ .parameters.cpu_request }}
+                    memory: {{ .parameters.memory_request }}
+                  limits:
+                    cpu: {{ .parameters.cpu_limit }}
+                    memory: {{ .parameters.memory_limit }}
+                # env: variables will be added by ArgoCD/application
+        EOF
+
+        # Note: Environment variables from Score spec (container_env parameter)
+        # should be added via ConfigMap or Secret and referenced in the Deployment
+        # For now, we create a basic deployment. Future enhancement: generate ConfigMap.
+
+        # Generate Service manifest
+        cat > manifests/service.yaml <<EOF
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: $APP_NAME
+          namespace: $NAMESPACE
+          labels:
+            app: $APP_NAME
+            managed-by: innominatus
+        spec:
+          type: {{ .parameters.service_type }}
+          selector:
+            app: $APP_NAME
+          ports:
+          - port: {{ .parameters.service_port }}
+            targetPort: {{ .parameters.container_port }}
+            protocol: TCP
+            name: http
+        EOF
+
+        # Commit and push manifests
+        git add manifests/
+        git commit -m "Add Kubernetes manifests for $APP_NAME
+
+        Generated by innominatus container-team provider
+        - Deployment with $CONTAINER_IMAGE
+        - Service on port {{ .parameters.service_port }}
+        - Namespace: $NAMESPACE"
+
+        git push origin main
+
+        COMMIT_SHA=$(git rev-parse HEAD)
+
+        echo "Manifests committed: $COMMIT_SHA"
+
+        # Cleanup
+        cd /
+        rm -rf "$TEMP_DIR"
+
+        # Output
+        cat <<EOF
+        {
+          "manifest_path": "manifests",
+          "commit_sha": "$COMMIT_SHA",
+          "deployment_file": "manifests/deployment.yaml",
+          "service_file": "manifests/service.yaml"
+        }
+        EOF
+
+  # Step 4: Create ArgoCD application
+  - name: create-argocd-app
+    type: argocd-app
+    config:
+      app_name: "{{ .parameters.app_name }}"
+      namespace: "{{ .parameters.namespace_name }}"
+      repo_url: "{{ .steps.create-git-repo.output.repo_url }}.git"
+      path: "manifests"
+      dest_namespace: "{{ .parameters.namespace_name }}"
+      project: "{{ .parameters.argocd_project }}"
+      sync_policy: "{{ .parameters.sync_policy }}"
+      auto_sync: true
+      prune: true
+      self_heal: true
+
+  # Step 5: Wait for ArgoCD sync
+  - name: wait-for-sync
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        APP_NAME="{{ .parameters.app_name }}"
+        ARGOCD_NAMESPACE="{{ .parameters.argocd_namespace }}"
+
+        echo "Waiting for ArgoCD application to sync..."
+
+        for i in {1..60}; do
+          SYNC_STATUS=$(kubectl get application "$APP_NAME" -n "$ARGOCD_NAMESPACE" \
+            -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+
+          HEALTH_STATUS=$(kubectl get application "$APP_NAME" -n "$ARGOCD_NAMESPACE" \
+            -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+
+          echo "Sync: $SYNC_STATUS, Health: $HEALTH_STATUS (attempt $i/60)"
+
+          if [ "$SYNC_STATUS" = "Synced" ] && [ "$HEALTH_STATUS" = "Healthy" ]; then
+            echo "Application synced and healthy!"
+            exit 0
+          fi
+
+          sleep 10
+        done
+
+        echo "Warning: Application did not become healthy within 10 minutes"
+        echo "Current status: Sync=$SYNC_STATUS, Health=$HEALTH_STATUS"
+        exit 1
+
+outputs:
+  namespace: "{{ .parameters.namespace_name }}"
+  app_name: "{{ .parameters.app_name }}"
+  repo_url: "{{ .steps.create-git-repo.output.repo_url }}"
+  clone_url: "{{ .steps.create-git-repo.output.clone_url }}"
+  manifest_path: "{{ .steps.generate-manifests.output.manifest_path }}"
+  commit_sha: "{{ .steps.generate-manifests.output.commit_sha }}"
+  argocd_app: "{{ .parameters.app_name }}"
+  deployment_status: "deployed"

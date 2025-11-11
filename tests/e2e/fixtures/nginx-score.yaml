@@ -1,0 +1,40 @@
+# Score Specification: Simple Nginx Container
+#
+# This is a minimal Score spec for testing the container-team provider.
+# It deploys a single nginx container with GitOps flow.
+
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: nginx-test
+
+containers:
+  web:
+    image: nginx:alpine
+
+resources:
+  app:
+    type: container
+    properties:
+      # Kubernetes configuration
+      namespace: test-nginx
+      team_id: test-team
+
+      # Container configuration
+      container_image: nginx:alpine
+      container_port: 80
+
+      # Service configuration
+      service_type: ClusterIP
+      service_port: 80
+
+      # Resource limits
+      cpu_request: "50m"
+      memory_request: "64Mi"
+      cpu_limit: "200m"
+      memory_limit: "128Mi"
+
+      # GitOps configuration
+      gitea_org: platform
+      argocd_project: default
+      sync_policy: automated

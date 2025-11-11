@@ -24,6 +24,8 @@ go.work
 # Built binaries
 innominatus
 innominatus-ctl
+innominatus-mcp
+innominatus-test
 
 # Local development files
 cookies.txt

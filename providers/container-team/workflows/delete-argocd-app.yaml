@@ -1,0 +1,60 @@
+apiVersion: innominatus.io/v1alpha1
+kind: Workflow
+metadata:
+  name: delete-argocd-app
+  description: Delete ArgoCD application and optionally clean up deployed resources
+
+parameters:
+  - name: app_name
+    type: string
+    required: true
+    description: ArgoCD application name
+
+  - name: argocd_namespace
+    type: string
+    required: false
+    default: "argocd"
+    description: ArgoCD namespace
+
+  - name: cascade_delete
+    type: boolean
+    required: false
+    default: true
+    description: Delete deployed resources (cascade delete)
+
+steps:
+  - name: delete-argocd-application
+    type: argocd-app
+    config:
+      operation: delete
+      app_name: "{{ .parameters.app_name }}"
+      argocd_namespace: "{{ .parameters.argocd_namespace }}"
+      cascade: "{{ .parameters.cascade_delete }}"
+
+  - name: wait-for-deletion
+    type: policy
+    config:
+      script: |
+        #!/bin/bash
+        set -e
+
+        APP_NAME="{{ .parameters.app_name }}"
+        ARGOCD_NS="{{ .parameters.argocd_namespace }}"
+
+        echo "Waiting for ArgoCD application deletion..."
+
+        for i in {1..30}; do
+          if ! kubectl get application $APP_NAME -n $ARGOCD_NS >/dev/null 2>&1; then
+            echo "ArgoCD application $APP_NAME deleted successfully"
+            exit 0
+          fi
+          echo "Waiting... attempt $i/30"
+          sleep 2
+        done
+
+        echo "Warning: ArgoCD application deletion timeout"
+
+outputs:
+  app_name: "{{ .parameters.app_name }}"
+  cascade_delete: "{{ .parameters.cascade_delete }}"
+  status: "deleted"

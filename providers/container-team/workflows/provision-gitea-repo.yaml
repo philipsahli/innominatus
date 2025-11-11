@@ -37,7 +37,7 @@ steps:
   - name: create-repository
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Provider
+metadata:
+  name: test-team
+  version: 1.0.0
+  category: test
+  description: Test provider for end-to-end testing
+
+compatibility:
+  minCoreVersion: 1.0.0
+  maxCoreVersion: 2.0.0
+
+capabilities:
+  resourceTypes: [test-db, test-database]
+
+workflows:
+  - name: provision-test-db
+    file: ./workflows/provision-test-db.yaml
+    description: Simple test database provisioner
+    category: provisioner
+    version: 1.0.0
+    tags: [test, database]

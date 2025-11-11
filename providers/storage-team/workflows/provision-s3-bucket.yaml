@@ -31,7 +31,7 @@ steps:
   - name: create-minio-bucket
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 
@@ -58,7 +58,7 @@ steps:
   - name: generate-credentials
     type: policy
     config:
-      command: |
+      script: |
         #!/bin/bash
         set -e
 

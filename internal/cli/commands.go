@@ -1946,6 +1946,117 @@ func (c *Client) LoginCommand(args []string) error {
 	return nil
 }
 
+// LoginSSOCommand authenticates using OIDC/SSO and saves API key locally
+func (c *Client) LoginSSOCommand(args []string) error {
+	fs := flag.NewFlagSet("login", flag.ContinueOnError)
+	keyName := fs.String("name", "", "Name for the API key (default: cli-<hostname>-<timestamp>)")
+	expiryDays := fs.Int("expiry-days", 90, "Number of days until API key expiry")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	fmt.Println("🔐 Starting SSO authentication...")
+
+	// 1. Generate PKCE code verifier and challenge
+	codeVerifier, err := generateCodeVerifier()
+	if err != nil {
+		return fmt.Errorf("failed to generate code verifier: %w", err)
+	}
+	codeChallenge := generateCodeChallenge(codeVerifier)
+
+	// 2. Generate state for CSRF protection
+	state, err := generateRandomState()
+	if err != nil {
+		return fmt.Errorf("failed to generate state: %w", err)
+	}
+
+	// 3. Start local callback server
+	port, callbackURL, resultChan := startCallbackServer(state)
+	fmt.Printf("📡 Started local callback server on port %d\n", port)
+
+	// 4. Build authorization URL
+	authURL, err := buildOIDCAuthURL(c.baseURL, callbackURL, codeChallenge, state)
+	if err != nil {
+		return fmt.Errorf("failed to build authorization URL: %w", err)
+	}
+
+	// 5. Open browser
+	fmt.Println("🌐 Opening browser for authentication...")
+	fmt.Printf("If browser doesn't open automatically, visit:\n%s\n\n", authURL)
+
+	if err := openBrowser(authURL); err != nil {
+		fmt.Printf("⚠️  Failed to open browser automatically: %v\n", err)
+		fmt.Printf("Please open the URL manually in your browser.\n\n")
+	}
+
+	// 6. Wait for callback with timeout
+	var result callbackServerResult
+	select {
+	case result = <-resultChan:
+		// Shutdown callback server
+		if result.shutdownFn != nil {
+			defer result.shutdownFn()
+		}
+
+		if result.err != nil {
+			return result.err
+		}
+
+	case <-time.After(5 * time.Minute):
+		return fmt.Errorf("authentication timed out after 5 minutes")
+	}
+
+	fmt.Println("✓ Authorization code received")
+
+	// 6. Exchange code for token
+	accessToken, username, err := exchangeCodeForToken(c.baseURL, result.code, codeVerifier, callbackURL)
+	if err != nil {
+		return fmt.Errorf("token exchange failed: %w", err)
+	}
+
+	fmt.Printf("✓ Authenticated as %s\n", username)
+
+	// 7. Generate default key name if not provided
+	if *keyName == "" {
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "unknown"
+		}
+		*keyName = fmt.Sprintf("cli-%s-%d", hostname, time.Now().Unix())
+	}
+
+	// 8. Generate API key using the access token
+	apiKey, apiKeyName, expiresAt, err := generateAPIKeyWithToken(c.baseURL, accessToken, *keyName, *expiryDays)
+	if err != nil {
+		return fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	// 9. Save credentials to file
+	creds := &Credentials{
+		ServerURL: c.baseURL,
+		Username:  username,
+		APIKey:    apiKey,
+		CreatedAt: time.Now(),
+		ExpiresAt: expiresAt,
+		KeyName:   apiKeyName,
+	}
+
+	err = SaveCredentials(creds)
+	if err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	credPath, _ := GetCredentialsPath()
+	fmt.Printf("✓ Generated API key '%s'\n", apiKeyName)
+	fmt.Printf("✓ Expires: %s\n", expiresAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("✓ Credentials saved to: %s\n", credPath)
+	fmt.Printf("\nYou can now use the CLI without authentication prompts.\n")
+	fmt.Printf("To logout, run: %s logout\n", os.Args[0])
+
+	return nil
+}
+
 // LogoutCommand removes the locally stored credentials
 func (c *Client) LogoutCommand() error {
 	// Check if credentials exist
@@ -2627,6 +2738,11 @@ func (c *Client) displaySingleStepLogs(step *WorkflowStepDetail, options LogsOpt
 
 	fmt.Printf("%s Step %d: %s (%s)\n", statusEmoji, step.StepNumber, step.StepName, step.StepType)
 
+	// ALWAYS show error message for failed steps (not just in verbose mode)
+	if step.Status == "failed" && step.ErrorMessage != nil && *step.ErrorMessage != "" {
+		fmt.Printf("   ❌ ERROR: %s\n", *step.ErrorMessage)
+	}
+
 	if options.Verbose {
 		fmt.Printf("   ID: %d\n", step.ID)
 		fmt.Printf("   Status: %s\n", step.Status)
@@ -2639,13 +2755,9 @@ func (c *Client) displaySingleStepLogs(step *WorkflowStepDetail, options LogsOpt
 				fmt.Printf("   Duration: %v\n", duration)
 			}
 		}
-
-		if step.ErrorMessage != nil && *step.ErrorMessage != "" {
-			fmt.Printf("   Error: %s\n", *step.ErrorMessage)
-		}
 	}
 
-	// Display logs
+	// Display logs with better messaging for different scenarios
 	if step.OutputLogs != nil && *step.OutputLogs != "" {
 		fmt.Printf("   Logs:\n")
 		logs := *step.OutputLogs
@@ -2667,7 +2779,15 @@ func (c *Client) displaySingleStepLogs(step *WorkflowStepDetail, options LogsOpt
 			}
 		}
 	} else {
-		fmt.Printf("   Logs: No output logs available\n")
+		// Different messages based on step status
+		if step.Status == "failed" {
+			fmt.Printf("   Logs: ⚠️  No logs available. Step may have failed before producing output.\n")
+			fmt.Printf("         Check error message above for details.\n")
+		} else if step.Status == "completed" {
+			fmt.Printf("   Logs: (No output - step completed successfully without producing logs)\n")
+		} else {
+			fmt.Printf("   Logs: No output logs available\n")
+		}
 	}
 
 	fmt.Printf("   ───────────────────────────────────────────\n")

@@ -53,6 +53,28 @@ resources:
       lifecycle_days: 90
 ```
 
+## Complete Examples
+
+See these Score specifications that use S3 storage:
+
+- **`examples/score-ecommerce-backend-v2.yaml`** - Adding S3 to existing app
+- **`examples/score-order-service-v2.yaml`** - Order service with S3 for receipt PDFs
+- **`examples/score-spec-with-product-metadata.yaml`** - Full app with multiple resources including storage
+
+### Incremental Deployment Pattern
+
+```bash
+# Step 1: Deploy v1 with database only
+./innominatus-ctl deploy examples/score-ecommerce-backend-v1.yaml -w
+
+# Step 2: Add S3 storage later (v2)
+./innominatus-ctl deploy examples/score-ecommerce-backend-v2.yaml -w
+
+# Output:
+# ℹ️  Detected existing: db (postgres) - Skipping
+# 🆕 Detected new: storage (s3) - Provisioning
+```
+
 ## Git Repository Configuration
 
 To use this provider from Git (recommended for production):

@@ -1,0 +1,26 @@
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: my-app
+
+containers:
+  main:
+    image: nginx:latest
+    env:
+      # Database credentials will be injected from the provisioned resource
+      DATABASE_HOST: ${resources.db.host}
+      DATABASE_PORT: ${resources.db.port}
+      DATABASE_NAME: ${resources.db.database_name}
+      DATABASE_USER: ${resources.db.username}
+      DATABASE_PASSWORD: ${resources.db.password}
+      # Or use the full connection string
+      DATABASE_URL: ${resources.db.connection_string}
+
+resources:
+  # PostgreSQL database - automatically provisioned by database-team provider
+  db:
+    type: postgres  # Triggers database-team provider (declared capability)
+    properties:
+      version: "15"      # PostgreSQL version (default: "15")
+      size: "medium"     # Database size: small, medium, or large
+      replicas: 2        # Number of replicas (default: 2)

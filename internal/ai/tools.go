@@ -109,5 +109,32 @@ func GetAvailableTools() []llm.Tool {
 				"required":   []string{},
 			},
 		},
+		{
+			Name:        "list_golden_paths",
+			Description: "List all available golden path workflows. Golden paths are standardized, opinionated workflows for common platform tasks like team onboarding, database provisioning, or application deployment.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+				"required":   []string{},
+			},
+		},
+		{
+			Name:        "list_providers",
+			Description: "List all platform providers and their capabilities. Shows which teams handle which resource types (e.g., database-team handles postgres, container-team handles kubernetes).",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+				"required":   []string{},
+			},
+		},
+		{
+			Name:        "get_current_user",
+			Description: "Get information about the current authenticated user including username, team/group membership, and role. Use this to understand who you're assisting and their permissions.",
+			InputSchema: map[string]interface{}{
+				"type":       "object",
+				"properties": map[string]interface{}{},
+				"required":   []string{},
+			},
+		},
 	}
 }

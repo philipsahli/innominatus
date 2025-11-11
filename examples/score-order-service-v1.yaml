@@ -1,0 +1,24 @@
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: order-service
+
+containers:
+  main:
+    image: myorg/order-service:v1.0.0
+    env:
+      DATABASE_URL: ${resources.db.connection_string}
+      DATABASE_HOST: ${resources.db.host}
+      DATABASE_PORT: ${resources.db.port}
+      DATABASE_NAME: ${resources.db.database_name}
+      DATABASE_USER: ${resources.db.username}
+      DATABASE_PASSWORD: ${resources.db.password}
+
+resources:
+  # PostgreSQL database - provisioned by database-team provider
+  db:
+    type: postgres
+    properties:
+      version: "15"
+      size: "medium"
+      replicas: 2
