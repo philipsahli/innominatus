@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -50,10 +49,10 @@ function ResourceRow({ resource }: { resource: Resource }) {
   };
 
   return (
-    <div className="border-b border-zinc-800 last:border-0">
+    <div className="border-b border-zinc-200 dark:border-zinc-800 last:border-0">
       {/* Main Row */}
       <div
-        className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 cursor-pointer transition-colors"
+        className="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900/30 cursor-pointer transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         {/* Expand Icon */}
@@ -88,45 +87,49 @@ function ResourceRow({ resource }: { resource: Resource }) {
 
       {/* Expanded Details */}
       {expanded && (
-        <div className="px-4 py-3 bg-zinc-900/30 border-t border-zinc-800">
+        <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900/20 border-t border-zinc-200 dark:border-zinc-800">
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div>
-              <div className="text-zinc-500 mb-1">Resource ID</div>
-              <div className="text-white font-mono">{resource.id}</div>
+              <div className="text-zinc-500 dark:text-zinc-400 mb-1">Resource ID</div>
+              <div className="text-zinc-900 dark:text-white font-mono">{resource.id}</div>
             </div>
 
             {resource.provider_id && (
               <div>
-                <div className="text-zinc-500 mb-1">Provider</div>
-                <div className="text-white">{resource.provider_id}</div>
+                <div className="text-zinc-500 dark:text-zinc-400 mb-1">Provider</div>
+                <div className="text-zinc-900 dark:text-white">{resource.provider_id}</div>
               </div>
             )}
 
             {resource.workflow_execution_id && (
               <div>
-                <div className="text-zinc-500 mb-1">Workflow Execution ID</div>
-                <div className="text-white font-mono">{resource.workflow_execution_id}</div>
+                <div className="text-zinc-500 dark:text-zinc-400 mb-1">Workflow Execution ID</div>
+                <div className="text-zinc-900 dark:text-white font-mono">
+                  {resource.workflow_execution_id}
+                </div>
               </div>
             )}
 
             {resource.health_status && (
               <div>
-                <div className="text-zinc-500 mb-1">Health Status</div>
-                <div className="text-white">{resource.health_status}</div>
+                <div className="text-zinc-500 dark:text-zinc-400 mb-1">Health Status</div>
+                <div className="text-zinc-900 dark:text-white">{resource.health_status}</div>
               </div>
             )}
 
             {resource.updated_at && (
               <div>
-                <div className="text-zinc-500 mb-1">Last Updated</div>
-                <div className="text-white">{new Date(resource.updated_at).toLocaleString()}</div>
+                <div className="text-zinc-500 dark:text-zinc-400 mb-1">Last Updated</div>
+                <div className="text-zinc-900 dark:text-white">
+                  {new Date(resource.updated_at).toLocaleString()}
+                </div>
               </div>
             )}
 
             {resource.error_message && (
               <div className="col-span-2">
-                <div className="text-zinc-500 mb-1">Error</div>
-                <div className="text-red-400 font-mono text-xs bg-red-500/5 p-2 rounded border border-red-500/20">
+                <div className="text-zinc-500 dark:text-zinc-400 mb-1">Error</div>
+                <div className="text-red-600 dark:text-red-400 font-mono text-xs bg-red-50 dark:bg-red-500/5 p-2 rounded border border-red-200 dark:border-red-500/20">
                   {resource.error_message}
                 </div>
               </div>
@@ -134,8 +137,8 @@ function ResourceRow({ resource }: { resource: Resource }) {
 
             {resource.configuration && Object.keys(resource.configuration).length > 0 && (
               <div className="col-span-2">
-                <div className="text-zinc-500 mb-1">Configuration</div>
-                <pre className="text-white font-mono text-xs bg-zinc-900 p-2 rounded border border-zinc-800 overflow-auto">
+                <div className="text-zinc-500 dark:text-zinc-400 mb-1">Configuration</div>
+                <pre className="text-zinc-900 dark:text-white font-mono text-xs bg-zinc-100 dark:bg-zinc-900 p-2 rounded border border-zinc-200 dark:border-zinc-800 overflow-auto">
                   {JSON.stringify(resource.configuration, null, 2)}
                 </pre>
               </div>
@@ -173,21 +176,21 @@ export function ResourceTable({
 
   if (filteredResources.length === 0) {
     return (
-      <Card className="p-8 bg-zinc-900/50 border-zinc-800">
-        <div className="text-center text-zinc-500">
+      <div className="p-8 text-center">
+        <div className="text-zinc-500 dark:text-zinc-400">
           {searchTerm || statusFilter !== 'all' || appFilter !== 'all'
             ? 'No resources match your filters'
             : 'No resources found'}
         </div>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card className="bg-zinc-900/50 border-zinc-800 overflow-hidden">
+    <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-900/70">
-        <div className="grid grid-cols-4 gap-4 text-xs font-medium text-zinc-400 uppercase tracking-wide">
+      <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30">
+        <div className="grid grid-cols-4 gap-4 text-xs font-medium text-zinc-600 dark:text-zinc-400 uppercase tracking-wide">
           <div className="pl-7">Resource / Application</div>
           <div>Type</div>
           <div>State</div>
@@ -196,11 +199,11 @@ export function ResourceTable({
       </div>
 
       {/* Rows */}
-      <div className="divide-y divide-zinc-800">
+      <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
         {filteredResources.map((resource) => (
           <ResourceRow key={resource.id} resource={resource} />
         ))}
       </div>
-    </Card>
+    </div>
   );
 }

@@ -1,11 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Network, Loader2, Database, GitBranch, Activity, Package } from 'lucide-react';
+import { Loader2, Database, GitBranch, Activity, Package } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -15,8 +13,9 @@ import {
 } from '@/components/ui/select';
 import { api } from '@/lib/api';
 import { ResourceTable, type Resource } from '@/components/dev/resource-table';
-import { WorkflowTable, type Workflow, type WorkflowStep } from '@/components/dev/workflow-table';
+import { WorkflowTable, type Workflow } from '@/components/dev/workflow-table';
 import { LiveStepsMonitor } from '@/components/dev/live-steps-monitor';
+import { GraphView } from '@/components/dev/graph-view';
 
 interface Application {
   name: string;
@@ -141,8 +140,8 @@ export default function Graph2Page() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-zinc-600 mx-auto mb-2" />
-          <div className="text-sm text-zinc-500">Loading graph data...</div>
+          <Loader2 className="w-8 h-8 animate-spin text-zinc-400 dark:text-zinc-600 mx-auto mb-2" />
+          <div className="text-sm text-zinc-500 dark:text-zinc-400">Loading...</div>
         </div>
       </div>
     );
@@ -151,166 +150,110 @@ export default function Graph2Page() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white mb-2">Graph Explorer</h1>
-        <p className="text-sm text-zinc-500">
-          Explore resources, workflows, and real-time execution across all applications
-        </p>
-      </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-white">Graph Explorer</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Explore resources, workflows, and dependencies across applications
+          </p>
+        </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card className="bg-zinc-900/50 border-zinc-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-              <Package size={14} />
-              Applications
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white">{stats.applications}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-zinc-900/50 border-zinc-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-              <Database size={14} />
-              Resources
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white">{stats.resources}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-zinc-900/50 border-zinc-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-              <GitBranch size={14} />
-              Workflows
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white">{stats.workflows}</div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-zinc-900/50 border-zinc-800">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
-              <Activity size={14} />
-              Live Steps
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-white flex items-center gap-2">
-              {stats.runningSteps}
-              {stats.runningSteps > 0 && (
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              )}
+        {/* Stats */}
+        <div className="flex items-center gap-6 text-sm text-zinc-600 dark:text-zinc-400">
+          <div className="flex items-center gap-2">
+            <Package size={16} />
+            <span>{stats.applications}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Database size={16} />
+            <span>{stats.resources}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <GitBranch size={16} />
+            <span>{stats.workflows}</span>
+          </div>
+          {stats.runningSteps > 0 && (
+            <div className="flex items-center gap-2">
+              <Activity size={16} className="text-blue-500" />
+              <span className="text-blue-500">{stats.runningSteps} live</span>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
-      <Card className="bg-zinc-900/50 border-zinc-800">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs text-zinc-500 mb-2 block">Search</label>
-              <Input
-                placeholder="Search resources, workflows..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="bg-zinc-900 border-zinc-800"
-              />
-            </div>
+      <div className="flex items-center gap-4">
+        <Input
+          placeholder="Search..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="max-w-xs"
+        />
 
-            <div>
-              <label className="text-xs text-zinc-500 mb-2 block">Application</label>
-              <Select value={appFilter} onValueChange={setAppFilter}>
-                <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                  <SelectValue placeholder="All applications" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All applications</SelectItem>
-                  {applications
-                    .filter((app) => app.name && app.name.trim() !== '')
-                    .map((app) => (
-                      <SelectItem key={app.name} value={app.name}>
-                        {app.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <Select value={appFilter} onValueChange={setAppFilter}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="All applications" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All applications</SelectItem>
+            {applications
+              .filter((app) => app.name && app.name.trim() !== '')
+              .map((app) => (
+                <SelectItem key={app.name} value={app.name}>
+                  {app.name}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
 
-            <div>
-              <label className="text-xs text-zinc-500 mb-2 block">Status</label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="bg-zinc-900 border-zinc-800">
-                  <SelectValue placeholder="All statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="requested">Requested</SelectItem>
-                  <SelectItem value="provisioning">Provisioning</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                  <SelectItem value="running">Running</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="requested">Requested</SelectItem>
+            <SelectItem value="provisioning">Provisioning</SelectItem>
+            <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="running">Running</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
 
-          {(searchTerm || statusFilter !== 'all' || appFilter !== 'all') && (
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-xs text-zinc-500">
-                Filters active: {searchTerm && 'search'} {statusFilter !== 'all' && 'status'}{' '}
-                {appFilter !== 'all' && 'application'}
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearchTerm('');
-                  setStatusFilter('all');
-                  setAppFilter('all');
-                }}
-                className="text-xs text-zinc-500 hover:text-white"
-              >
-                Clear filters
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        {(searchTerm || statusFilter !== 'all' || appFilter !== 'all') && (
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              setStatusFilter('all');
+              setAppFilter('all');
+            }}
+            className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="resources" className="space-y-4">
-        <TabsList className="bg-zinc-900 border border-zinc-800">
-          <TabsTrigger value="resources" className="data-[state=active]:bg-zinc-800">
+      <Tabs defaultValue="resources" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="resources">
             <Database size={14} className="mr-2" />
             Resources ({resources.length})
           </TabsTrigger>
-          <TabsTrigger value="workflows" className="data-[state=active]:bg-zinc-800">
+          <TabsTrigger value="workflows">
             <GitBranch size={14} className="mr-2" />
             Workflows ({workflows.length})
           </TabsTrigger>
-          <TabsTrigger value="live" className="data-[state=active]:bg-zinc-800">
+          <TabsTrigger value="live">
             <Activity size={14} className="mr-2" />
             Live Steps ({stats.runningSteps})
           </TabsTrigger>
-          <TabsTrigger value="graph" className="data-[state=active]:bg-zinc-800">
-            <Network size={14} className="mr-2" />
-            Graph View
-          </TabsTrigger>
+          <TabsTrigger value="graph">Graph View</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="resources" className="space-y-4">
+        <TabsContent value="resources">
           <ResourceTable
             resources={resources}
             searchTerm={searchTerm}
@@ -319,7 +262,7 @@ export default function Graph2Page() {
           />
         </TabsContent>
 
-        <TabsContent value="workflows" className="space-y-4">
+        <TabsContent value="workflows">
           <WorkflowTable
             workflows={workflows}
             searchTerm={searchTerm}
@@ -328,20 +271,12 @@ export default function Graph2Page() {
           />
         </TabsContent>
 
-        <TabsContent value="live" className="space-y-4">
+        <TabsContent value="live">
           <LiveStepsMonitor workflows={workflows} />
         </TabsContent>
 
-        <TabsContent value="graph" className="space-y-4">
-          <Card className="p-8 bg-zinc-900/50 border-zinc-800">
-            <div className="text-center">
-              <Network size={32} className="mx-auto mb-3 text-zinc-600" />
-              <div className="text-zinc-500 mb-2">Graph visualization coming soon</div>
-              <div className="text-xs text-zinc-600">
-                Will integrate GraphVisualization component with application selector
-              </div>
-            </div>
-          </Card>
+        <TabsContent value="graph">
+          <GraphView applications={applications} />
         </TabsContent>
       </Tabs>
     </div>

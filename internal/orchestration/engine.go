@@ -391,6 +391,13 @@ func (e *Engine) buildWorkflowInputs(resource *database.ResourceInstance, workfl
 	inputs["resource_name"] = resource.ResourceName
 	inputs["resource_type"] = resource.ResourceType
 
+	// Generate common workflow parameters
+	// bucket_name: used by S3/storage workflows
+	inputs["bucket_name"] = fmt.Sprintf("%s-%s", resource.ApplicationName, resource.ResourceName)
+
+	// namespace: used by Kubernetes-related workflows
+	inputs["namespace"] = fmt.Sprintf("%s-default", resource.ApplicationName)
+
 	// Convert resource configuration to string inputs
 	for key, value := range resource.Configuration {
 		if strValue, ok := value.(string); ok {
