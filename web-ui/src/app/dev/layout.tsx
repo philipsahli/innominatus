@@ -1,5 +1,14 @@
 import Link from 'next/link';
-import { User, Home, Package, Database, GitBranch, Network, MessageSquare } from 'lucide-react';
+import {
+  User,
+  Home,
+  Package,
+  Database,
+  GitBranch,
+  Network,
+  MessageSquare,
+  Layers,
+} from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +45,9 @@ export default function DevLayout({ children }: { children: React.ReactNode }) {
                 </NavLink>
                 <NavLink href="/dev/graph" icon={<Network size={14} />}>
                   Graph
+                </NavLink>
+                <NavLink href="/dev/graph2" icon={<Layers size={14} />}>
+                  Graph Explorer
                 </NavLink>
                 <NavLink href="/dev/assistant" icon={<MessageSquare size={14} />}>
                   Assistant
