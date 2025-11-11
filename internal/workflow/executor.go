@@ -1372,6 +1372,34 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 			return fmt.Errorf("policy step requires 'script' in config")
 		}
 
+		// Get workflow variables from execution context
+		// These contain the resource properties passed from the orchestration engine
+		workflowVars := make(map[string]interface{})
+		for k, v := range e.execContext.WorkflowVariables {
+			workflowVars[k] = v
+		}
+
+		// Create template data with parameters from workflow variables
+		// Templates expect .parameters.field_name syntax
+		templateData := map[string]interface{}{
+			"parameters": workflowVars,
+		}
+
+		fmt.Printf("      🔍 DEBUG: Template parameters for policy script: %v\n", workflowVars)
+
+		// Render script template with parameters
+		renderedScript, err := e.renderTemplate(script, templateData)
+		if err != nil {
+			return fmt.Errorf("failed to render policy script template: %w", err)
+		}
+
+		fmt.Printf("      📝 DEBUG: Rendered script (first 300 chars):\n%s\n", func() string {
+			if len(renderedScript) > 300 {
+				return renderedScript[:300] + "..."
+			}
+			return renderedScript
+		}())
+
 		// Create temporary script file
 		tmpFile, err := os.CreateTemp("", "policy-*.sh")
 		if err != nil {
@@ -1379,8 +1407,8 @@ func (e *WorkflowExecutor) registerDefaultStepExecutors() {
 		}
 		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
-		// Write script to file
-		if _, err := tmpFile.WriteString(script); err != nil {
+		// Write rendered script to file (not raw script)
+		if _, err := tmpFile.WriteString(renderedScript); err != nil {
 			return fmt.Errorf("failed to write script: %w", err)
 		}
 		_ = tmpFile.Close()

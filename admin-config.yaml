@@ -19,13 +19,25 @@ admin:
     defaultRuntime: kubernetes
     splunkIndex: orchestrator-logs
 providers:
+    - name: database-team
+      type: filesystem
+      path: ./providers/database-team
+      enabled: true
     - name: container-team
       type: filesystem
       path: ./providers/container-team
       enabled: true
-    - name: database-team
+    - name: storage-team
       type: filesystem
-      path: ./providers/database-team
+      path: ./providers/storage-team
+      enabled: true
+    - name: identity-team
+      type: filesystem
+      path: ./providers/identity-team
+      enabled: true
+    - name: vault-team
+      type: filesystem
+      path: ./providers/vault-team
       enabled: true
     - name: test-team
       type: filesystem

@@ -1,0 +1,25 @@
+apiVersion: score.dev/v1b1
+
+metadata:
+  name: alice-nginx-excessive
+
+containers:
+  main:
+    image: nginx:latest
+    ports:
+      - port: 80
+    env:
+      # S3 storage credentials injected automatically
+      S3_BUCKET_ENDPOINT: ${resources.storage.endpoint}
+      S3_BUCKET_NAME: ${resources.storage.bucket}
+      S3_ACCESS_KEY: ${resources.storage.access_key}
+      S3_SECRET_KEY: ${resources.storage.secret_key}
+
+resources:
+  # S3 storage - provisioned by storage-team provider
+  storage:
+    type: s3
+    properties:
+      size: "standard"
+      versioning: true
+      public_read: false

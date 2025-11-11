@@ -84,6 +84,12 @@ type LoginResponse struct {
 	Role     string `json:"role"`
 }
 
+type ProfileResponse struct {
+	Username string `json:"username"`
+	Team     string `json:"team"`
+	Role     string `json:"role"`
+}
+
 type ResourceInstance struct {
 	ID               int64                  `json:"id"`
 	ApplicationName  string                 `json:"application_name"`
@@ -602,6 +608,15 @@ func (c *Client) GetGoldenPaths() (map[string]*GoldenPathInfo, error) {
 		return nil, err
 	}
 	return paths, nil
+}
+
+// GetProfile retrieves the current authenticated user's profile from the server
+func (c *Client) GetProfile() (*ProfileResponse, error) {
+	var profile ProfileResponse
+	if err := c.http.GET("/api/auth/whoami", &profile); err != nil {
+		return nil, err
+	}
+	return &profile, nil
 }
 
 // DeploySpec deploys a Score specification (alias for Deploy)

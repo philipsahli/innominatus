@@ -96,16 +96,34 @@ steps:
       script: |
         #!/bin/bash
         set -e
+
+        # Debug: Show what we're looking for
+        CLUSTER_NAME="{{ .parameters.app_name }}-{{ .parameters.resource_name }}"
+        NAMESPACE="{{ .parameters.app_name }}"
+
         echo "Waiting for PostgreSQL cluster to be ready..."
+        echo "Cluster name: $CLUSTER_NAME"
+        echo "Namespace: $NAMESPACE"
+        echo ""
+
         for i in {1..60}; do
-          if kubectl get postgresql {{ .parameters.app_name }}-{{ .parameters.resource_name }} -n {{ .parameters.app_name }} -o jsonpath='{.status.PostgresClusterStatus}' 2>/dev/null | grep -q "Running"; then
-            echo "PostgreSQL cluster is running"
+          # Get cluster status, default to "NotFound" if command fails
+          STATUS=$(kubectl get postgresql "$CLUSTER_NAME" -n "$NAMESPACE" -o jsonpath='{.status.PostgresClusterStatus}' 2>/dev/null || echo "NotFound")
+
+          echo "Attempt $i/60: PostgreSQL cluster status = $STATUS"
+
+          if [ "$STATUS" = "Running" ]; then
+            echo "✅ PostgreSQL cluster is running and ready!"
             exit 0
           fi
-          echo "Waiting... attempt $i/60"
+
           sleep 10
         done
-        echo "Timeout waiting for PostgreSQL cluster"
+
+        echo ""
+        echo "❌ Timeout waiting for PostgreSQL cluster after 600 seconds"
+        echo "Final status check:"
+        kubectl get postgresql "$CLUSTER_NAME" -n "$NAMESPACE" -o yaml 2>&1 || echo "Cluster not found"
         exit 1
 
   - name: get-credentials

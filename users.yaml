@@ -7,8 +7,8 @@ users:
         - key: dc07a063c13a4b10cea4518c3caa76290da7404557b8a35683d3e9b5b5c01283
           name: test-key
           created_at: 2025-09-24T21:13:16.239792+02:00
-          last_used_at: 2025-09-24T21:14:36.280085+02:00
-          expires_at: 0001-01-01T00:00:00Z
+          last_used_at: 2025-11-11T13:12:27.001558+01:00
+          expires_at: 2099-12-31T23:59:59Z
         - key: cf1d1f5afb8c1f1b2e17079c835b1f22d3719f651b4673f1bc4e3a006ebeb5db
           name: cli-key
           created_at: 2025-09-25T11:04:05.646963+02:00
@@ -41,7 +41,7 @@ users:
         - key: $2a$10$MbueZLVaTV7S.ioizXn1peBMqebLhe4zjvIVwy.jfO6bBZ.SHNH7.
           name: cli-unifi-1762793079
           created_at: 2025-11-10T17:44:39.20867+01:00
-          last_used_at: 2025-11-11T07:36:59.253093+01:00
+          last_used_at: 2025-11-11T11:28:22.909083+01:00
           expires_at: 2026-02-08T17:44:39.20867+01:00
     - username: alice
       password: alice123

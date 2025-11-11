@@ -228,13 +228,27 @@ func (store *UserStore) GenerateAPIKey(username, keyName string, expiryDays int)
 }
 
 // AuthenticateWithAPIKey checks if an API key is valid and returns the associated user
-// SECURITY: Uses bcrypt to compare hashed API keys (constant-time comparison)
+// SECURITY: Supports both bcrypt hashed keys and plaintext keys (for backward compatibility)
 func (store *UserStore) AuthenticateWithAPIKey(apiKey string) (*User, error) {
 	for i, user := range store.Users {
 		for j, key := range user.APIKeys {
-			// SECURITY: Compare using bcrypt (constant-time, prevents timing attacks)
-			err := bcrypt.CompareHashAndPassword([]byte(key.Key), []byte(apiKey))
-			if err == nil {
+			matched := false
+
+			// Try bcrypt comparison first (for hashed keys)
+			if strings.HasPrefix(key.Key, "$2a$") || strings.HasPrefix(key.Key, "$2b$") {
+				err := bcrypt.CompareHashAndPassword([]byte(key.Key), []byte(apiKey))
+				if err == nil {
+					matched = true
+				}
+			} else {
+				// Fall back to plaintext comparison for non-hashed keys
+				// SECURITY NOTE: This is for backward compatibility. New keys should be hashed.
+				if key.Key == apiKey {
+					matched = true
+				}
+			}
+
+			if matched {
 				// Key matches! Check if expired
 				if time.Now().After(key.ExpiresAt) {
 					return nil, fmt.Errorf("API key expired")

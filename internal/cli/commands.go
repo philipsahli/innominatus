@@ -3037,3 +3037,49 @@ func (c *Client) WorkflowDetailCommand(workflowID string) error {
 
 	return nil
 }
+
+// WhoamiCommand displays current user information and authentication status
+func (c *Client) WhoamiCommand() error {
+	formatter := NewOutputFormatter()
+
+	// Get user profile from server
+	profile, err := c.GetProfile()
+	if err != nil {
+		return fmt.Errorf("failed to get user profile: %w", err)
+	}
+
+	formatter.PrintHeader("👤 Current User")
+	formatter.PrintEmpty()
+	formatter.PrintKeyValue(0, "Username", profile.Username)
+	formatter.PrintKeyValue(0, "Team", profile.Team)
+	formatter.PrintKeyValue(0, "Role", profile.Role)
+
+	// Display authentication source
+	formatter.PrintEmpty()
+	formatter.PrintSection(0, SymbolInfo, "Authentication:")
+
+	if apiKey := os.Getenv("IDP_API_KEY"); apiKey != "" {
+		formatter.PrintKeyValue(1, "Source", "Environment variable (IDP_API_KEY)")
+		formatter.PrintKeyValue(1, "Key", maskAPIKey(apiKey))
+	} else {
+		creds, _ := LoadCredentials()
+		if creds != nil {
+			formatter.PrintKeyValue(1, "Source", "Credentials file")
+			formatter.PrintKeyValue(1, "Key Name", creds.KeyName)
+			formatter.PrintKeyValue(1, "Key", maskAPIKey(creds.APIKey))
+			formatter.PrintKeyValue(1, "Expires", creds.ExpiresAt.Format("2006-01-02 15:04:05"))
+		}
+	}
+
+	formatter.PrintEmpty()
+
+	return nil
+}
+
+// maskAPIKey masks all but first and last 4 characters of API key
+func maskAPIKey(key string) string {
+	if len(key) <= 8 {
+		return "***"
+	}
+	return key[:4] + "..." + key[len(key)-4:]
+}

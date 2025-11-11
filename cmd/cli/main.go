@@ -427,6 +427,23 @@ var logoutCmd = &cobra.Command{
 	},
 }
 
+var whoamiCmd = &cobra.Command{
+	Use:   "whoami",
+	Short: "Show current user information",
+	Long: `Display current authenticated user information and authentication status.
+
+This command verifies authentication by querying the server and shows:
+  - Username, team, and role
+  - Authentication source (environment variable or credentials file)
+  - Masked API key
+
+Examples:
+  innominatus-ctl whoami`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return client.WhoamiCommand()
+	},
+}
+
 var chatCmd = &cobra.Command{
 	Use:   "chat",
 	Short: "Interactive AI assistant chat",
@@ -525,6 +542,7 @@ func init() {
 		fixGiteaOAuthCmd,
 		loginCmd,
 		logoutCmd,
+		whoamiCmd,
 		chatCmd,
 		adminCmd,
 		teamCmd,

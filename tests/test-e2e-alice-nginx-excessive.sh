@@ -16,7 +16,7 @@ GITEA_PASSWORD="admin"
 GIT_REPO_NAME="alice-nginx-excessive"  # Auto-generated repo name
 
 # Use admin API key for authentication (from users.yaml)
-export IDP_API_KEY="cf1d1f5afb8c1f1b2e17079c835b1f22d3719f651b4673f1bc4e3a006ebeb5db"
+export IDP_API_KEY="dc07a063c13a4b10cea4518c3caa76290da7404557b8a35683d3e9b5b5c01283"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -93,7 +93,7 @@ echo ""
 echo "Step 3: Deploying nginx with S3 storage via innominatus-ctl"
 echo "───────────────────────────────────────────────────────────────"
 echo "Note: This triggers Terraform code generation + S3 provisioning + GitOps pipeline"
-if ./innominatus-ctl run deploy-app "$SCORE_FILE"; then
+if ./innominatus-ctl deploy "$SCORE_FILE" -w; then
     print_success "Deployment command executed successfully"
 else
     print_error "Deployment failed"
