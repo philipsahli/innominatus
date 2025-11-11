@@ -236,11 +236,13 @@ export default function Graph2Page() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All applications</SelectItem>
-                  {applications.map((app) => (
-                    <SelectItem key={app.name} value={app.name}>
-                      {app.name}
-                    </SelectItem>
-                  ))}
+                  {applications
+                    .filter((app) => app.name && app.name.trim() !== '')
+                    .map((app) => (
+                      <SelectItem key={app.name} value={app.name}>
+                        {app.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
