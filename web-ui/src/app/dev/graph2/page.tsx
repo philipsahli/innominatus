@@ -85,7 +85,27 @@ export default function Graph2Page() {
         })
       );
 
-      setWorkflows(workflowsWithSteps);
+      // Deduplicate workflows: Keep only latest execution per workflow name
+      const deduplicatedWorkflows = Object.values(
+        workflowsWithSteps.reduce(
+          (acc, workflow) => {
+            const existingWorkflow = acc[workflow.name];
+
+            // If no workflow with this name exists, or this one is newer, keep it
+            if (
+              !existingWorkflow ||
+              new Date(workflow.timestamp) > new Date(existingWorkflow.timestamp)
+            ) {
+              acc[workflow.name] = workflow;
+            }
+
+            return acc;
+          },
+          {} as Record<string, Workflow>
+        )
+      );
+
+      setWorkflows(deduplicatedWorkflows);
     } catch (error) {
       console.error('Failed to load data:', error);
     } finally {
