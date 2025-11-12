@@ -16,6 +16,9 @@ import { ResourceTable, type Resource } from '@/components/dev/resource-table';
 import { WorkflowTable, type Workflow } from '@/components/dev/workflow-table';
 import { LiveStepsMonitor } from '@/components/dev/live-steps-monitor';
 import { GraphView } from '@/components/dev/graph-view';
+import { GraphViewReactFlow } from '@/components/dev/graph-view-reactflow';
+import { GraphViewCytoscape } from '@/components/dev/graph-view-cytoscape';
+import { GraphViewD3 } from '@/components/dev/graph-view-d3';
 
 interface Application {
   name: string;
@@ -31,6 +34,7 @@ export default function Graph2Page() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [appFilter, setAppFilter] = useState<string>('all');
+  const [graphLibrary, setGraphLibrary] = useState<string>('svg');
 
   // Load initial data
   useEffect(() => {
@@ -296,7 +300,31 @@ export default function Graph2Page() {
         </TabsContent>
 
         <TabsContent value="graph">
-          <GraphView applications={applications} />
+          <div className="space-y-4">
+            {/* Library Selector */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                Choose visualization library:
+              </div>
+              <Select value={graphLibrary} onValueChange={setGraphLibrary}>
+                <SelectTrigger className="w-[250px]">
+                  <SelectValue placeholder="Select library" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="svg">Simple SVG (Fixed)</SelectItem>
+                  <SelectItem value="reactflow">ReactFlow (Recommended)</SelectItem>
+                  <SelectItem value="cytoscape">Cytoscape.js (Advanced)</SelectItem>
+                  <SelectItem value="d3">D3-Force (Custom)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Graph View */}
+            {graphLibrary === 'svg' && <GraphView applications={applications} />}
+            {graphLibrary === 'reactflow' && <GraphViewReactFlow applications={applications} />}
+            {graphLibrary === 'cytoscape' && <GraphViewCytoscape applications={applications} />}
+            {graphLibrary === 'd3' && <GraphViewD3 applications={applications} />}
+          </div>
         </TabsContent>
       </Tabs>
     </div>

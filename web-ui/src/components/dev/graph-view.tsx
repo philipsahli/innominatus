@@ -52,35 +52,99 @@ export function GraphView({ applications }: GraphViewProps) {
     }
   }
 
-  function layoutNodes(nodes: GraphNode[], _edges: GraphEdge[]): GraphNode[] {
-    const width = 800;
-    const height = 600;
+  function layoutNodes(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
+    const width = 900;
+    const height = 700;
+    const nodeSpacing = 150;
+    const layerSpacing = 120;
 
-    // Group nodes by type
-    const nodesByType: { [key: string]: GraphNode[] } = {};
+    // Build adjacency map for topology-based layout
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+    const outgoing = new Map<string, string[]>();
+    const incoming = new Map<string, number>();
+
+    // Initialize maps
     nodes.forEach((node) => {
-      if (!nodesByType[node.type]) {
-        nodesByType[node.type] = [];
-      }
-      nodesByType[node.type].push(node);
+      outgoing.set(node.id, []);
+      incoming.set(node.id, 0);
     });
 
-    // Layout nodes in layers by type
-    const types = Object.keys(nodesByType);
-    const layerHeight = height / (types.length + 1);
+    // Build graph structure
+    edges.forEach((edge) => {
+      const sources = outgoing.get(edge.source_id) || [];
+      sources.push(edge.target_id);
+      outgoing.set(edge.source_id, sources);
+      incoming.set(edge.target_id, (incoming.get(edge.target_id) || 0) + 1);
+    });
 
+    // Topological sort to assign layers (BFS-based)
+    const layers: string[][] = [];
+    const nodeLayer = new Map<string, number>();
+    const queue: Array<{ id: string; layer: number }> = [];
+
+    // Start with nodes that have no incoming edges
+    nodes.forEach((node) => {
+      if ((incoming.get(node.id) || 0) === 0) {
+        queue.push({ id: node.id, layer: 0 });
+        nodeLayer.set(node.id, 0);
+      }
+    });
+
+    // If no root nodes, start with all nodes at layer 0
+    if (queue.length === 0) {
+      nodes.forEach((node) => {
+        queue.push({ id: node.id, layer: 0 });
+        nodeLayer.set(node.id, 0);
+      });
+    }
+
+    // Process queue
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const { id, layer } = queue.shift()!;
+      if (visited.has(id)) continue;
+      visited.add(id);
+
+      // Add to layer
+      if (!layers[layer]) layers[layer] = [];
+      layers[layer].push(id);
+
+      // Add children to next layer
+      const children = outgoing.get(id) || [];
+      children.forEach((childId) => {
+        if (!visited.has(childId)) {
+          const childLayer = Math.max(layer + 1, nodeLayer.get(childId) || 0);
+          nodeLayer.set(childId, childLayer);
+          queue.push({ id: childId, layer: childLayer });
+        }
+      });
+    }
+
+    // Add any unvisited nodes to final layer
+    nodes.forEach((node) => {
+      if (!visited.has(node.id)) {
+        const lastLayer = layers.length;
+        if (!layers[lastLayer]) layers[lastLayer] = [];
+        layers[lastLayer].push(node.id);
+      }
+    });
+
+    // Position nodes based on layers
     const positioned: GraphNode[] = [];
-    types.forEach((type, layerIndex) => {
-      const nodesInLayer = nodesByType[type];
-      const layerWidth = width / (nodesInLayer.length + 1);
-      const y = layerHeight * (layerIndex + 1);
+    layers.forEach((layerNodes, layerIndex) => {
+      const y = layerIndex * layerSpacing + 80;
+      const layerWidth = layerNodes.length * nodeSpacing;
+      const startX = (width - layerWidth) / 2;
 
-      nodesInLayer.forEach((node, nodeIndex) => {
-        positioned.push({
-          ...node,
-          x: layerWidth * (nodeIndex + 1),
-          y: y,
-        });
+      layerNodes.forEach((nodeId, nodeIndex) => {
+        const node = nodeMap.get(nodeId);
+        if (node) {
+          positioned.push({
+            ...node,
+            x: startX + nodeIndex * nodeSpacing + nodeSpacing / 2,
+            y: y,
+          });
+        }
       });
     });
 
@@ -169,6 +233,11 @@ export function GraphView({ applications }: GraphViewProps) {
           <div className="text-sm text-zinc-600 dark:text-zinc-400">
             Viewing:{' '}
             <span className="font-medium text-zinc-900 dark:text-white">{selectedApp}</span>
+            {nodes.length > 0 && (
+              <span className="ml-2 text-xs">
+                ({nodes.length} nodes, {edges.length} edges)
+              </span>
+            )}
           </div>
         </div>
 
@@ -225,17 +294,34 @@ export function GraphView({ applications }: GraphViewProps) {
                 if (!source || !target || !source.x || !source.y || !target.x || !target.y)
                   return null;
 
+                const midX = (source.x + target.x) / 2;
+                const midY = (source.y + target.y) / 2;
+
                 return (
-                  <line
-                    key={edge.id}
-                    x1={source.x}
-                    y1={source.y}
-                    x2={target.x}
-                    y2={target.y}
-                    stroke="#d4d4d8"
-                    strokeWidth="2"
-                    markerEnd="url(#arrowhead)"
-                  />
+                  <g key={edge.id}>
+                    <line
+                      x1={source.x}
+                      y1={source.y}
+                      x2={target.x}
+                      y2={target.y}
+                      stroke="#a1a1aa"
+                      strokeWidth="2"
+                      markerEnd="url(#arrowhead)"
+                      className="transition-all"
+                    />
+                    {/* Edge label */}
+                    {edge.relationship && (
+                      <text
+                        x={midX}
+                        y={midY - 5}
+                        textAnchor="middle"
+                        className="text-[10px] fill-zinc-600 dark:fill-zinc-400"
+                        style={{ pointerEvents: 'none' }}
+                      >
+                        {edge.relationship}
+                      </text>
+                    )}
+                  </g>
                 );
               })}
 
@@ -249,7 +335,7 @@ export function GraphView({ applications }: GraphViewProps) {
                   refY="3"
                   orient="auto"
                 >
-                  <polygon points="0 0, 10 3, 0 6" fill="#d4d4d8" />
+                  <polygon points="0 0, 10 3, 0 6" fill="#a1a1aa" />
                 </marker>
               </defs>
 
