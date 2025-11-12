@@ -64,6 +64,20 @@ function WorkflowRow({ workflow }: { workflow: Workflow }) {
     }
   };
 
+  const formatDate = (timestamp?: string) => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'Invalid date';
+    return date.toLocaleString();
+  };
+
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'Invalid date';
+    return date.toLocaleTimeString();
+  };
+
   return (
     <div className="border-b border-zinc-200 dark:border-zinc-800 last:border-0">
       {/* Main Row */}
@@ -97,9 +111,7 @@ function WorkflowRow({ workflow }: { workflow: Workflow }) {
 
           <div className="text-xs text-zinc-500">{workflow.duration || 'N/A'}</div>
 
-          <div className="text-xs text-zinc-500">
-            {new Date(workflow.timestamp).toLocaleString()}
-          </div>
+          <div className="text-xs text-zinc-500">{formatDate(workflow.timestamp)}</div>
         </div>
       </div>
 
@@ -115,9 +127,7 @@ function WorkflowRow({ workflow }: { workflow: Workflow }) {
 
             <div>
               <div className="text-zinc-500 dark:text-zinc-400 mb-1">Started At</div>
-              <div className="text-zinc-900 dark:text-white">
-                {new Date(workflow.timestamp).toLocaleString()}
-              </div>
+              <div className="text-zinc-900 dark:text-white">{formatDate(workflow.timestamp)}</div>
             </div>
 
             <div>
@@ -165,12 +175,8 @@ function WorkflowRow({ workflow }: { workflow: Workflow }) {
                   </div>
 
                   <div className="grid grid-cols-3 gap-4 text-xs text-zinc-500">
-                    {step.started_at && (
-                      <div>Started: {new Date(step.started_at).toLocaleTimeString()}</div>
-                    )}
-                    {step.completed_at && (
-                      <div>Completed: {new Date(step.completed_at).toLocaleTimeString()}</div>
-                    )}
+                    {step.started_at && <div>Started: {formatTime(step.started_at)}</div>}
+                    {step.completed_at && <div>Completed: {formatTime(step.completed_at)}</div>}
                     {step.duration_ms && (
                       <div>
                         Duration:{' '}

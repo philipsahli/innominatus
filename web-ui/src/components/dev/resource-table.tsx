@@ -48,6 +48,13 @@ function ResourceRow({ resource }: { resource: Resource }) {
     }
   };
 
+  const formatDate = (timestamp?: string) => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'Invalid date';
+    return date.toLocaleString();
+  };
+
   return (
     <div className="border-b border-zinc-200 dark:border-zinc-800 last:border-0">
       {/* Main Row */}
@@ -79,9 +86,7 @@ function ResourceRow({ resource }: { resource: Resource }) {
             </Badge>
           </div>
 
-          <div className="text-xs text-zinc-500">
-            {resource.created_at ? new Date(resource.created_at).toLocaleString() : 'N/A'}
-          </div>
+          <div className="text-xs text-zinc-500">{formatDate(resource.created_at)}</div>
         </div>
       </div>
 
@@ -121,7 +126,7 @@ function ResourceRow({ resource }: { resource: Resource }) {
               <div>
                 <div className="text-zinc-500 dark:text-zinc-400 mb-1">Last Updated</div>
                 <div className="text-zinc-900 dark:text-white">
-                  {new Date(resource.updated_at).toLocaleString()}
+                  {formatDate(resource.updated_at)}
                 </div>
               </div>
             )}

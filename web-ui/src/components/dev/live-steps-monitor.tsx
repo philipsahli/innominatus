@@ -13,6 +13,7 @@ function LiveStepCard({ workflow, step }: { workflow: Workflow; step: WorkflowSt
   const getElapsedTime = (startedAt?: string) => {
     if (!startedAt) return '0s';
     const start = new Date(startedAt);
+    if (isNaN(start.getTime())) return '0s';
     const now = new Date();
     const elapsedMs = now.getTime() - start.getTime();
     const seconds = Math.floor(elapsedMs / 1000);
@@ -22,6 +23,13 @@ function LiveStepCard({ workflow, step }: { workflow: Workflow; step: WorkflowSt
       return `${minutes}m ${seconds % 60}s`;
     }
     return `${seconds}s`;
+  };
+
+  const formatTime = (timestamp?: string) => {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'Invalid date';
+    return date.toLocaleTimeString();
   };
 
   const getStatusBadgeStyle = (status: string) => {
@@ -83,8 +91,7 @@ function LiveStepCard({ workflow, step }: { workflow: Workflow; step: WorkflowSt
       </div>
 
       <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500">
-        Workflow #{workflow.id} • Started{' '}
-        {step.started_at ? new Date(step.started_at).toLocaleTimeString() : 'N/A'}
+        Workflow #{workflow.id} • Started {formatTime(step.started_at)}
       </div>
     </Card>
   );
