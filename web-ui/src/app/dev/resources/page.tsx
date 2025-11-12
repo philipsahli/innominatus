@@ -116,18 +116,15 @@ export default function ResourcesPage() {
                 </DataTableCell>
 
                 <DataTableCell>
-                  {resource.hints && Object.keys(resource.hints).length > 0 ? (
+                  {resource.hints && Array.isArray(resource.hints) && resource.hints.length > 0 ? (
                     <div className="flex items-center gap-2 text-xs text-zinc-500">
-                      {Object.entries(resource.hints)
-                        .slice(0, 1)
-                        .map(([key, value]) => (
-                          <span key={key} className="truncate" title={`${key}: ${value}`}>
-                            {key}: {String(value).substring(0, 30)}...
-                          </span>
-                        ))}
-                      {Object.keys(resource.hints).length > 1 && (
+                      <span className="truncate" title={resource.hints[0].label}>
+                        {resource.hints[0].label}: {resource.hints[0].value.substring(0, 30)}
+                        {resource.hints[0].value.length > 30 && '...'}
+                      </span>
+                      {resource.hints.length > 1 && (
                         <span className="text-zinc-400">
-                          +{Object.keys(resource.hints).length - 1} more
+                          +{resource.hints.length - 1} more
                         </span>
                       )}
                     </div>
@@ -198,14 +195,39 @@ export default function ResourcesPage() {
                 </div>
 
                 {/* Hints */}
-                {selectedResource.hints && Object.keys(selectedResource.hints).length > 0 && (
+                {selectedResource.hints && Array.isArray(selectedResource.hints) && selectedResource.hints.length > 0 && (
                   <div>
                     <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                      Connection Details
+                      Quick Access
                     </h3>
-                    <div className="mt-2 space-y-2">
-                      {Object.entries(selectedResource.hints).map(([key, value]) => (
-                        <CopyableText key={key} label={key} text={String(value)} />
+                    <div className="mt-2 grid grid-cols-1 gap-2">
+                      {selectedResource.hints.map((hint, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                              {hint.label}
+                            </div>
+                            <div className="mt-1 truncate text-xs text-zinc-500">
+                              {hint.value}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (hint.type === 'url' || hint.type === 'dashboard') {
+                                window.open(hint.value, '_blank', 'noopener,noreferrer');
+                              } else {
+                                navigator.clipboard.writeText(hint.value);
+                              }
+                            }}
+                            className="ml-2 text-lime-600 hover:text-lime-700 dark:text-lime-400"
+                            title={hint.type === 'url' || hint.type === 'dashboard' ? 'Open in new tab' : 'Copy to clipboard'}
+                          >
+                            {hint.type === 'url' || hint.type === 'dashboard' ? '↗' : '📋'}
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>

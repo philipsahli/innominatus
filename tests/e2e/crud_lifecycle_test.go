@@ -129,7 +129,7 @@ func (s *CRUDLifecycleTestSuite) SetupSuite() {
 // TearDownSuite runs once after all tests
 func (s *CRUDLifecycleTestSuite) TearDownSuite() {
 	if s.db != nil {
-		s.db.Close()
+		_ = s.db.Close()
 	}
 }
 

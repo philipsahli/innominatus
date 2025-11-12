@@ -48,7 +48,7 @@ func TestAPIClient_Get(t *testing.T) {
 				}
 
 				w.WriteHeader(tt.serverStatus)
-				w.Write([]byte(tt.serverResponse))
+				_, _ = w.Write([]byte(tt.serverResponse))
 			}))
 			defer server.Close()
 
@@ -108,7 +108,7 @@ func TestAPIClient_Post(t *testing.T) {
 				}
 
 				w.WriteHeader(tt.serverStatus)
-				w.Write([]byte(`{"result":"success"}`))
+				_, _ = w.Write([]byte(`{"result":"success"}`))
 			}))
 			defer server.Close()
 
@@ -141,7 +141,7 @@ metadata:
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"result":"spec submitted"}`))
+		_, _ = w.Write([]byte(`{"result":"spec submitted"}`))
 	}))
 	defer server.Close()
 
@@ -169,7 +169,7 @@ func TestAPIClient_AuthenticationHeader(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"authenticated":true}`))
+		_, _ = w.Write([]byte(`{"authenticated":true}`))
 	}))
 	defer server.Close()
 

@@ -1031,7 +1031,7 @@ func (s *Server) HandleOIDCConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(config)
+	_ = json.NewEncoder(w).Encode(config)
 }
 
 // HandleOIDCTokenExchange handles PKCE token exchange from CLI
@@ -1108,7 +1108,7 @@ func (s *Server) HandleOIDCTokenExchange(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // getClientID extracts client ID from OIDC authenticator (helper function)

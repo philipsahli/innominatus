@@ -1,7 +1,6 @@
 package orchestration
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +27,7 @@ type ValidationIntegrationTestSuite struct {
 // SetupSuite runs once before all tests in the suite
 func (s *ValidationIntegrationTestSuite) SetupSuite() {
 	// Create temporary directory for test providers
-	tempDir, err := ioutil.TempDir("", "innominatus-validation-test-*")
+	tempDir, err := os.MkdirTemp("", "innominatus-validation-test-*")
 	require.NoError(s.T(), err, "Failed to create temp directory")
 	s.tempDir = tempDir
 
@@ -42,7 +41,7 @@ func (s *ValidationIntegrationTestSuite) SetupSuite() {
 // TearDownSuite runs once after all tests
 func (s *ValidationIntegrationTestSuite) TearDownSuite() {
 	if s.tempDir != "" {
-		os.RemoveAll(s.tempDir)
+		_ = os.RemoveAll(s.tempDir)
 	}
 }
 
@@ -664,7 +663,7 @@ func (s *ValidationIntegrationTestSuite) createTestProvider(name string, files m
 		err := os.MkdirAll(fileDir, 0755)
 		require.NoError(s.T(), err)
 
-		err = ioutil.WriteFile(filePath, []byte(content), 0644)
+		err = os.WriteFile(filePath, []byte(content), 0644)
 		require.NoError(s.T(), err)
 	}
 

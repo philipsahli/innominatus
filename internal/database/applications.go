@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"innominatus/internal/types"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // Application represents a Score specification stored in the database
@@ -74,7 +76,7 @@ func (d *Database) GetApplication(name string) (*Application, error) {
 		&specJSON,
 		&app.Team,
 		&app.CreatedBy,
-		&app.Labels,
+		pq.Array(&app.Labels),
 		&app.CreatedAt,
 		&app.UpdatedAt,
 	)

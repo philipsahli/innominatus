@@ -36,7 +36,7 @@ steps:
         set -e
 
         # Configure Minio client (mc)
-        mc alias set minio http://minio.minio.svc.cluster.local:9000 minioadmin minioadmin
+        mc alias set minio http://minio.localtest.me minioadmin minioadmin
 
         # Create bucket
         mc mb minio/{{ .parameters.bucket_name }} || echo "Bucket may already exist"
@@ -55,7 +55,7 @@ steps:
 
         echo "Bucket created successfully"
 
-  - name: generate-credentials
+  - name: generate_credentials
     type: policy
     config:
       script: |
@@ -74,6 +74,19 @@ steps:
         }
         EOF
 
+  - name: create_namespace
+    type: kubernetes
+    config:
+      operation: apply
+      manifest: |
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: {{ .parameters.namespace }}
+          labels:
+            managed-by: innominatus
+            app: {{ .parameters.app_name }}
+
   - name: store-credentials-in-namespace
     type: kubernetes
     config:
@@ -89,17 +102,17 @@ steps:
             bucket: {{ .parameters.bucket_name }}
         type: Opaque
         stringData:
-          access-key: "{{ .steps.generate-credentials.output.access_key }}"
-          secret-key: "{{ .steps.generate-credentials.output.secret_key }}"
-          endpoint: "http://minio.minio.svc.cluster.local:9000"
+          access-key: "{{ .steps.generate_credentials.output.access_key }}"
+          secret-key: "{{ .steps.generate_credentials.output.secret_key }}"
+          endpoint: "http://minio.minio-system.svc.cluster.local:9000"
           bucket: "{{ .parameters.bucket_name }}"
           s3-url: "s3://{{ .parameters.bucket_name }}"
 
 outputs:
   bucket_name: "{{ .parameters.bucket_name }}"
-  endpoint: "http://minio.minio.svc.cluster.local:9000"
+  endpoint: "http://minio.minio-system.svc.cluster.local:9000"
   external_endpoint: "http://minio.localtest.me"
-  access_key: "{{ .steps.generate-credentials.output.access_key }}"
-  secret_key: "{{ .steps.generate-credentials.output.secret_key }}"
+  access_key: "{{ .steps.generate_credentials.output.access_key }}"
+  secret_key: "{{ .steps.generate_credentials.output.secret_key }}"
   credentials_secret: "{{ .parameters.bucket_name }}-s3-credentials"
   s3_url: "s3://{{ .parameters.bucket_name }}"

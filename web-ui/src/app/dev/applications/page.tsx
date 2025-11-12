@@ -15,13 +15,14 @@ import {
 } from '@/components/dev/data-table';
 import { StatusBadge } from '@/components/dev/status-badge';
 import { DeployWizard } from '@/components/deploy-wizard/deploy-wizard';
-import { api, type Application } from '@/lib/api';
+import { api, formatDate, type Application } from '@/lib/api';
 
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [selectedTeam, setSelectedTeam] = useState<string>('all');
 
   const loadApplications = async () => {
     try {
@@ -43,6 +44,15 @@ export default function ApplicationsPage() {
     loadApplications();
   }, []);
 
+  // Get unique teams from applications
+  const teams = Array.from(new Set(applications.map((app) => app.team))).sort();
+
+  // Filter applications by selected team
+  const filteredApplications =
+    selectedTeam === 'all'
+      ? applications
+      : applications.filter((app) => app.team === selectedTeam);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -63,6 +73,28 @@ export default function ApplicationsPage() {
         </button>
       </div>
 
+      {/* Filters */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <label htmlFor="team-filter" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Team:
+          </label>
+          <select
+            id="team-filter"
+            value={selectedTeam}
+            onChange={(e) => setSelectedTeam(e.target.value)}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 shadow-sm focus:border-lime-500 focus:outline-none focus:ring-1 focus:ring-lime-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
+          >
+            <option value="all">All Teams</option>
+            {teams.map((team) => (
+              <option key={team} value={team}>
+                {team}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Error State */}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
@@ -74,6 +106,7 @@ export default function ApplicationsPage() {
       <DataTable>
         <DataTableHeader>
           <DataTableHeaderCell>Name</DataTableHeaderCell>
+          <DataTableHeaderCell>Team</DataTableHeaderCell>
           <DataTableHeaderCell>Status</DataTableHeaderCell>
           <DataTableHeaderCell>Environment</DataTableHeaderCell>
           <DataTableHeaderCell>Resources</DataTableHeaderCell>
@@ -84,10 +117,10 @@ export default function ApplicationsPage() {
         <DataTableBody>
           {loading ? (
             <DataTableLoading />
-          ) : applications.length === 0 ? (
-            <DataTableEmpty message="No applications deployed yet" />
+          ) : filteredApplications.length === 0 ? (
+            <DataTableEmpty message={selectedTeam === 'all' ? 'No applications deployed yet' : `No applications found for team "${selectedTeam}"`} />
           ) : (
-            applications.map((app) => (
+            filteredApplications.map((app) => (
               <DataTableRow key={app.name}>
                 <DataTableCell mono>
                   <Link
@@ -96,6 +129,12 @@ export default function ApplicationsPage() {
                   >
                     {app.name}
                   </Link>
+                </DataTableCell>
+
+                <DataTableCell>
+                  <span className="inline-flex items-center rounded-md bg-lime-50 px-2 py-1 text-xs font-medium text-lime-700 ring-1 ring-inset ring-lime-600/20 dark:bg-lime-500/10 dark:text-lime-400 dark:ring-lime-500/30">
+                    {app.team}
+                  </span>
                 </DataTableCell>
 
                 <DataTableCell>
@@ -111,7 +150,7 @@ export default function ApplicationsPage() {
                 </DataTableCell>
 
                 <DataTableCell mono className="text-zinc-500">
-                  {app.lastUpdated ? new Date(app.lastUpdated).toLocaleString() : '—'}
+                  {formatDate(app.lastUpdated)}
                 </DataTableCell>
 
                 <DataTableCell>
@@ -143,7 +182,8 @@ export default function ApplicationsPage() {
       {/* Stats */}
       {!loading && applications.length > 0 && (
         <div className="text-sm text-zinc-500">
-          Showing {applications.length} application{applications.length !== 1 ? 's' : ''}
+          Showing {filteredApplications.length} of {applications.length} application{applications.length !== 1 ? 's' : ''}
+          {selectedTeam !== 'all' && ` (filtered by team: ${selectedTeam})`}
         </div>
       )}
 

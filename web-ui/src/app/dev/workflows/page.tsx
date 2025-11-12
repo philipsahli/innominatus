@@ -14,7 +14,7 @@ import {
   DataTableLoading,
 } from '@/components/dev/data-table';
 import { StatusBadge } from '@/components/dev/status-badge';
-import { api, type WorkflowExecution } from '@/lib/api';
+import { api, formatDate, type WorkflowExecution } from '@/lib/api';
 
 export default function WorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowExecution[]>([]);
@@ -147,7 +147,7 @@ export default function WorkflowsPage() {
                 <DataTableCell>
                   {workflow.app_name ? (
                     <Link
-                      href={`/dev/applications/${workflow.app_name}`}
+                      href={`/dev/applications/detail/?name=${workflow.app_name}`}
                       className="text-lime-600 hover:text-lime-700 dark:text-lime-400"
                     >
                       {workflow.app_name}
@@ -158,7 +158,7 @@ export default function WorkflowsPage() {
                 </DataTableCell>
 
                 <DataTableCell mono className="text-zinc-500">
-                  {workflow.timestamp ? new Date(workflow.timestamp).toLocaleString() : '—'}
+                  {formatDate(workflow.timestamp)}
                 </DataTableCell>
 
                 <DataTableCell mono className="text-zinc-500">

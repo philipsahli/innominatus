@@ -39,7 +39,7 @@ func (f *WatchFormatter) FormatEvent(event Event) string {
 		message = fmt.Sprintf("Score specification created for %s", event.AppName)
 
 	case "spec.validated":
-		message = fmt.Sprintf("Score specification validated")
+		message = "Score specification validated"
 
 	case "resource.created":
 		resourceName := f.getString(event.Data, "resource_name")
@@ -110,7 +110,7 @@ func (f *WatchFormatter) FormatEvent(event Event) string {
 		message = fmt.Sprintf("Deployment started for %s", event.AppName)
 
 	case "deployment.completed":
-		message = fmt.Sprintf("Deployment completed successfully!")
+		message = "Deployment completed successfully!"
 
 	case "deployment.failed":
 		errorMsg := f.getString(event.Data, "error")

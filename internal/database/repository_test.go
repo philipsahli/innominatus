@@ -9,13 +9,13 @@ import (
 
 func setupTestRepo(t *testing.T) *WorkflowRepository {
 	testDB := SetupTestDatabase(t)
-	t.Cleanup(func() { testDB.Close() })
+	t.Cleanup(func() { _ = testDB.Close() })
 	return NewWorkflowRepository(testDB.DB)
 }
 
 func TestNewWorkflowRepository(t *testing.T) {
 	testDB := SetupTestDatabase(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	repo := NewWorkflowRepository(testDB.DB)
 	if repo == nil {

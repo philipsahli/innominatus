@@ -349,6 +349,21 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		}
 		if err := e.graphAdapter.AddNode(appName, workflowNode); err != nil {
 			fmt.Printf("Warning: failed to add workflow node to graph: %v\n", err)
+		} else {
+			// Create edge: spec triggers workflow
+			specNodeID := fmt.Sprintf("spec:%s", appName)
+			specToWorkflowEdge := &sdk.Edge{
+				ID:         fmt.Sprintf("spec-%s-wf-%d", appName, execution.ID),
+				FromNodeID: specNodeID,
+				ToNodeID:   workflowNodeID,
+				Type:       sdk.EdgeTypeTriggers,
+				Properties: map[string]interface{}{
+					"workflow_name": workflowName,
+				},
+			}
+			if err := e.graphAdapter.AddEdge(appName, specToWorkflowEdge); err != nil {
+				fmt.Printf("Warning: failed to add spec→workflow edge to graph: %v\n", err)
+			}
 		}
 	}
 

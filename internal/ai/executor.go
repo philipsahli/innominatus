@@ -157,7 +157,8 @@ func (e *ToolExecutor) getWorkflow(ctx context.Context, workflowID string) (stri
 	return resp, nil
 }
 
-func (e *ToolExecutor) listResources(ctx context.Context, appName string) (string, error) {
+//nolint:unused // Kept for future use
+func (e *ToolExecutor) _listResources(ctx context.Context, appName string) (string, error) {
 	endpoint := "/api/resources"
 	if appName != "" {
 		endpoint += "?app=" + appName
@@ -271,7 +272,8 @@ func (e *ToolExecutor) makeAPIRequest(ctx context.Context, method, endpoint stri
 	return string(respBody), nil
 }
 
-func (e *ToolExecutor) listGoldenPaths(ctx context.Context) (string, error) {
+//nolint:unused // Kept for future use
+func (e *ToolExecutor) _listGoldenPaths(ctx context.Context) (string, error) {
 	// Get all providers
 	resp, err := e.makeAPIRequest(ctx, "GET", "/api/providers", nil)
 	if err != nil {
@@ -326,7 +328,8 @@ func (e *ToolExecutor) listGoldenPaths(ctx context.Context) (string, error) {
 	return string(resultJSON), nil
 }
 
-func (e *ToolExecutor) listProviders(ctx context.Context) (string, error) {
+//nolint:unused // Kept for future use
+func (e *ToolExecutor) _listProviders(ctx context.Context) (string, error) {
 	// Get all providers
 	resp, err := e.makeAPIRequest(ctx, "GET", "/api/providers", nil)
 	if err != nil {

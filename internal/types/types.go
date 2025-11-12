@@ -32,6 +32,7 @@ type Environment struct {
 type Workflow struct {
 	Steps     []Step            `yaml:"steps"`
 	Variables map[string]string `yaml:"variables,omitempty"` // Workflow-level variables
+	Outputs   map[string]string `yaml:"outputs,omitempty"`   // Workflow outputs (bucket_name, endpoint, etc.)
 }
 
 // WorkflowSpec represents a complete workflow document with metadata

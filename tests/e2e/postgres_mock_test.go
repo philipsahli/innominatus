@@ -27,7 +27,7 @@ func TestPostgresMockProvisioning(t *testing.T) {
 
 	// Setup test database
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initialize schema
 	err := db.InitSchema()
@@ -231,7 +231,7 @@ func TestProviderResolutionPostgres(t *testing.T) {
 // TestResourceStateMachine tests resource state transitions
 func TestResourceStateMachine(t *testing.T) {
 	db := setupTestDatabase(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	err := db.InitSchema()
 	require.NoError(t, err)
@@ -289,7 +289,7 @@ func TestWorkflowTemplateRendering(t *testing.T) {
 
 	// Parse workflow
 	var workflowData map[string]interface{}
-	err = json.Unmarshal(workflowContent, &workflowData)
+	_ = json.Unmarshal(workflowContent, &workflowData)
 	// YAML parsing would be better, but for quick test we verify file exists
 
 	assert.FileExists(t, "../../providers/database-team/workflows/provision-postgres.yaml")
@@ -303,8 +303,8 @@ func TestWorkflowTemplateRendering(t *testing.T) {
 // setupTestDatabase creates a test database connection
 func setupTestDatabase(t *testing.T) *database.Database {
 	// Use test database
-	os.Setenv("DB_NAME", "idp_orchestrator_test")
-	defer os.Unsetenv("DB_NAME")
+	_ = os.Setenv("DB_NAME", "idp_orchestrator_test")
+	defer func() { _ = os.Unsetenv("DB_NAME") }()
 
 	db, err := database.NewDatabase()
 	if err != nil {

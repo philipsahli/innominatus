@@ -34,7 +34,6 @@ var swaggerFilesFS embed.FS
 
 // Temporarily disabled for development - use filesystem mode
 // //go:embed all:web-ui-out
-var webUIFS embed.FS
 
 // Build information - set via ldflags during release builds
 var (

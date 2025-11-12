@@ -14,6 +14,7 @@ import (
 	"innominatus/pkg/sdk"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	graphSDK "github.com/philipsahli/innominatus-graph/pkg/graph"
@@ -132,7 +133,7 @@ func (e *Engine) pollPendingResources(ctx context.Context) {
 		})
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var resources []*database.ResourceInstance
 	for rows.Next() {
@@ -556,7 +557,7 @@ func (e *Engine) recoverOrphanedResources(ctx context.Context) {
 		})
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var resources []*database.ResourceInstance
 	for rows.Next() {
@@ -674,7 +675,7 @@ func (e *Engine) pollProvisioningResources(ctx context.Context) {
 		})
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	type resourceWorkflowStatus struct {
 		resourceID          int64
@@ -730,7 +731,8 @@ func (e *Engine) pollProvisioningResources(ctx context.Context) {
 		var newState database.ResourceLifecycleState
 		var reason string
 
-		if rws.workflowStatus == "completed" {
+		switch rws.workflowStatus {
+		case "completed":
 			newState = database.ResourceStateActive
 			reason = "Resource provisioning completed successfully"
 
@@ -740,7 +742,7 @@ func (e *Engine) pollProvisioningResources(ctx context.Context) {
 				"resource_type":         rws.resourceType,
 				"workflow_execution_id": rws.workflowExecutionID,
 			})
-		} else if rws.workflowStatus == "failed" {
+		case "failed":
 			newState = database.ResourceStateFailed
 			reason = "Resource provisioning failed"
 			if rws.errorMessage != nil {
@@ -754,7 +756,7 @@ func (e *Engine) pollProvisioningResources(ctx context.Context) {
 				"workflow_execution_id": rws.workflowExecutionID,
 				"error":                 rws.errorMessage,
 			})
-		} else {
+		default:
 			continue // Skip unknown states
 		}
 
@@ -780,6 +782,48 @@ func (e *Engine) pollProvisioningResources(ctx context.Context) {
 			"new_state":     newState,
 		})
 
+		// Convert workflow outputs to resource hints (only for successful completions)
+		if newState == database.ResourceStateActive {
+			// Get workflow execution to find provider and workflow name
+			execution, err := e.workflowRepo.GetWorkflowExecution(rws.workflowExecutionID)
+			if err != nil {
+				e.logger.WarnWithFields("Failed to load workflow execution for hint conversion", map[string]interface{}{
+					"resource_id": rws.resourceID,
+					"error":       err.Error(),
+				})
+			} else {
+				// Load workflow definition to get outputs
+				// We need to find the provider and workflow for this execution
+				// For now, we'll try to load the workflow by name from all providers
+				workflowDef, err := e.findWorkflowDefinition(execution.ApplicationName, execution.WorkflowName)
+				if err != nil {
+					e.logger.WarnWithFields("Failed to load workflow definition for hint conversion", map[string]interface{}{
+						"resource_id":   rws.resourceID,
+						"workflow_name": execution.WorkflowName,
+						"error":         err.Error(),
+					})
+				} else if len(workflowDef.Outputs) > 0 {
+					// Convert workflow outputs to hints
+					hints := e.convertWorkflowOutputsToHints(workflowDef.Outputs)
+
+					if len(hints) > 0 {
+						// Update resource hints
+						if err := e.resourceRepo.UpdateResourceHints(rws.resourceID, hints); err != nil {
+							e.logger.WarnWithFields("Failed to update resource hints", map[string]interface{}{
+								"resource_id": rws.resourceID,
+								"error":       err.Error(),
+							})
+						} else {
+							e.logger.InfoWithFields("Updated resource hints from workflow outputs", map[string]interface{}{
+								"resource_id": rws.resourceID,
+								"hint_count":  len(hints),
+							})
+						}
+					}
+				}
+			}
+		}
+
 		// Publish state change event
 		if e.eventBus != nil {
 			var eventType events.EventType
@@ -803,4 +847,79 @@ func (e *Engine) pollProvisioningResources(ctx context.Context) {
 			))
 		}
 	}
+}
+
+// formatLabel converts an output key to a human-readable label
+// Examples: "endpoint" → "Endpoint", "external_endpoint" → "External Endpoint"
+func formatLabel(key string) string {
+	// Replace underscores with spaces
+	label := strings.ReplaceAll(key, "_", " ")
+
+	// Capitalize first letter of each word
+	words := strings.Fields(label)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(string(word[0])) + word[1:]
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
+// convertWorkflowOutputsToHints converts workflow outputs to resource hints
+// Maps output keys to appropriate hint types based on naming conventions
+func (e *Engine) convertWorkflowOutputsToHints(outputs map[string]string) []database.ResourceHint {
+	var hints []database.ResourceHint
+
+	for key, value := range outputs {
+		if value == "" {
+			continue // Skip empty values
+		}
+
+		var hintType string
+		label := formatLabel(key)
+
+		// Determine hint type based on key name patterns
+		keyLower := strings.ToLower(key)
+		switch {
+		case strings.HasSuffix(keyLower, "_url") || keyLower == "endpoint" || strings.Contains(keyLower, "endpoint"):
+			hintType = "url"
+		case strings.Contains(keyLower, "dashboard") || strings.Contains(keyLower, "console"):
+			hintType = "dashboard"
+		case strings.Contains(keyLower, "connection") || keyLower == "connection_string" || strings.Contains(keyLower, "database_url"):
+			hintType = "connection_string"
+		case strings.Contains(keyLower, "secret") || strings.HasPrefix(keyLower, "credentials_"):
+			hintType = "docs"
+		case strings.Contains(keyLower, "s3_url") || strings.Contains(keyLower, "bucket"):
+			hintType = "connection_string"
+		default:
+			hintType = "text"
+		}
+
+		hints = append(hints, database.ResourceHint{
+			Type:  hintType,
+			Label: label,
+			Value: value,
+		})
+	}
+
+	return hints
+}
+
+// findWorkflowDefinition finds a workflow definition by name across all providers
+func (e *Engine) findWorkflowDefinition(appName string, workflowName string) (*types.Workflow, error) {
+	// Get all providers from registry
+	providers := e.registry.ListProviders()
+
+	// Search through all providers for the workflow
+	for _, provider := range providers {
+		for _, workflowMeta := range provider.Workflows {
+			if workflowMeta.Name == workflowName {
+				// Found the workflow, load its definition
+				return e.loadWorkflowFromProvider(provider, &workflowMeta)
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("workflow not found: %s", workflowName)
 }

@@ -13,6 +13,10 @@ export interface Application {
   environment: string;
   lastUpdated: string;
   resources: number;
+  team: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface WorkflowExecution {
@@ -326,8 +330,12 @@ class ApiClient {
             name,
             status: 'running' as const, // Default status since specs don't have status
             environment: spec.environment?.Type || 'unknown',
-            lastUpdated: new Date().toISOString(), // Use current time as fallback
+            lastUpdated: spec.updated_at || new Date().toISOString(),
             resources: Object.keys(spec.resources || {}).length,
+            team: spec.team || 'unknown',
+            created_by: spec.created_by || 'unknown',
+            created_at: spec.created_at || new Date().toISOString(),
+            updated_at: spec.updated_at || new Date().toISOString(),
           };
         });
 
@@ -770,3 +778,11 @@ export interface ProviderStats {
 }
 
 export const api = new ApiClient();
+
+// Safe date formatter that handles invalid dates
+export function formatDate(dateString: string | null | undefined): string {
+  if (!dateString) return '—';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '—';
+  return date.toLocaleString();
+}

@@ -57,10 +57,8 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Parse event types filter
 	var eventTypes []EventType
-	if eventTypesParam != "" {
-		// Simple comma-separated list for now
-		// Could be enhanced with proper parsing
-	}
+	// TODO: Parse eventTypesParam when needed
+	_ = eventTypesParam // Placeholder for future implementation
 
 	// Create client
 	client := &SSEClient{
@@ -95,7 +93,9 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Msg("SSE client connected")
 
 	// Send initial connection message
-	fmt.Fprintf(w, "data: {\"type\":\"connected\",\"client_id\":\"%s\"}\n\n", client.ID)
+	if _, err := fmt.Fprintf(w, "data: {\"type\":\"connected\",\"client_id\":\"%s\"}\n\n", client.ID); err != nil {
+		log.Warn().Err(err).Str("client_id", client.ID).Msg("Failed to send connection message")
+	}
 	flusher.Flush()
 
 	// Handle client lifecycle
@@ -128,12 +128,18 @@ func (b *SSEBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		case event := <-client.MessageChan:
 			// Send event to client
-			fmt.Fprint(w, event.ToSSE())
+			if _, err := fmt.Fprint(w, event.ToSSE()); err != nil {
+				log.Warn().Err(err).Str("client_id", client.ID).Msg("Failed to send event")
+				return
+			}
 			flusher.Flush()
 
 		case <-time.After(30 * time.Second):
 			// Send keepalive ping
-			fmt.Fprintf(w, ": keepalive\n\n")
+			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+				log.Warn().Err(err).Str("client_id", client.ID).Msg("Failed to send keepalive")
+				return
+			}
 			flusher.Flush()
 		}
 	}

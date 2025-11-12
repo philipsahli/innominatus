@@ -82,7 +82,7 @@ func startCallbackServer(expectedState string) (port int, callbackURL string, re
 			}
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`
+			_, _ = w.Write([]byte(`
 				<!DOCTYPE html>
 				<html>
 				<head><title>Authentication Failed</title></head>
@@ -113,7 +113,7 @@ func startCallbackServer(expectedState string) (port int, callbackURL string, re
 			}
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`
+			_, _ = w.Write([]byte(`
 				<!DOCTYPE html>
 				<html>
 				<head><title>Authentication Failed</title></head>
@@ -135,7 +135,7 @@ func startCallbackServer(expectedState string) (port int, callbackURL string, re
 			}
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(`
+			_, _ = w.Write([]byte(`
 				<!DOCTYPE html>
 				<html>
 				<head><title>Authentication Failed</title></head>
@@ -158,7 +158,7 @@ func startCallbackServer(expectedState string) (port int, callbackURL string, re
 
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`
+		_, _ = w.Write([]byte(`
 			<!DOCTYPE html>
 			<html>
 			<head><title>Authentication Successful</title></head>

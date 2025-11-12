@@ -163,7 +163,7 @@ func TestServerStartupWithoutDatabase(t *testing.T) {
 func TestDatabaseConnectionStringHandling(t *testing.T) {
 	// Use testcontainer for actual database connection test
 	testDB := database.SetupTestDatabase(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Verify connection works
 	err := testDB.DB.Ping()

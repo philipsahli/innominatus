@@ -14,7 +14,7 @@ import {
   DataTableEmpty,
 } from '@/components/dev/data-table';
 import { StatusBadge } from '@/components/dev/status-badge';
-import { api, type ResourceInstance } from '@/lib/api';
+import { api, formatDate, type ResourceInstance } from '@/lib/api';
 
 interface ApplicationDetail {
   name: string;
@@ -324,7 +324,7 @@ export default function ApplicationDetailPage() {
                   </DataTableCell>
 
                   <DataTableCell mono className="text-zinc-500">
-                    {resource.created_at ? new Date(resource.created_at).toLocaleString() : '—'}
+                    {formatDate(resource.created_at)}
                   </DataTableCell>
                 </DataTableRow>
               ))

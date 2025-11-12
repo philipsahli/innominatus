@@ -25,7 +25,7 @@ type eventBus struct {
 	mu            sync.RWMutex
 	closed        bool
 	closeChan     chan struct{}
-	wg            sync.WaitGroup
+	wg            sync.WaitGroup //nolint:unused // Reserved for future coordination
 }
 
 // NewEventBus creates a new event bus instance

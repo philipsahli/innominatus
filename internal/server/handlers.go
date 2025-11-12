@@ -162,8 +162,8 @@ type Server struct {
 	workflowCounter int64
 	workflowMutex   sync.RWMutex
 	// Workflow scheduler for periodic execution
-	workflowTicker *time.Ticker
-	stopScheduler  chan struct{}
+	workflowTicker *time.Ticker  //nolint:unused // Reserved for workflow scheduling
+	stopScheduler  chan struct{} //nolint:unused // Reserved for workflow scheduling
 }
 
 // SetAIService sets the AI service for the server
@@ -513,6 +513,10 @@ func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
 			"resources":   app.ScoreSpec.Resources,
 			"environment": app.ScoreSpec.Environment,
 			"graph":       graph.BuildGraph(app.ScoreSpec),
+			"team":        app.Team,
+			"created_by":  app.CreatedBy,
+			"created_at":  app.CreatedAt,
+			"updated_at":  app.UpdatedAt,
 		}
 	}
 
@@ -520,6 +524,82 @@ func (s *Server) handleListSpecs(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to encode response: %v\n", err)
 	}
+}
+
+// upsertGraphNode adds a node to the graph if it doesn't exist, or updates it if it does.
+// This provides idempotent node creation for application updates.
+func (s *Server) upsertGraphNode(runID string, node *sdk.Node) error {
+	if s.graphAdapter == nil {
+		return fmt.Errorf("graph adapter is nil")
+	}
+	if node == nil {
+		return fmt.Errorf("node cannot be nil")
+	}
+
+	// Load existing graph to check if node exists
+	graph, err := s.graphAdapter.GetGraph(runID)
+	if err != nil {
+		// Graph doesn't exist yet, create node normally
+		if err := s.graphAdapter.AddNode(runID, node); err != nil {
+			return fmt.Errorf("failed to add new node: %w", err)
+		}
+		fmt.Printf("📊 Created %s node in graph: %s\n", node.Type, node.Name)
+		return nil
+	}
+
+	// Check if node already exists
+	existingNode, exists := graph.GetNode(node.ID)
+	if exists {
+		// Node exists - update its properties if needed
+		// For now, we'll skip updating since nodes are immutable in most cases
+		// The key is to avoid the duplicate key error
+		fmt.Printf("⏭️  Graph node %s already exists, skipping (state: %s)\n", node.ID, existingNode.State)
+		return nil
+	}
+
+	// Node doesn't exist, add it
+	if err := s.graphAdapter.AddNode(runID, node); err != nil {
+		return fmt.Errorf("failed to add node: %w", err)
+	}
+	fmt.Printf("📊 Created %s node in graph: %s\n", node.Type, node.Name)
+	return nil
+}
+
+// upsertGraphEdge adds an edge to the graph if it doesn't exist, or skips if it does.
+// This provides idempotent edge creation for application updates.
+func (s *Server) upsertGraphEdge(runID string, edge *sdk.Edge) error {
+	if s.graphAdapter == nil {
+		return fmt.Errorf("graph adapter is nil")
+	}
+	if edge == nil {
+		return fmt.Errorf("edge cannot be nil")
+	}
+
+	// Load existing graph to check if edge exists
+	graph, err := s.graphAdapter.GetGraph(runID)
+	if err != nil {
+		// Graph doesn't exist yet, create edge normally
+		if err := s.graphAdapter.AddEdge(runID, edge); err != nil {
+			return fmt.Errorf("failed to add new edge: %w", err)
+		}
+		fmt.Printf("📊 Created edge in graph: %s\n", edge.ID)
+		return nil
+	}
+
+	// Check if edge already exists
+	existingEdge, exists := graph.GetEdge(edge.ID)
+	if exists {
+		// Edge exists - skip to avoid duplicate
+		fmt.Printf("⏭️  Graph edge %s already exists, skipping (type: %s)\n", edge.ID, existingEdge.Type)
+		return nil
+	}
+
+	// Edge doesn't exist, add it
+	if err := s.graphAdapter.AddEdge(runID, edge); err != nil {
+		return fmt.Errorf("failed to add edge: %w", err)
+	}
+	fmt.Printf("📊 Created edge in graph: %s\n", edge.ID)
+	return nil
 }
 
 func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
@@ -590,7 +670,11 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 	if isUpdate {
 		fmt.Printf("📝 Updating existing application: %s\n", name)
 	} else {
-		fmt.Printf("🆕 Creating new application: %s\n", name)
+		if err != nil {
+			fmt.Printf("🆕 Creating new application: %s (GetApplication error: %v)\n", name, err)
+		} else {
+			fmt.Printf("🆕 Creating new application: %s (app not found)\n", name)
+		}
 	}
 
 	// Store/update application spec (UPSERT)
@@ -600,8 +684,56 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create spec node in graph
+	// Create team, application, and spec nodes in graph with proper hierarchy
+	// CRITICAL FIX: Use upsert operations to handle both create and update scenarios
 	if s.graphAdapter != nil {
+		// 1. Upsert team node (idempotent)
+		teamNodeID := fmt.Sprintf("team:%s", user.Team)
+		teamNode := &sdk.Node{
+			ID:    teamNodeID,
+			Type:  sdk.NodeTypeTeam,
+			Name:  user.Team,
+			State: sdk.NodeStateSucceeded,
+			Properties: map[string]interface{}{
+				"team_id": user.Team,
+			},
+		}
+		if err := s.upsertGraphNode(name, teamNode); err != nil {
+			fmt.Printf("Warning: failed to upsert team node to graph: %v\n", err)
+		}
+
+		// 2. Upsert application node (idempotent)
+		appNodeID := fmt.Sprintf("app:%s", name)
+		appNode := &sdk.Node{
+			ID:    appNodeID,
+			Type:  sdk.NodeTypeApplication,
+			Name:  name,
+			State: sdk.NodeStateSucceeded,
+			Properties: map[string]interface{}{
+				"app_name":   name,
+				"team":       user.Team,
+				"created_by": user.Username,
+			},
+		}
+		if err := s.upsertGraphNode(name, appNode); err != nil {
+			fmt.Printf("Warning: failed to upsert application node to graph: %v\n", err)
+		}
+
+		// 3. Upsert edge: team → owns → application (idempotent)
+		teamOwnsAppEdge := &sdk.Edge{
+			ID:         fmt.Sprintf("team-owns-app:%s", name),
+			FromNodeID: teamNodeID,
+			ToNodeID:   appNodeID,
+			Type:       sdk.EdgeTypeOwns,
+			Properties: map[string]interface{}{
+				"ownership": "team_owns_application",
+			},
+		}
+		if err := s.upsertGraphEdge(name, teamOwnsAppEdge); err != nil {
+			fmt.Printf("Warning: failed to upsert team→app edge to graph: %v\n", err)
+		}
+
+		// 4. Upsert spec node (idempotent)
 		specNodeID := fmt.Sprintf("spec:%s", name)
 		specNode := &sdk.Node{
 			ID:    specNodeID,
@@ -615,10 +747,22 @@ func (s *Server) handleDeploySpec(w http.ResponseWriter, r *http.Request) {
 				"api_version": spec.APIVersion,
 			},
 		}
-		if err := s.graphAdapter.AddNode(name, specNode); err != nil {
-			fmt.Printf("Warning: failed to add spec node to graph: %v\n", err)
-		} else {
-			fmt.Printf("📊 Created spec node in graph for: %s\n", name)
+		if err := s.upsertGraphNode(name, specNode); err != nil {
+			fmt.Printf("Warning: failed to upsert spec node to graph: %v\n", err)
+		}
+
+		// 5. Upsert edge: application → has-spec → spec (idempotent)
+		appHasSpecEdge := &sdk.Edge{
+			ID:         fmt.Sprintf("app-has-spec:%s", name),
+			FromNodeID: appNodeID,
+			ToNodeID:   specNodeID,
+			Type:       sdk.EdgeTypeHasSpec,
+			Properties: map[string]interface{}{
+				"relationship": "application_has_spec_version",
+			},
+		}
+		if err := s.upsertGraphEdge(name, appHasSpecEdge); err != nil {
+			fmt.Printf("Warning: failed to upsert app→spec edge to graph: %v\n", err)
 		}
 	}
 
@@ -2592,6 +2736,8 @@ func (s *Server) HandleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // startWorkflowScheduler starts a background goroutine that triggers dummy workflows every minute
+//
+//nolint:unused // Reserved for future workflow scheduling
 func (s *Server) startWorkflowScheduler() {
 	s.workflowTicker = time.NewTicker(1 * time.Minute)
 	s.stopScheduler = make(chan struct{})
@@ -2623,6 +2769,8 @@ func (s *Server) stopWorkflowScheduler() {
 }
 
 // triggerDummyWorkflow loads and executes the dummy workflow
+//
+//nolint:unused // Reserved for future workflow scheduling
 func (s *Server) triggerDummyWorkflow() {
 	// Only trigger if we have a workflow executor (database available)
 	if s.workflowExecutor == nil {
@@ -2647,6 +2795,8 @@ func (s *Server) triggerDummyWorkflow() {
 }
 
 // loadWorkflowFromFile loads a workflow definition from a YAML file
+//
+//nolint:unused // Reserved for future workflow scheduling
 func (s *Server) loadWorkflowFromFile(filePath string) (*types.Workflow, error) {
 	// Validate file path to prevent path traversal
 	cleanPath, err := security.SafeFilePath(filePath, "./workflows", "./data")

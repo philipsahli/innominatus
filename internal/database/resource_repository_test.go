@@ -10,7 +10,7 @@ import (
 
 func setupTestResourceRepo(t *testing.T) *ResourceRepository {
 	testDB := SetupTestDatabase(t)
-	t.Cleanup(func() { testDB.Close() })
+	t.Cleanup(func() { _ = testDB.Close() })
 	return NewResourceRepository(testDB.DB)
 }
 
@@ -36,7 +36,7 @@ func createTestResource(t *testing.T, repo *ResourceRepository, appName, resourc
 
 func TestNewResourceRepository(t *testing.T) {
 	testDB := SetupTestDatabase(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	repo := NewResourceRepository(testDB.DB)
 	if repo == nil {

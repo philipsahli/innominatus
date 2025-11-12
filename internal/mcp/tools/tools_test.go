@@ -31,7 +31,7 @@ func TestListGoldenPathsTool_Execute(t *testing.T) {
 			t.Errorf("Expected path /api/providers, got %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(mockResponse))
+		_, _ = w.Write([]byte(mockResponse))
 	}))
 	defer server.Close()
 
@@ -70,7 +70,7 @@ func TestListProvidersTool_Execute(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(mockResponse))
+		_, _ = w.Write([]byte(mockResponse))
 	}))
 	defer server.Close()
 
@@ -115,7 +115,7 @@ func TestGetProviderDetailsTool_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"name":"database-team","version":"1.0.0"}`))
+				_, _ = w.Write([]byte(`{"name":"database-team","version":"1.0.0"}`))
 			}))
 			defer server.Close()
 
@@ -164,7 +164,7 @@ func TestExecuteWorkflowTool_Execute(t *testing.T) {
 					t.Errorf("Expected path /api/workflows/execute, got %s", r.URL.Path)
 				}
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"execution_id":"123","status":"running"}`))
+				_, _ = w.Write([]byte(`{"execution_id":"123","status":"running"}`))
 			}))
 			defer server.Close()
 
@@ -211,7 +211,7 @@ func TestGetWorkflowStatusTool_Execute(t *testing.T) {
 					t.Errorf("Expected path %s, got %s", tt.wantPath, r.URL.Path)
 				}
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"id":"exec-123","status":"completed"}`))
+				_, _ = w.Write([]byte(`{"id":"exec-123","status":"completed"}`))
 			}))
 			defer server.Close()
 
@@ -261,7 +261,7 @@ func TestListWorkflowExecutionsTool_Execute(t *testing.T) {
 					t.Errorf("Expected path %s, got %s", tt.expectedPath, r.URL.Path+"?"+r.URL.RawQuery)
 				}
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`[{"id":"1"},{"id":"2"}]`))
+				_, _ = w.Write([]byte(`[{"id":"1"},{"id":"2"}]`))
 			}))
 			defer server.Close()
 
@@ -313,7 +313,7 @@ func TestListResourcesTool_Execute(t *testing.T) {
 				}
 
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`[{"id":"res-1","type":"postgres"}]`))
+				_, _ = w.Write([]byte(`[{"id":"res-1","type":"postgres"}]`))
 			}))
 			defer server.Close()
 
@@ -355,7 +355,7 @@ func TestGetResourceDetailsTool_Execute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"id":"res-123","type":"postgres","state":"active"}`))
+				_, _ = w.Write([]byte(`{"id":"res-123","type":"postgres","state":"active"}`))
 			}))
 			defer server.Close()
 
@@ -386,7 +386,7 @@ func TestListSpecsTool_Execute(t *testing.T) {
 			t.Errorf("Expected path /api/specs, got %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(mockResponse))
+		_, _ = w.Write([]byte(mockResponse))
 	}))
 	defer server.Close()
 
@@ -442,7 +442,7 @@ metadata:
 				}
 
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"status":"spec submitted","app_name":"test-app"}`))
+				_, _ = w.Write([]byte(`{"status":"spec submitted","app_name":"test-app"}`))
 			}))
 			defer server.Close()
 

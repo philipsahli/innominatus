@@ -2780,12 +2780,13 @@ func (c *Client) displaySingleStepLogs(step *WorkflowStepDetail, options LogsOpt
 		}
 	} else {
 		// Different messages based on step status
-		if step.Status == "failed" {
+		switch step.Status {
+		case "failed":
 			fmt.Printf("   Logs: ⚠️  No logs available. Step may have failed before producing output.\n")
 			fmt.Printf("         Check error message above for details.\n")
-		} else if step.Status == "completed" {
+		case "completed":
 			fmt.Printf("   Logs: (No output - step completed successfully without producing logs)\n")
-		} else {
+		default:
 			fmt.Printf("   Logs: No output logs available\n")
 		}
 	}

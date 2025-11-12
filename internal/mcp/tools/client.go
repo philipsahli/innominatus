@@ -89,7 +89,9 @@ func (c *APIClient) requestWithContentType(ctx context.Context, method, endpoint
 		log.Error().Err(err).Str("method", method).Str("url", url).Msg("HTTP request failed")
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	// Read response body
 	respBody, err := io.ReadAll(resp.Body)

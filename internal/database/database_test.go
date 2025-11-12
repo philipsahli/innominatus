@@ -11,7 +11,7 @@ import (
 func TestNewDatabase(t *testing.T) {
 	// Setup testcontainer
 	testDB := SetupTestDatabaseWithoutSchema(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Test that database connection works
 	assert.NotNil(t, testDB.DB)
@@ -23,7 +23,7 @@ func TestNewDatabase(t *testing.T) {
 func TestNewDatabaseWithConfig(t *testing.T) {
 	// Setup testcontainer
 	testDB := SetupTestDatabaseWithoutSchema(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Test that config is used correctly
 	assert.NotNil(t, testDB.DB)
@@ -183,7 +183,7 @@ func TestDatabaseMethods(t *testing.T) {
 func TestDatabaseConnectionPool(t *testing.T) {
 	// Setup testcontainer
 	testDB := SetupTestDatabaseWithoutSchema(t)
-	defer testDB.Close()
+	defer func() { _ = testDB.Close() }()
 
 	// Test that we can get the underlying DB
 	sqlDB := testDB.DB.GetDB()
@@ -207,7 +207,7 @@ func TestInitSchema(t *testing.T) {
 	t.Run("successful schema initialization", func(t *testing.T) {
 		// Setup testcontainer without schema
 		testDB := SetupTestDatabaseWithoutSchema(t)
-		defer testDB.Close()
+		defer func() { _ = testDB.Close() }()
 
 		// Initialize schema
 		err := testDB.DB.InitSchema()
