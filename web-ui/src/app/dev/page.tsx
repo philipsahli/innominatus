@@ -1,5 +1,8 @@
+'use client';
+
 import Link from 'next/link';
 import { Package, Database, GitBranch, Network } from 'lucide-react';
+import { ActivityFeed } from '@/components/dev/activity-feed';
 
 export default function DevHome() {
   return (
@@ -32,15 +35,8 @@ export default function DevHome() {
         <StatCard title="Graph" value="Visualize" href="/dev/graph" icon={<Network size={16} />} />
       </div>
 
-      {/* Recent Activity Placeholder */}
-      <div className="rounded-lg border border-zinc-200 dark:border-zinc-800">
-        <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h2 className="text-sm font-medium text-zinc-900 dark:text-white">
-            Recent Workflow Executions
-          </h2>
-        </div>
-        <div className="p-8 text-center text-sm text-zinc-500">Loading workflow data...</div>
-      </div>
+      {/* Live Activity Feed */}
+      <ActivityFeed maxEvents={15} />
     </div>
   );
 }
