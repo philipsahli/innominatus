@@ -5,6 +5,39 @@
 
 import type { GraphNode, GraphEdge } from './api';
 
+// Event from the backend when graph changes occur
+export interface GraphEvent {
+  type: 'node_added' | 'node_state_changed' | 'node_updated' | 'edge_added' | 'graph_updated';
+  timestamp: string;
+  node_id?: string;
+  node_name?: string;
+  node_type?: string;
+  old_state?: string;
+  new_state?: string;
+  edge_id?: string;
+  edge_type?: string;
+  from_node?: string;
+  to_node?: string;
+  from_id?: string;
+  to_id?: string;
+  node_count?: number;
+  edge_count?: number;
+  metadata?: Record<string, unknown>;
+}
+
+// Message received from WebSocket
+export interface GraphWebSocketMessage {
+  graph: {
+    app_name: string;
+    nodes: GraphNode[];
+    edges: GraphEdge[];
+    created_at: string;
+    updated_at: string;
+  };
+  event?: GraphEvent;
+}
+
+// Legacy format for backwards compatibility
 export interface GraphUpdate {
   type: 'full' | 'node' | 'edge' | 'status';
   nodes?: GraphNode[];
@@ -12,6 +45,7 @@ export interface GraphUpdate {
   node?: Partial<GraphNode>;
   nodeId?: string;
   status?: string;
+  event?: GraphEvent; // New field for activity feed
 }
 
 export type GraphUpdateCallback = (update: GraphUpdate) => void;
@@ -52,7 +86,16 @@ export class GraphWebSocket {
 
       this.ws.onmessage = (event) => {
         try {
-          const update: GraphUpdate = JSON.parse(event.data);
+          const message: GraphWebSocketMessage = JSON.parse(event.data);
+
+          // Convert new format to legacy GraphUpdate format for backwards compatibility
+          const update: GraphUpdate = {
+            type: 'full',
+            nodes: message.graph.nodes,
+            edges: message.graph.edges,
+            event: message.event, // Pass through event for activity feed
+          };
+
           this.notifyCallbacks(update);
         } catch (error) {
           console.error('[GraphWebSocket] Failed to parse message:', error);

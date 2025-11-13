@@ -41,6 +41,23 @@ type GraphWebSocketHub struct {
 type GraphUpdate struct {
 	AppName string
 	Graph   interface{}
+	Event   *GraphEvent `json:"event,omitempty"` // Optional event metadata for activity feed
+}
+
+// GraphEvent represents a specific change event in the graph
+type GraphEvent struct {
+	Type      string                 `json:"type"`       // node_added, node_state_changed, node_updated, edge_added, graph_updated
+	Timestamp string                 `json:"timestamp"`  // RFC3339 timestamp
+	NodeID    string                 `json:"node_id,omitempty"`
+	NodeType  string                 `json:"node_type,omitempty"`
+	NodeName  string                 `json:"node_name,omitempty"`
+	OldState  string                 `json:"old_state,omitempty"`
+	NewState  string                 `json:"new_state,omitempty"`
+	EdgeID    string                 `json:"edge_id,omitempty"`
+	EdgeType  string                 `json:"edge_type,omitempty"`
+	FromNode  string                 `json:"from_node,omitempty"`
+	ToNode    string                 `json:"to_node,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ClientRegistration represents a client connection registration
@@ -90,7 +107,15 @@ func (h *GraphWebSocketHub) Run() {
 			clients := h.clients[update.AppName]
 			h.mu.RUnlock()
 
-			message, err := json.Marshal(update.Graph)
+			// Create message payload with graph and optional event
+			payload := map[string]interface{}{
+				"graph": update.Graph,
+			}
+			if update.Event != nil {
+				payload["event"] = update.Event
+			}
+
+			message, err := json.Marshal(payload)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to marshal graph update: %v\n", err)
 				continue
@@ -117,6 +142,44 @@ func (h *GraphWebSocketHub) BroadcastGraphUpdate(appName string, graph interface
 	case <-time.After(time.Second):
 		fmt.Fprintf(os.Stderr, "timeout broadcasting graph update for app: %s\n", appName)
 	}
+}
+
+// BroadcastGraphUpdateWithEvent sends a graph update with event metadata to all connected clients
+func (h *GraphWebSocketHub) BroadcastGraphUpdateWithEvent(appName string, graph interface{}, event interface{}) {
+	// Convert event map to GraphEvent struct if needed
+	var graphEvent *GraphEvent
+	if eventMap, ok := event.(map[string]interface{}); ok {
+		graphEvent = &GraphEvent{
+			Type:      getStringFromMap(eventMap, "type"),
+			Timestamp: getStringFromMap(eventMap, "timestamp"),
+			NodeID:    getStringFromMap(eventMap, "node_id"),
+			NodeType:  getStringFromMap(eventMap, "node_type"),
+			NodeName:  getStringFromMap(eventMap, "node_name"),
+			OldState:  getStringFromMap(eventMap, "old_state"),
+			NewState:  getStringFromMap(eventMap, "new_state"),
+			EdgeID:    getStringFromMap(eventMap, "edge_id"),
+			EdgeType:  getStringFromMap(eventMap, "edge_type"),
+			FromNode:  getStringFromMap(eventMap, "from_node"),
+			ToNode:    getStringFromMap(eventMap, "to_node"),
+			Metadata:  eventMap,
+		}
+	}
+
+	select {
+	case h.broadcast <- GraphUpdate{AppName: appName, Graph: graph, Event: graphEvent}:
+	case <-time.After(time.Second):
+		fmt.Fprintf(os.Stderr, "timeout broadcasting graph update with event for app: %s\n", appName)
+	}
+}
+
+// Helper function to safely get string from map
+func getStringFromMap(m map[string]interface{}, key string) string {
+	if val, ok := m[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
 }
 
 // handleGraphWebSocket handles WebSocket connections for real-time graph updates
@@ -146,7 +209,11 @@ func (s *Server) handleGraphWebSocket(w http.ResponseWriter, r *http.Request, ap
 		graph, err := s.graphAdapter.GetGraph(appName)
 		if err == nil {
 			graphJSON := convertSDKGraphToFrontend(graph)
-			message, err := json.Marshal(graphJSON)
+			// Send in same format as updates (with graph field, no event for initial load)
+			payload := map[string]interface{}{
+				"graph": graphJSON,
+			}
+			message, err := json.Marshal(payload)
 			if err == nil {
 				_ = conn.WriteMessage(websocket.TextMessage, message)
 			}

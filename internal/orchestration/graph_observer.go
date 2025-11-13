@@ -19,6 +19,7 @@ type GraphObserver struct {
 // This allows us to avoid circular dependencies with the server package
 type WebSocketHub interface {
 	BroadcastGraphUpdate(appName string, graphData interface{})
+	BroadcastGraphUpdateWithEvent(appName string, graphData interface{}, event interface{})
 }
 
 // NewGraphObserver creates a new observer that bridges graph events to WebSocket broadcasts
@@ -39,8 +40,27 @@ func (o *GraphObserver) OnNodeStateChanged(g *graphSDK.Graph, nodeID string, old
 		"new_state": newState,
 	})
 
-	// Broadcast the full graph with updated state
-	o.broadcastGraph(g)
+	// Get node details for event
+	node, found := g.GetNode(nodeID)
+	var nodeName, nodeType string
+	if found && node != nil {
+		nodeName = node.Name
+		nodeType = string(node.Type)
+	}
+
+	// Create event object
+	event := map[string]interface{}{
+		"type":      "node_state_changed",
+		"timestamp": g.UpdatedAt,
+		"node_id":   nodeID,
+		"node_name": nodeName,
+		"node_type": nodeType,
+		"old_state": string(oldState),
+		"new_state": string(newState),
+	}
+
+	// Broadcast the full graph with event metadata
+	o.broadcastGraphWithEvent(g, event)
 }
 
 // OnNodeUpdated is called when a node is updated (including timing changes)
@@ -50,8 +70,25 @@ func (o *GraphObserver) OnNodeUpdated(g *graphSDK.Graph, nodeID string) {
 		"node_id":  nodeID,
 	})
 
-	// Broadcast the full graph with updated node
-	o.broadcastGraph(g)
+	// Get node details for event
+	node, found := g.GetNode(nodeID)
+	var nodeName, nodeType string
+	if found && node != nil {
+		nodeName = node.Name
+		nodeType = string(node.Type)
+	}
+
+	// Create event object
+	event := map[string]interface{}{
+		"type":      "node_updated",
+		"timestamp": g.UpdatedAt,
+		"node_id":   nodeID,
+		"node_name": nodeName,
+		"node_type": nodeType,
+	}
+
+	// Broadcast the full graph with event metadata
+	o.broadcastGraphWithEvent(g, event)
 }
 
 // OnEdgeAdded is called when an edge is added to the graph
@@ -64,8 +101,31 @@ func (o *GraphObserver) OnEdgeAdded(g *graphSDK.Graph, edge *graphSDK.Edge) {
 		"edge_type":    edge.Type,
 	})
 
-	// Broadcast the full graph with new edge
-	o.broadcastGraph(g)
+	// Get node names for context
+	fromNode, fromFound := g.GetNode(edge.FromNodeID)
+	toNode, toFound := g.GetNode(edge.ToNodeID)
+	var fromNodeName, toNodeName string
+	if fromFound && fromNode != nil {
+		fromNodeName = fromNode.Name
+	}
+	if toFound && toNode != nil {
+		toNodeName = toNode.Name
+	}
+
+	// Create event object
+	event := map[string]interface{}{
+		"type":       "edge_added",
+		"timestamp":  g.UpdatedAt,
+		"edge_id":    edge.ID,
+		"edge_type":  string(edge.Type),
+		"from_node":  fromNodeName,
+		"to_node":    toNodeName,
+		"from_id":    edge.FromNodeID,
+		"to_id":      edge.ToNodeID,
+	}
+
+	// Broadcast the full graph with event metadata
+	o.broadcastGraphWithEvent(g, event)
 }
 
 // OnGraphUpdated is called when the graph structure changes
@@ -76,8 +136,16 @@ func (o *GraphObserver) OnGraphUpdated(g *graphSDK.Graph) {
 		"edge_count": len(g.Edges),
 	})
 
-	// Broadcast the updated graph
-	o.broadcastGraph(g)
+	// Create event object
+	event := map[string]interface{}{
+		"type":       "graph_updated",
+		"timestamp":  g.UpdatedAt,
+		"node_count": len(g.Nodes),
+		"edge_count": len(g.Edges),
+	}
+
+	// Broadcast the updated graph with event metadata
+	o.broadcastGraphWithEvent(g, event)
 }
 
 // broadcastGraph sends the graph to all connected WebSocket clients
@@ -88,6 +156,17 @@ func (o *GraphObserver) broadcastGraph(g *graphSDK.Graph) {
 	// Broadcast to WebSocket clients
 	if o.wsHub != nil {
 		o.wsHub.BroadcastGraphUpdate(g.AppName, graphData)
+	}
+}
+
+// broadcastGraphWithEvent sends the graph with event metadata to WebSocket clients
+func (o *GraphObserver) broadcastGraphWithEvent(g *graphSDK.Graph, event interface{}) {
+	// Convert SDK graph to frontend format
+	graphData := convertSDKGraphToFrontend(g)
+
+	// Broadcast to WebSocket clients with event metadata
+	if o.wsHub != nil {
+		o.wsHub.BroadcastGraphUpdateWithEvent(g.AppName, graphData, event)
 	}
 }
 
