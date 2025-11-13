@@ -2,29 +2,7 @@
 
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
-
-interface GraphNode {
-  id: string;
-  name: string;
-  type: string;
-  status: string;
-  description?: string;
-  metadata?: any;
-  step_number?: number;
-  total_steps?: number;
-  workflow_id?: number;
-  duration_ms?: number;
-  execution_order?: number;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface GraphEdge {
-  id: string;
-  source_id: string;
-  target_id: string;
-  type: string;
-}
+import { GraphNode, GraphEdge } from '@/lib/api';
 
 interface GraphTextViewProps {
   nodes: GraphNode[];
@@ -35,6 +13,10 @@ interface GraphTextViewProps {
   filters?: {
     types: Record<string, boolean>;
     statuses: Record<string, boolean>;
+    resourceTypes: Record<string, boolean>;
+    providers: Record<string, boolean>;
+    resourceStates: Record<string, boolean>;
+    healthStatuses: Record<string, boolean>;
   };
   onNodeClick?: (node: GraphNode) => void;
 }
@@ -105,9 +87,58 @@ export function GraphTextView({
     let filteredNodes = nodes;
     if (filters) {
       filteredNodes = nodes.filter((n) => {
+        // Basic type and status filters
         const typeMatch = filters.types[n.type] !== false;
         const statusMatch = filters.statuses[n.status] !== false;
-        return typeMatch && statusMatch;
+
+        // Resource type filter (only applies to resource nodes)
+        let resourceTypeMatch = true;
+        if (n.type === 'resource' && n.metadata?.resource_type) {
+          const resourceType = n.metadata.resource_type;
+          // Only filter if this resource type exists in filters and is disabled
+          if (resourceType in filters.resourceTypes) {
+            resourceTypeMatch = filters.resourceTypes[resourceType] !== false;
+          }
+        }
+
+        // Provider filter
+        let providerMatch = true;
+        if (n.metadata?.provider_id) {
+          const provider = n.metadata.provider_id;
+          // Only filter if this provider exists in filters and is disabled
+          if (provider in filters.providers) {
+            providerMatch = filters.providers[provider] !== false;
+          }
+        }
+
+        // Resource state filter (different from status)
+        let resourceStateMatch = true;
+        if (n.type === 'resource' && n.metadata?.state) {
+          const state = n.metadata.state;
+          // Only filter if this state exists in filters and is disabled
+          if (state in filters.resourceStates) {
+            resourceStateMatch = filters.resourceStates[state] !== false;
+          }
+        }
+
+        // Health status filter
+        let healthStatusMatch = true;
+        if (n.metadata?.health_status) {
+          const healthStatus = n.metadata.health_status;
+          // Only filter if this health status exists in filters and is disabled
+          if (healthStatus in filters.healthStatuses) {
+            healthStatusMatch = filters.healthStatuses[healthStatus] !== false;
+          }
+        }
+
+        return (
+          typeMatch &&
+          statusMatch &&
+          resourceTypeMatch &&
+          providerMatch &&
+          resourceStateMatch &&
+          healthStatusMatch
+        );
       });
     }
 
@@ -125,7 +156,7 @@ export function GraphTextView({
       const parent = nodeMap.get(edge.source_id);
       const child = nodeMap.get(edge.target_id);
 
-      if (parent && child && edge.type === 'contains') {
+      if (parent && child && edge.relationship === 'contains') {
         parent.children.push(child);
         child.level = parent.level + 1;
         childrenSet.add(child.node.id);
@@ -165,7 +196,7 @@ export function GraphTextView({
     const connector = isRoot ? '' : isLast ? '└── ' : '├── ';
     const childPrefix = isRoot ? '' : isLast ? '    ' : '│   ';
 
-    const isClickable = node.type === 'workflow' && onNodeClick;
+    const isClickable = onNodeClick && ['workflow', 'resource', 'spec', 'step'].includes(node.type);
     const nodeClasses = `
       ${isOnCriticalPath ? 'bg-purple-100 dark:bg-purple-900/30 font-bold' : ''}
       ${isSearchMatch ? 'bg-yellow-100 dark:bg-yellow-900/30' : ''}

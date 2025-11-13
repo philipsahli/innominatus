@@ -49,9 +49,7 @@ export default function ApplicationsPage() {
 
   // Filter applications by selected team
   const filteredApplications =
-    selectedTeam === 'all'
-      ? applications
-      : applications.filter((app) => app.team === selectedTeam);
+    selectedTeam === 'all' ? applications : applications.filter((app) => app.team === selectedTeam);
 
   return (
     <div className="space-y-6">
@@ -76,7 +74,10 @@ export default function ApplicationsPage() {
       {/* Filters */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <label htmlFor="team-filter" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          <label
+            htmlFor="team-filter"
+            className="text-sm font-medium text-zinc-700 dark:text-zinc-300"
+          >
             Team:
           </label>
           <select
@@ -118,7 +119,13 @@ export default function ApplicationsPage() {
           {loading ? (
             <DataTableLoading />
           ) : filteredApplications.length === 0 ? (
-            <DataTableEmpty message={selectedTeam === 'all' ? 'No applications deployed yet' : `No applications found for team "${selectedTeam}"`} />
+            <DataTableEmpty
+              message={
+                selectedTeam === 'all'
+                  ? 'No applications deployed yet'
+                  : `No applications found for team "${selectedTeam}"`
+              }
+            />
           ) : (
             filteredApplications.map((app) => (
               <DataTableRow key={app.name}>
@@ -182,7 +189,8 @@ export default function ApplicationsPage() {
       {/* Stats */}
       {!loading && applications.length > 0 && (
         <div className="text-sm text-zinc-500">
-          Showing {filteredApplications.length} of {applications.length} application{applications.length !== 1 ? 's' : ''}
+          Showing {filteredApplications.length} of {applications.length} application
+          {applications.length !== 1 ? 's' : ''}
           {selectedTeam !== 'all' && ` (filtered by team: ${selectedTeam})`}
         </div>
       )}

@@ -123,9 +123,7 @@ export default function ResourcesPage() {
                         {resource.hints[0].value.length > 30 && '...'}
                       </span>
                       {resource.hints.length > 1 && (
-                        <span className="text-zinc-400">
-                          +{resource.hints.length - 1} more
-                        </span>
+                        <span className="text-zinc-400">+{resource.hints.length - 1} more</span>
                       )}
                     </div>
                   ) : (
@@ -195,43 +193,49 @@ export default function ResourcesPage() {
                 </div>
 
                 {/* Hints */}
-                {selectedResource.hints && Array.isArray(selectedResource.hints) && selectedResource.hints.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                      Quick Access
-                    </h3>
-                    <div className="mt-2 grid grid-cols-1 gap-2">
-                      {selectedResource.hints.map((hint, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                              {hint.label}
-                            </div>
-                            <div className="mt-1 truncate text-xs text-zinc-500">
-                              {hint.value}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => {
-                              if (hint.type === 'url' || hint.type === 'dashboard') {
-                                window.open(hint.value, '_blank', 'noopener,noreferrer');
-                              } else {
-                                navigator.clipboard.writeText(hint.value);
-                              }
-                            }}
-                            className="ml-2 text-lime-600 hover:text-lime-700 dark:text-lime-400"
-                            title={hint.type === 'url' || hint.type === 'dashboard' ? 'Open in new tab' : 'Copy to clipboard'}
+                {selectedResource.hints &&
+                  Array.isArray(selectedResource.hints) &&
+                  selectedResource.hints.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                        Quick Access
+                      </h3>
+                      <div className="mt-2 grid grid-cols-1 gap-2">
+                        {selectedResource.hints.map((hint, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
                           >
-                            {hint.type === 'url' || hint.type === 'dashboard' ? '↗' : '📋'}
-                          </button>
-                        </div>
-                      ))}
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                {hint.label}
+                              </div>
+                              <div className="mt-1 truncate text-xs text-zinc-500">
+                                {hint.value}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (hint.type === 'url' || hint.type === 'dashboard') {
+                                  window.open(hint.value, '_blank', 'noopener,noreferrer');
+                                } else {
+                                  navigator.clipboard.writeText(hint.value);
+                                }
+                              }}
+                              className="ml-2 text-lime-600 hover:text-lime-700 dark:text-lime-400"
+                              title={
+                                hint.type === 'url' || hint.type === 'dashboard'
+                                  ? 'Open in new tab'
+                                  : 'Copy to clipboard'
+                              }
+                            >
+                              {hint.type === 'url' || hint.type === 'dashboard' ? '↗' : '📋'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
                 {/* Configuration */}
                 {selectedResource.configuration && (
