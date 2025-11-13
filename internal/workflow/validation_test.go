@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"innominatus/internal/types"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -210,9 +211,9 @@ func TestValidateStepVariables_FailFast(t *testing.T) {
 		Name: "deploy",
 		Type: "kubernetes",
 		Config: map[string]interface{}{
-			"namespace": "${workflow.NAMESPACE}", // Missing
+			"namespace": "${workflow.NAMESPACE}",             // Missing
 			"image":     "registry.com/app:${build.version}", // Also missing
-			"replicas":  "${workflow.REPLICAS}", // Also missing
+			"replicas":  "${workflow.REPLICAS}",              // Also missing
 		},
 	}
 
@@ -380,11 +381,19 @@ func TestIsStrictMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Clean environment
-			os.Unsetenv("STRICT_VALIDATION")
+			if err := os.Unsetenv("STRICT_VALIDATION"); err != nil {
+				t.Fatalf("Failed to unset env: %v", err)
+			}
 
 			if tt.envValue != "" {
-				os.Setenv("STRICT_VALIDATION", tt.envValue)
-				defer os.Unsetenv("STRICT_VALIDATION")
+				if err := os.Setenv("STRICT_VALIDATION", tt.envValue); err != nil {
+					t.Fatalf("Failed to set env: %v", err)
+				}
+				defer func() {
+					if err := os.Unsetenv("STRICT_VALIDATION"); err != nil {
+						t.Errorf("Failed to unset env in defer: %v", err)
+					}
+				}()
 			}
 
 			result := IsStrictMode()
@@ -398,9 +407,13 @@ func TestValidateStepVariables_StrictMode(t *testing.T) {
 	originalEnv := os.Getenv("STRICT_VALIDATION")
 	defer func() {
 		if originalEnv != "" {
-			os.Setenv("STRICT_VALIDATION", originalEnv)
+			if err := os.Setenv("STRICT_VALIDATION", originalEnv); err != nil {
+				t.Errorf("Failed to restore env: %v", err)
+			}
 		} else {
-			os.Unsetenv("STRICT_VALIDATION")
+			if err := os.Unsetenv("STRICT_VALIDATION"); err != nil {
+				t.Errorf("Failed to unset env: %v", err)
+			}
 		}
 	}()
 
@@ -418,7 +431,9 @@ func TestValidateStepVariables_StrictMode(t *testing.T) {
 	}
 
 	t.Run("strict mode fails", func(t *testing.T) {
-		os.Setenv("STRICT_VALIDATION", "true")
+		if err := os.Setenv("STRICT_VALIDATION", "true"); err != nil {
+			t.Fatalf("Failed to set env: %v", err)
+		}
 
 		err := execContext.ValidateStepVariables(step, step.Env)
 		require.Error(t, err)
@@ -426,7 +441,9 @@ func TestValidateStepVariables_StrictMode(t *testing.T) {
 	})
 
 	t.Run("lenient mode succeeds with warning", func(t *testing.T) {
-		os.Setenv("STRICT_VALIDATION", "false")
+		if err := os.Setenv("STRICT_VALIDATION", "false"); err != nil {
+			t.Fatalf("Failed to set env: %v", err)
+		}
 
 		// In lenient mode, validation should NOT error
 		// (warnings will be logged but function returns nil)
@@ -438,8 +455,14 @@ func TestValidateStepVariables_StrictMode(t *testing.T) {
 
 func TestValidateVariableExists_SystemEnv(t *testing.T) {
 	// Set a system environment variable
-	os.Setenv("TEST_SYSTEM_VAR", "system-value")
-	defer os.Unsetenv("TEST_SYSTEM_VAR")
+	if err := os.Setenv("TEST_SYSTEM_VAR", "system-value"); err != nil {
+		t.Fatalf("Failed to set env: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("TEST_SYSTEM_VAR"); err != nil {
+			t.Errorf("Failed to unset env: %v", err)
+		}
+	}()
 
 	execContext := &ExecutionContext{
 		WorkflowVariables:   map[string]string{},
