@@ -297,6 +297,25 @@ func (e *WorkflowExecutor) ExecuteWorkflowWithName(appName, workflowName string,
 		})
 	}
 
+	// Pre-execution validation: Check all workflow variable references
+	if err := e.execContext.ValidateWorkflowVariables(workflow); err != nil {
+		if IsStrictMode() {
+			span.RecordError(err)
+			e.logger.ErrorWithFields("Workflow validation failed", map[string]interface{}{
+				"app_name":      appName,
+				"workflow_name": workflowName,
+				"error":         err.Error(),
+			})
+			return fmt.Errorf("workflow validation failed: %w", err)
+		}
+		// Lenient mode: log warning but continue
+		e.logger.WarnWithFields("Workflow validation warnings (lenient mode)", map[string]interface{}{
+			"app_name":      appName,
+			"workflow_name": workflowName,
+			"warning":       err.Error(),
+		})
+	}
+
 	// Create workflow execution record
 	execution, err := e.repo.CreateWorkflowExecution(appName, workflowName, len(workflow.Steps))
 	if err != nil {
@@ -1172,6 +1191,25 @@ func (e *WorkflowExecutor) executeSingleStep(ctx context.Context, appName string
 			}
 		}
 		fmt.Printf("      ✓ All dependencies satisfied for %s\n", step.Name)
+	}
+
+	// Per-step validation: Check all variable references in step configuration
+	if err := e.execContext.ValidateStepVariables(step, step.Env); err != nil {
+		if IsStrictMode() {
+			// In strict mode, fail the step immediately
+			e.logger.ErrorWithFields("Step validation failed", map[string]interface{}{
+				"app_name":  appName,
+				"step_name": step.Name,
+				"error":     err.Error(),
+			})
+			return fmt.Errorf("step validation failed: %w", err)
+		}
+		// Lenient mode: log warning but continue
+		e.logger.WarnWithFields("Step validation warnings (lenient mode)", map[string]interface{}{
+			"app_name":  appName,
+			"step_name": step.Name,
+			"warning":   err.Error(),
+		})
 	}
 
 	// Check if step should be executed based on conditions

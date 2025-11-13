@@ -32,6 +32,7 @@ async function initializeDagre() {
 
 interface GraphViewCytoscapeProps {
   applications: Array<{ name: string }>;
+  onNodeSelect?: (node: any) => void;
 }
 
 const LAYOUTS = [
@@ -42,7 +43,7 @@ const LAYOUTS = [
   { value: 'cose', label: 'Force Directed (CoSE)' },
 ];
 
-export function GraphViewCytoscape({ applications }: GraphViewCytoscapeProps) {
+export function GraphViewCytoscape({ applications, onNodeSelect }: GraphViewCytoscapeProps) {
   const [selectedApp, setSelectedApp] = useState<string>('');
   const [elements, setElements] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -213,6 +214,19 @@ export function GraphViewCytoscape({ applications }: GraphViewCytoscapeProps) {
             stylesheet={stylesheet}
             cy={(cy) => {
               cyRef.current = cy;
+
+              // Add click handler for nodes
+              cy.on('tap', 'node', (evt) => {
+                const node = evt.target;
+                const nodeData = {
+                  id: node.data('id'),
+                  name: node.data('label'),
+                  type: node.data('type'),
+                  status: node.data('status'),
+                  metadata: {},
+                };
+                onNodeSelect?.(nodeData);
+              });
             }}
           />
         )}

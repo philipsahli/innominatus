@@ -29,6 +29,7 @@ import {
 
 interface GraphViewReactFlowProps {
   applications: Array<{ name: string }>;
+  onNodeSelect?: (node: any) => void;
 }
 
 // ELK layout configuration
@@ -75,7 +76,7 @@ async function getLayoutedElements(nodes: Node[], edges: Edge[]) {
   return { nodes: layoutedNodes, edges };
 }
 
-export function GraphViewReactFlow({ applications }: GraphViewReactFlowProps) {
+export function GraphViewReactFlow({ applications, onNodeSelect }: GraphViewReactFlowProps) {
   const [selectedApp, setSelectedApp] = useState<string>('');
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -205,6 +206,20 @@ export function GraphViewReactFlow({ applications }: GraphViewReactFlowProps) {
     }
   };
 
+  const handleNodeClick = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      const graphNode = {
+        id: node.id,
+        name: node.data.label,
+        type: node.data.type,
+        status: node.data.status,
+        metadata: node.data.metadata || {},
+      };
+      onNodeSelect?.(graphNode);
+    },
+    [onNodeSelect]
+  );
+
   if (!selectedApp) {
     return (
       <div className="space-y-4">
@@ -296,6 +311,7 @@ export function GraphViewReactFlow({ applications }: GraphViewReactFlowProps) {
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            onNodeClick={handleNodeClick}
             fitView
             attributionPosition="bottom-left"
             minZoom={0.1}

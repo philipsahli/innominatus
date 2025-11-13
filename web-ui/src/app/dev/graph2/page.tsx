@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { api } from '@/lib/api';
+import { api, type GraphNode } from '@/lib/api';
 import { ResourceTable, type Resource } from '@/components/dev/resource-table';
 import { WorkflowTable, type Workflow } from '@/components/dev/workflow-table';
 import { LiveStepsMonitor } from '@/components/dev/live-steps-monitor';
@@ -19,6 +19,10 @@ import { GraphView } from '@/components/dev/graph-view';
 import { GraphViewReactFlow } from '@/components/dev/graph-view-reactflow';
 import { GraphViewCytoscape } from '@/components/dev/graph-view-cytoscape';
 import { GraphViewD3 } from '@/components/dev/graph-view-d3';
+import { WorkflowDetailsPane } from '@/components/workflow-details-pane';
+import { ResourceDetailsPane } from '@/components/resource-details-pane';
+import { SpecDetailsPane } from '@/components/spec-details-pane';
+import { StepDetailsPane } from '@/components/step-details-pane';
 
 interface Application {
   name: string;
@@ -35,6 +39,18 @@ export default function Graph2Page() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [appFilter, setAppFilter] = useState<string>('all');
   const [graphLibrary, setGraphLibrary] = useState<string>('svg');
+
+  // Detail pane state
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const [selectedDetailType, setSelectedDetailType] = useState<
+    'workflow' | 'resource' | 'spec' | 'step' | null
+  >(null);
+  const [showDetailsPane, setShowDetailsPane] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<any | null>(null);
+  const [selectedResource, setSelectedResource] = useState<any | null>(null);
+  const [selectedSpec, setSelectedSpec] = useState<any | null>(null);
+  const [selectedStep, setSelectedStep] = useState<any | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -148,6 +164,53 @@ export default function Graph2Page() {
       setWorkflows(updatedWorkflows);
     } catch (error) {
       console.error('Failed to refresh workflows:', error);
+    }
+  }
+
+  async function handleNodeClick(node: GraphNode) {
+    setLoadingDetails(true);
+    setShowDetailsPane(true);
+    setSelectedNode(node);
+    setSelectedDetailType(node.type as 'workflow' | 'resource' | 'spec' | 'step');
+
+    try {
+      switch (node.type) {
+        case 'workflow': {
+          const workflowId = node.metadata?.workflow_execution_id || node.id.split('-')[1];
+          const appName = node.metadata?.application_name || applications[0]?.name;
+          if (appName && workflowId) {
+            const response = await api.getWorkflowDetailsForGraph(appName, workflowId);
+            if (response.success && response.data) {
+              setSelectedWorkflow(response.data);
+            }
+          }
+          break;
+        }
+        case 'resource': {
+          const resourceId = node.metadata?.resource_id || node.id.split('-')[1];
+          if (resourceId) {
+            const response = await api.getResource(resourceId);
+            if (response.success && response.data) {
+              setSelectedResource(response.data);
+            }
+          }
+          break;
+        }
+        case 'spec': {
+          // For spec nodes, display directly from node data
+          setSelectedSpec(node);
+          break;
+        }
+        case 'step': {
+          // For step nodes, display directly from node data
+          setSelectedStep(node);
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load node details:', error);
+    } finally {
+      setLoadingDetails(false);
     }
   }
 
@@ -321,12 +384,69 @@ export default function Graph2Page() {
 
             {/* Graph View */}
             {graphLibrary === 'svg' && <GraphView applications={applications} />}
-            {graphLibrary === 'reactflow' && <GraphViewReactFlow applications={applications} />}
-            {graphLibrary === 'cytoscape' && <GraphViewCytoscape applications={applications} />}
-            {graphLibrary === 'd3' && <GraphViewD3 applications={applications} />}
+            {graphLibrary === 'reactflow' && (
+              <GraphViewReactFlow applications={applications} onNodeSelect={handleNodeClick} />
+            )}
+            {graphLibrary === 'cytoscape' && (
+              <GraphViewCytoscape applications={applications} onNodeSelect={handleNodeClick} />
+            )}
+            {graphLibrary === 'd3' && (
+              <GraphViewD3 applications={applications} onNodeSelect={handleNodeClick} />
+            )}
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Detail Panes */}
+      {showDetailsPane && selectedDetailType === 'workflow' && selectedWorkflow && (
+        <WorkflowDetailsPane
+          workflow={selectedWorkflow}
+          onClose={() => {
+            setShowDetailsPane(false);
+            setSelectedNode(null);
+            setSelectedWorkflow(null);
+          }}
+          onRetry={async () => {
+            // TODO: Implement retry
+            console.log('Retry workflow:', selectedWorkflow.id);
+          }}
+        />
+      )}
+
+      {showDetailsPane && selectedDetailType === 'resource' && selectedResource && (
+        <ResourceDetailsPane
+          resource={selectedResource}
+          onClose={() => {
+            setShowDetailsPane(false);
+            setSelectedNode(null);
+            setSelectedResource(null);
+          }}
+        />
+      )}
+
+      {showDetailsPane && selectedDetailType === 'spec' && selectedSpec && (
+        <SpecDetailsPane
+          spec={selectedSpec}
+          edges={[]}
+          allNodes={[]}
+          onClose={() => {
+            setShowDetailsPane(false);
+            setSelectedNode(null);
+            setSelectedSpec(null);
+          }}
+        />
+      )}
+
+      {showDetailsPane && selectedDetailType === 'step' && selectedStep && (
+        <StepDetailsPane
+          step={selectedStep}
+          onClose={() => {
+            setShowDetailsPane(false);
+            setSelectedNode(null);
+            setSelectedStep(null);
+          }}
+        />
+      )}
     </div>
   );
 }

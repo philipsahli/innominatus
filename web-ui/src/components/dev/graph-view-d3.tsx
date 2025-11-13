@@ -11,9 +11,10 @@ interface GraphNode extends d3.SimulationNodeDatum, ApiGraphNode {}
 
 interface GraphViewD3Props {
   applications: Array<{ name: string }>;
+  onNodeSelect?: (node: any) => void;
 }
 
-export function GraphViewD3({ applications }: GraphViewD3Props) {
+export function GraphViewD3({ applications, onNodeSelect }: GraphViewD3Props) {
   const [selectedApp, setSelectedApp] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -52,7 +53,7 @@ export function GraphViewD3({ applications }: GraphViewD3Props) {
                 'x',
                 svgRef.current.clientHeight
               );
-              renderGraph(nodes, edges);
+              renderGraph(nodes, edges, onNodeSelect);
             }
           }, 100);
         }, 0);
@@ -63,7 +64,7 @@ export function GraphViewD3({ applications }: GraphViewD3Props) {
     }
   }
 
-  function renderGraph(nodes: GraphNode[], edges: GraphEdge[]) {
+  function renderGraph(nodes: GraphNode[], edges: GraphEdge[], onNodeSelect?: (node: any) => void) {
     if (!svgRef.current) {
       console.log('D3: SVG ref is null');
       return;
@@ -161,7 +162,11 @@ export function GraphViewD3({ applications }: GraphViewD3Props) {
       .attr('fill', (d) => getNodeColor(d.type, d.status).fill)
       .attr('stroke', (d) => getNodeColor(d.type, d.status).stroke)
       .attr('stroke-width', 3)
-      .style('cursor', 'move');
+      .style('cursor', 'pointer')
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        onNodeSelect?.(d);
+      });
 
     node
       .append('text')
