@@ -11,8 +11,8 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/lib/pq v1.10.9
 	github.com/modelcontextprotocol/go-sdk v1.1.0
-	github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251007053528-20f88711dd07
-	github.com/philipsahli/innominatus-graph v0.0.0-20251005160933-4d0670151100
+	github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251114080852-47a67bb58b81
+	github.com/philipsahli/innominatus-graph v0.0.0-20251114080921-99046df89125
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
 	github.com/rs/zerolog v1.34.0
