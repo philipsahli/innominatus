@@ -13,7 +13,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        go-version: ['1.24']
+        go-version: ['1.25.3']
 
     steps:
     - name: Checkout code
@@ -51,7 +51,7 @@ jobs:
       run: go test -v -race -coverprofile=coverage ./...
 
     - name: Upload coverage to Codecov
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.24'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.25.3'
       uses: codecov/codecov-action@v5
       with:
         files: ./coverage
@@ -68,7 +68,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.24'
+        go-version: '1.25.3'
 
     - name: Prepare static files for embedding
       run: ./scripts/prepare-embed.sh
@@ -89,7 +89,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v6
       with:
-        go-version: '1.24'
+        go-version: '1.25.3'
 
     - name: Prepare static files for embedding (Unix)
       if: runner.os != 'Windows'
