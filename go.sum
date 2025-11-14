@@ -234,6 +234,8 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251114080852-47a67bb58b81 h1:fnuyGlLoTXduJqQ5zAv/W3MdYH0dqCrEyx+blB6nFic=
 github.com/philipsahli/innominatus-ai-sdk v0.0.0-20251114080852-47a67bb58b81/go.mod h1:hAjHhbHGFbVDNbBH4fo8fgstyewSDEma5AY1M8DJvvI=
+github.com/philipsahli/innominatus-graph v0.0.0-20251114080921-99046df89125 h1:N8OW6RQdHCoq7ZzOxqW6JroxtOLMi2783jKVorNBi7M=
+github.com/philipsahli/innominatus-graph v0.0.0-20251114080921-99046df89125/go.mod h1:cAVTZ8LLfMRaIJ5wBSVNLZG9MfT3ZD0QFNab1hZfFOs=
 github.com/pjbgf/sha1cd v0.3.0 h1:4D5XXmUUBUl/xQ6IjCkEAbqXskkq/4O7LmGn0AqMDs4=
 github.com/pjbgf/sha1cd v0.3.0/go.mod h1:nZ1rrWOcGJ5uZgEEVL1VUM9iRQiZvWdbZjkKyFzPPsI=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
