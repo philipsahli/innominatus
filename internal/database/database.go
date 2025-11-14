@@ -163,6 +163,10 @@ CREATE TABLE IF NOT EXISTS workflow_executions (
     completed_at TIMESTAMP WITH TIME ZONE NULL,
     error_message TEXT NULL,
     total_steps INTEGER NOT NULL DEFAULT 0,
+    parent_execution_id BIGINT NULL REFERENCES workflow_executions(id) ON DELETE SET NULL,
+    retry_count INTEGER DEFAULT 0 NOT NULL,
+    is_retry BOOLEAN DEFAULT FALSE NOT NULL,
+    resume_from_step INTEGER NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
@@ -230,6 +234,10 @@ CREATE TABLE IF NOT EXISTS resource_instances (
     reference_url TEXT NULL,
     external_state VARCHAR(50) NULL,
     last_sync TIMESTAMP WITH TIME ZONE NULL,
+    workflow_execution_id BIGINT NULL,
+    desired_operation VARCHAR(50) NULL,
+    workflow_override VARCHAR(255) NULL,
+    workflow_tags JSONB DEFAULT '[]',
     hints JSONB DEFAULT '[]',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
