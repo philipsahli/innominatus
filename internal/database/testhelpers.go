@@ -44,6 +44,7 @@ type TestDatabase struct {
 // The container will be automatically cleaned up when the test ends
 func SetupTestDatabase(t *testing.T) *TestDatabase {
 	t.Helper()
+	SkipIfDockerNotAvailable(t)
 
 	ctx := context.Background()
 
@@ -117,6 +118,7 @@ func SetupTestDatabase(t *testing.T) *TestDatabase {
 // Useful for testing schema initialization itself
 func SetupTestDatabaseWithoutSchema(t *testing.T) *TestDatabase {
 	t.Helper()
+	SkipIfDockerNotAvailable(t)
 
 	ctx := context.Background()
 
