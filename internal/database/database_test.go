@@ -9,6 +9,8 @@ import (
 )
 
 func TestNewDatabase(t *testing.T) {
+	SkipIfDockerNotAvailable(t)
+
 	// Setup testcontainer
 	testDB := SetupTestDatabaseWithoutSchema(t)
 	defer func() { _ = testDB.Close() }()
@@ -21,6 +23,8 @@ func TestNewDatabase(t *testing.T) {
 }
 
 func TestNewDatabaseWithConfig(t *testing.T) {
+	SkipIfDockerNotAvailable(t)
+
 	// Setup testcontainer
 	testDB := SetupTestDatabaseWithoutSchema(t)
 	defer func() { _ = testDB.Close() }()
@@ -181,6 +185,8 @@ func TestDatabaseMethods(t *testing.T) {
 }
 
 func TestDatabaseConnectionPool(t *testing.T) {
+	SkipIfDockerNotAvailable(t)
+
 	// Setup testcontainer
 	testDB := SetupTestDatabaseWithoutSchema(t)
 	defer func() { _ = testDB.Close() }()
@@ -205,6 +211,8 @@ func TestInitSchema(t *testing.T) {
 	})
 
 	t.Run("successful schema initialization", func(t *testing.T) {
+		SkipIfDockerNotAvailable(t)
+
 		// Setup testcontainer without schema
 		testDB := SetupTestDatabaseWithoutSchema(t)
 		defer func() { _ = testDB.Close() }()

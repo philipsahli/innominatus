@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -10,6 +12,26 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+// SkipIfDockerNotAvailable skips the test if Docker is not available
+// This is needed for CI environments like GitHub Actions macOS runners
+func SkipIfDockerNotAvailable(t *testing.T) {
+	t.Helper()
+
+	// Check if Docker CLI is available
+	_, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("Docker not found in PATH - skipping test requiring Docker")
+		return
+	}
+
+	// Try to ping Docker daemon
+	cmd := exec.Command("docker", "info")
+	if err := cmd.Run(); err != nil {
+		t.Skipf("Docker daemon not available (OS: %s) - skipping test: %v", runtime.GOOS, err)
+		return
+	}
+}
 
 // TestDatabase holds the test container and database connection
 type TestDatabase struct {

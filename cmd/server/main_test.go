@@ -161,6 +161,8 @@ func TestServerStartupWithoutDatabase(t *testing.T) {
 
 // TestDatabaseConnectionStringHandling tests database connection logic
 func TestDatabaseConnectionStringHandling(t *testing.T) {
+	database.SkipIfDockerNotAvailable(t)
+
 	// Use testcontainer for actual database connection test
 	testDB := database.SetupTestDatabase(t)
 	defer func() { _ = testDB.Close() }()
