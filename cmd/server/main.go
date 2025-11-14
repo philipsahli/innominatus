@@ -32,8 +32,8 @@ var migrationsFS embed.FS
 //go:embed swagger-admin.yaml swagger-user.yaml
 var swaggerFilesFS embed.FS
 
-// Temporarily disabled for development - use filesystem mode
-// //go:embed all:web-ui-out
+//go:embed all:web-ui-out
+var webUIFS embed.FS
 
 // Build information - set via ldflags during release builds
 var (
@@ -410,17 +410,15 @@ func main() {
 	logger.Info("Embedded swagger files filesystem configured")
 
 	// Set embedded web-ui files filesystem
-	// DEVELOPMENT: Force filesystem mode by skipping embedded FS setup
-	// webUISubFS, err := fs.Sub(webUIFS, "web-ui-out")
-	// if err != nil {
-	// 	logger.WarnWithFields("Failed to create web-ui sub-filesystem", map[string]interface{}{
-	// 		"error": err.Error(),
-	// 	})
-	// } else {
-	// 	srv.SetWebUIFS(webUISubFS)
-	// 	logger.Info("Embedded web-ui filesystem configured")
-	// }
-	logger.Info("Using filesystem mode for web-ui (development)")
+	webUISubFS, err := fs.Sub(webUIFS, "web-ui-out")
+	if err != nil {
+		logger.WarnWithFields("Failed to create web-ui sub-filesystem", map[string]interface{}{
+			"error": err.Error(),
+		})
+	} else {
+		srv.SetWebUIFS(webUISubFS)
+		logger.Info("Embedded web-ui filesystem configured")
+	}
 
 	// Helper to apply standard middleware chain (OTel Tracing -> TraceID -> Logging)
 	withTrace := func(h http.HandlerFunc) http.HandlerFunc {
