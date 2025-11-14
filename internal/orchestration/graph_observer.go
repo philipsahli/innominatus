@@ -114,14 +114,14 @@ func (o *GraphObserver) OnEdgeAdded(g *graphSDK.Graph, edge *graphSDK.Edge) {
 
 	// Create event object
 	event := map[string]interface{}{
-		"type":       "edge_added",
-		"timestamp":  g.UpdatedAt,
-		"edge_id":    edge.ID,
-		"edge_type":  string(edge.Type),
-		"from_node":  fromNodeName,
-		"to_node":    toNodeName,
-		"from_id":    edge.FromNodeID,
-		"to_id":      edge.ToNodeID,
+		"type":      "edge_added",
+		"timestamp": g.UpdatedAt,
+		"edge_id":   edge.ID,
+		"edge_type": string(edge.Type),
+		"from_node": fromNodeName,
+		"to_node":   toNodeName,
+		"from_id":   edge.FromNodeID,
+		"to_id":     edge.ToNodeID,
 	}
 
 	// Broadcast the full graph with event metadata
@@ -146,17 +146,6 @@ func (o *GraphObserver) OnGraphUpdated(g *graphSDK.Graph) {
 
 	// Broadcast the updated graph with event metadata
 	o.broadcastGraphWithEvent(g, event)
-}
-
-// broadcastGraph sends the graph to all connected WebSocket clients
-func (o *GraphObserver) broadcastGraph(g *graphSDK.Graph) {
-	// Convert SDK graph to frontend format
-	graphData := convertSDKGraphToFrontend(g)
-
-	// Broadcast to WebSocket clients
-	if o.wsHub != nil {
-		o.wsHub.BroadcastGraphUpdate(g.AppName, graphData)
-	}
 }
 
 // broadcastGraphWithEvent sends the graph with event metadata to WebSocket clients

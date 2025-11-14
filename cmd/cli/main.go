@@ -20,6 +20,7 @@ var (
 	serverURL      string
 	details        bool
 	skipValidation bool
+	outputFormat   string
 	client         *cli.Client
 )
 
@@ -52,6 +53,16 @@ var rootCmd = &cobra.Command{
 		// Initialize client with server URL
 		client = cli.NewClient(serverURL)
 
+		// Set output format
+		switch outputFormat {
+		case "json":
+			client.Formatter.SetFormat(cli.OutputFormatJSON)
+		case "yaml":
+			client.Formatter.SetFormat(cli.OutputFormatYAML)
+		default:
+			client.Formatter.SetFormat(cli.OutputFormatText)
+		}
+
 		// Skip authentication for built-in Cobra commands (help, completion)
 		// These commands have no RunE or Run function
 		if cmd.RunE == nil && cmd.Run == nil {
@@ -72,17 +83,19 @@ var rootCmd = &cobra.Command{
 				summary.PrintSummary()
 				os.Exit(1)
 			}
-			if summary.WarningCount > 0 {
+			if summary.WarningCount > 0 && outputFormat != "json" && outputFormat != "yaml" {
 				fmt.Printf("⚠️  Configuration warnings detected (%d warnings)\n", summary.WarningCount)
 			}
 		}
 
 		// Check if API key is already set
 		if client.HasToken() {
-			if os.Getenv("IDP_API_KEY") != "" {
-				fmt.Printf("✓ Using API key from environment variable\n")
-			} else {
-				fmt.Printf("✓ Using API key from credentials file\n")
+			if outputFormat != "json" && outputFormat != "yaml" {
+				if os.Getenv("IDP_API_KEY") != "" {
+					fmt.Printf("✓ Using API key from environment variable\n")
+				} else {
+					fmt.Printf("✓ Using API key from credentials file\n")
+				}
 			}
 			return nil
 		}
@@ -108,6 +121,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&serverURL, "server", "http://localhost:8081", "Score orchestrator server URL")
 	rootCmd.PersistentFlags().BoolVar(&details, "details", false, "Show detailed information including URLs and workflow links")
 	rootCmd.PersistentFlags().BoolVar(&skipValidation, "skip-validation", false, "Skip configuration validation")
+	rootCmd.PersistentFlags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, or yaml")
 }
 
 // Basic commands

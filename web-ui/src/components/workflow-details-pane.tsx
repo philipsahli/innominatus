@@ -32,6 +32,7 @@ import {
   Info,
 } from 'lucide-react';
 import { WorkflowExecutionDetail, WorkflowStepExecution } from '@/lib/api';
+import { formatAsYAML } from '@/lib/formatters';
 
 // ============================================================================
 // Types & Utilities
@@ -265,7 +266,7 @@ function StepCard({ step, isExpanded, onToggle, onRetry, onCopyConfig, isCopied 
                 </Button>
               </div>
               <pre className="bg-gray-100 dark:bg-gray-900 p-2 rounded text-xs overflow-x-auto">
-                <code>{JSON.stringify(step.step_config, null, 2)}</code>
+                <code>{formatAsYAML(step.step_config)}</code>
               </pre>
             </div>
           )}
@@ -488,7 +489,7 @@ export function WorkflowDetailsPane({ workflow, onClose, onRetry }: WorkflowDeta
   const copyStepConfig = async (step: WorkflowStepExecution) => {
     try {
       const configText = step.step_config
-        ? JSON.stringify(step.step_config, null, 2)
+        ? formatAsYAML(step.step_config)
         : 'No configuration available';
       await navigator.clipboard.writeText(configText);
       setCopiedStepId(step.id);

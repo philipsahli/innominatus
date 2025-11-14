@@ -10,10 +10,11 @@ import (
 )
 
 type Client struct {
-	baseURL string
-	client  *http.Client
-	token   string
-	http    *HTTPHelper // HTTP helper for common operations
+	baseURL   string
+	client    *http.Client
+	token     string
+	http      *HTTPHelper      // HTTP helper for common operations
+	Formatter *OutputFormatter // Output formatter for CLI output
 }
 
 func NewClient(baseURL string) *Client {
@@ -40,10 +41,11 @@ func NewClient(baseURL string) *Client {
 	}
 
 	client := &Client{
-		baseURL: baseURL,
-		client:  httpClient,
-		token:   token,
-		http:    newHTTPHelper(baseURL, httpClient, token),
+		baseURL:   baseURL,
+		client:    httpClient,
+		token:     token,
+		http:      newHTTPHelper(baseURL, httpClient, token),
+		Formatter: NewOutputFormatter(),
 	}
 
 	return client

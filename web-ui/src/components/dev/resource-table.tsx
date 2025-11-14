@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { formatAsYAML } from '@/lib/formatters';
 
 export interface Resource {
   id: number;
@@ -144,7 +145,7 @@ function ResourceRow({ resource }: { resource: Resource }) {
               <div className="col-span-2">
                 <div className="text-zinc-500 dark:text-zinc-400 mb-1">Configuration</div>
                 <pre className="text-zinc-900 dark:text-white font-mono text-xs bg-zinc-100 dark:bg-zinc-900 p-2 rounded border border-zinc-200 dark:border-zinc-800 overflow-auto">
-                  {JSON.stringify(resource.configuration, null, 2)}
+                  {formatAsYAML(resource.configuration)}
                 </pre>
               </div>
             )}

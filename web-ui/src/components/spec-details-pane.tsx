@@ -22,6 +22,7 @@ import {
   GitBranch,
 } from 'lucide-react';
 import { GraphNode, GraphEdge } from '@/lib/api';
+import { formatAsYAML } from '@/lib/formatters';
 
 // ============================================================================
 // Types & Utilities
@@ -490,7 +491,7 @@ export function SpecDetailsPane({
                 </CardHeader>
                 <CardContent>
                   <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-xs overflow-x-auto max-h-96 overflow-y-auto">
-                    <code>{JSON.stringify(spec.metadata, null, 2)}</code>
+                    <code>{formatAsYAML(spec.metadata)}</code>
                   </pre>
                 </CardContent>
               </Card>

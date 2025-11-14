@@ -15,6 +15,7 @@ import {
 } from '@/components/dev/data-table';
 import { StatusBadge } from '@/components/dev/status-badge';
 import { api, formatDate, type ResourceInstance } from '@/lib/api';
+import { formatAsYAML } from '@/lib/formatters';
 
 interface ApplicationDetail {
   name: string;
@@ -343,7 +344,7 @@ export default function ApplicationDetailPage() {
             <pre className="overflow-x-auto text-xs text-zinc-700 dark:text-zinc-300">
               {typeof application.spec === 'string'
                 ? application.spec
-                : JSON.stringify(application.spec, null, 2)}
+                : formatAsYAML(application.spec)}
             </pre>
           </div>
         </div>

@@ -28,6 +28,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ResourceInstance } from '@/lib/api';
+import { formatAsYAML } from '@/lib/formatters';
 
 // ============================================================================
 // Types & Utilities
@@ -316,7 +317,7 @@ function ConfigurationCard({ configuration, onCopy, isCopied }: ConfigurationCar
       <CardContent>
         {hasConfig ? (
           <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-xs overflow-x-auto">
-            <code>{JSON.stringify(configuration, null, 2)}</code>
+            <code>{formatAsYAML(configuration)}</code>
           </pre>
         ) : (
           <p className="text-sm text-muted-foreground">No configuration data available</p>
@@ -434,7 +435,7 @@ export function ResourceDetailsPane({ resource, onClose }: ResourceDetailsPanePr
   const copyConfiguration = async () => {
     try {
       const configText = resource.configuration
-        ? JSON.stringify(resource.configuration, null, 2)
+        ? formatAsYAML(resource.configuration)
         : 'No configuration available';
       await navigator.clipboard.writeText(configText);
       setCopiedConfig(true);
@@ -515,7 +516,7 @@ export function ResourceDetailsPane({ resource, onClose }: ResourceDetailsPanePr
                   <div>
                     <p className="text-sm font-medium mb-2">Provider Metadata</p>
                     <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-xs overflow-x-auto">
-                      <code>{JSON.stringify(resource.provider_metadata, null, 2)}</code>
+                      <code>{formatAsYAML(resource.provider_metadata)}</code>
                     </pre>
                   </div>
                 ) : (

@@ -1,23 +1,77 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+// OutputFormat represents the output format type
+type OutputFormat string
+
+const (
+	OutputFormatText OutputFormat = "text"
+	OutputFormatJSON OutputFormat = "json"
+	OutputFormatYAML OutputFormat = "yaml"
 )
 
 // OutputFormatter provides standardized formatting for CLI output
 type OutputFormatter struct {
 	useEmojis bool
 	useColors bool
+	format    OutputFormat
 }
 
-// NewOutputFormatter creates a new output formatter
+// NewOutputFormatter creates a new output formatter with text format
 func NewOutputFormatter() *OutputFormatter {
 	return &OutputFormatter{
 		useEmojis: true,
 		useColors: false, // Can be enabled when color support is added
+		format:    OutputFormatText,
 	}
+}
+
+// SetFormat sets the output format
+func (f *OutputFormatter) SetFormat(format OutputFormat) {
+	f.format = format
+}
+
+// GetFormat returns the current output format
+func (f *OutputFormatter) GetFormat() OutputFormat {
+	return f.format
+}
+
+// IsJSON returns true if output format is JSON
+func (f *OutputFormatter) IsJSON() bool {
+	return f.format == OutputFormatJSON
+}
+
+// IsYAML returns true if output format is YAML
+func (f *OutputFormatter) IsYAML() bool {
+	return f.format == OutputFormatYAML
+}
+
+// PrintJSON marshals and prints data as JSON
+func (f *OutputFormatter) PrintJSON(data interface{}) error {
+	output, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Println(string(output))
+	return nil
+}
+
+// PrintYAML marshals and prints data as YAML
+func (f *OutputFormatter) PrintYAML(data interface{}) error {
+	output, err := yaml.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+	fmt.Println(string(output))
+	return nil
 }
 
 // Symbols for consistent output formatting

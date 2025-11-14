@@ -56,11 +56,10 @@ export function ActivityFeed({ appName = 'system', maxEvents = 20, className = '
 
   // Expose addEvent for parent components to use (for testing)
   useEffect(() => {
-    // @ts-ignore - attach to window for testing
     if (typeof window !== 'undefined') {
       window.__addActivityEvent = addEvent;
     }
-  }, []);
+  }, [addEvent]);
 
   if (events.length === 0) {
     return (

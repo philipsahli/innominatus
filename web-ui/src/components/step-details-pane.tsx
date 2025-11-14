@@ -18,6 +18,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { GraphNode } from '@/lib/api';
+import { formatAsYAML } from '@/lib/formatters';
 
 interface StepDetailsPaneProps {
   step: GraphNode | null;
@@ -211,7 +212,7 @@ export function StepDetailsPane({ step, onClose }: StepDetailsPaneProps) {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        copyToClipboard(JSON.stringify(stepConfig, null, 2), setCopiedConfig)
+                        copyToClipboard(formatAsYAML(stepConfig), setCopiedConfig)
                       }
                     >
                       {copiedConfig ? (
@@ -230,7 +231,7 @@ export function StepDetailsPane({ step, onClose }: StepDetailsPaneProps) {
                 </CardHeader>
                 <CardContent>
                   <pre className="bg-gray-900 text-green-400 p-3 rounded text-xs overflow-x-auto max-h-96 overflow-y-auto">
-                    <code>{JSON.stringify(stepConfig, null, 2)}</code>
+                    <code>{formatAsYAML(stepConfig)}</code>
                   </pre>
                 </CardContent>
               </Card>

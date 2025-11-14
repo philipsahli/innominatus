@@ -31,59 +31,69 @@ import (
 )
 
 func (c *Client) ListCommand(showDetails bool) error {
-	formatter := NewOutputFormatter()
 	specs, err := c.ListSpecs()
 	if err != nil {
 		return err
 	}
 
+	// JSON output mode
+	if c.Formatter.IsJSON() {
+		return c.Formatter.PrintJSON(specs)
+	}
+
+	// YAML output mode
+	if c.Formatter.IsYAML() {
+		return c.Formatter.PrintYAML(specs)
+	}
+
+	// Text output mode
 	if len(specs) == 0 {
-		formatter.PrintEmptyState("No applications deployed")
+		c.Formatter.PrintEmptyState("No applications deployed")
 		return nil
 	}
 
-	formatter.PrintHeader(fmt.Sprintf("Deployed Applications (%d):", len(specs)))
+	c.Formatter.PrintHeader(fmt.Sprintf("Deployed Applications (%d):", len(specs)))
 
 	// Fetch workflows if details are requested
 	var allWorkflows []interface{}
 	if showDetails {
-		formatter.PrintInfo(fmt.Sprintf("%s Fetching workflow data for detailed view...", SymbolSearch))
+		c.Formatter.PrintInfo(fmt.Sprintf("%s Fetching workflow data for detailed view...", SymbolSearch))
 		workflows, err := c.ListWorkflows("")
 		if err != nil {
-			formatter.PrintWarning(fmt.Sprintf("Could not fetch workflow data: %v", err))
+			c.Formatter.PrintWarning(fmt.Sprintf("Could not fetch workflow data: %v", err))
 		} else {
 			allWorkflows = workflows
-			formatter.PrintSuccess(fmt.Sprintf("Found %d workflow executions", len(allWorkflows)))
+			c.Formatter.PrintSuccess(fmt.Sprintf("Found %d workflow executions", len(allWorkflows)))
 		}
 	}
 
 	for name, spec := range specs {
-		formatter.PrintEmpty()
-		formatter.PrintSection(0, SymbolApp, fmt.Sprintf("Application: %s", name))
+		c.Formatter.PrintEmpty()
+		c.Formatter.PrintSection(0, SymbolApp, fmt.Sprintf("Application: %s", name))
 
 		// Show metadata
 		if spec.Metadata != nil {
 			if apiVersion, ok := spec.Metadata["APIVersion"].(string); ok {
-				formatter.PrintKeyValue(1, "API Version", apiVersion)
+				c.Formatter.PrintKeyValue(1, "API Version", apiVersion)
 			}
 		}
 
 		// Show containers
 		if len(spec.Containers) > 0 {
-			formatter.PrintSection(1, SymbolContainer, fmt.Sprintf("Containers (%d):", len(spec.Containers)))
+			c.Formatter.PrintSection(1, SymbolContainer, fmt.Sprintf("Containers (%d):", len(spec.Containers)))
 			for containerName, container := range spec.Containers {
 				if containerMap, ok := container.(map[string]interface{}); ok {
 					image := "unknown"
 					if img, ok := containerMap["Image"].(string); ok {
 						image = img
 					}
-					formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s: %s", containerName, image))
+					c.Formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s: %s", containerName, image))
 
 					// Show container variables
 					if variables, ok := containerMap["Variables"].(map[string]interface{}); ok && len(variables) > 0 {
 						fmt.Printf("        Variables:\n")
 						for key, value := range variables {
-							formatter.PrintKeyValue(3, key, value)
+							c.Formatter.PrintKeyValue(3, key, value)
 						}
 					}
 				}
@@ -92,59 +102,59 @@ func (c *Client) ListCommand(showDetails bool) error {
 
 		// Show resources with detailed information
 		if len(spec.Resources) > 0 {
-			formatter.PrintSection(1, SymbolResource, fmt.Sprintf("Resources (%d):", len(spec.Resources)))
+			c.Formatter.PrintSection(1, SymbolResource, fmt.Sprintf("Resources (%d):", len(spec.Resources)))
 			for resourceName, resource := range spec.Resources {
 				if resourceMap, ok := resource.(map[string]interface{}); ok {
 					resourceType := "unknown"
 					if rType, ok := resourceMap["Type"].(string); ok {
 						resourceType = rType
 					}
-					formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s (%s)", resourceName, resourceType))
+					c.Formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s (%s)", resourceName, resourceType))
 
 					// Show resource parameters
 					if params, ok := resourceMap["Params"].(map[string]interface{}); ok && len(params) > 0 {
 						fmt.Printf("        Parameters:\n")
 						for key, value := range params {
-							formatter.PrintKeyValue(3, key, value)
+							c.Formatter.PrintKeyValue(3, key, value)
 						}
 					}
 				}
 			}
 		} else {
-			formatter.PrintSection(1, SymbolResource, "Resources: None")
+			c.Formatter.PrintSection(1, SymbolResource, "Resources: None")
 		}
 
 		// Show environment information
 		if spec.Environment != nil {
-			formatter.PrintSection(1, SymbolEnv, "Environment:")
+			c.Formatter.PrintSection(1, SymbolEnv, "Environment:")
 			if envType, ok := spec.Environment["type"].(string); ok {
-				formatter.PrintKeyValue(2, "Type", envType)
+				c.Formatter.PrintKeyValue(2, "Type", envType)
 			}
 			if ttl, ok := spec.Environment["ttl"].(string); ok {
-				formatter.PrintKeyValue(2, "TTL", ttl)
+				c.Formatter.PrintKeyValue(2, "TTL", ttl)
 			}
 		}
 
 		// Show dependency graph
 		if len(spec.Graph) > 0 {
-			formatter.PrintSection(1, SymbolLink, "Dependencies:")
+			c.Formatter.PrintSection(1, SymbolLink, "Dependencies:")
 			for container, dependencies := range spec.Graph {
 				for _, resource := range dependencies {
-					formatter.PrintItem(2, "", fmt.Sprintf("%s %s %s", container, SymbolArrow, resource))
+					c.Formatter.PrintItem(2, "", fmt.Sprintf("%s %s %s", container, SymbolArrow, resource))
 				}
 			}
 		}
 
 		// Show detailed information if requested
 		if showDetails {
-			formatter.PrintInfo("   📋 Details enabled - showing additional information:")
+			c.Formatter.PrintInfo("   📋 Details enabled - showing additional information:")
 			c.showDetailedInfo(name, spec, allWorkflows)
 		}
 
-		formatter.PrintDivider(1)
+		c.Formatter.PrintDivider(1)
 	}
 
-	formatter.PrintCount("application(s) deployed", len(specs))
+	c.Formatter.PrintCount("application(s) deployed", len(specs))
 	return nil
 }
 
@@ -684,20 +694,28 @@ func (c *Client) deleteTeamCommand(teamID string) error {
 
 // ListGoldenPathsCommand lists all available golden paths with metadata from the server
 func (c *Client) ListGoldenPathsCommand() error {
-	formatter := NewOutputFormatter()
-
 	// Fetch golden paths from the server API
 	paths, err := c.GetGoldenPaths()
 	if err != nil {
 		return fmt.Errorf("failed to load golden paths: %w", err)
 	}
 
+	// JSON output mode
+	if c.Formatter.IsJSON() {
+		return c.Formatter.PrintJSON(paths)
+	}
+
+	// YAML output mode
+	if c.Formatter.IsYAML() {
+		return c.Formatter.PrintYAML(paths)
+	}
+
 	if len(paths) == 0 {
-		formatter.PrintEmptyState("No golden paths configured")
+		c.Formatter.PrintEmptyState("No golden paths configured")
 		return nil
 	}
 
-	formatter.PrintHeader(fmt.Sprintf("Available Golden Paths (%d):", len(paths)))
+	c.Formatter.PrintHeader(fmt.Sprintf("Available Golden Paths (%d):", len(paths)))
 
 	// Sort path names for consistent output
 	pathNames := make([]string, 0, len(paths))
@@ -709,53 +727,53 @@ func (c *Client) ListGoldenPathsCommand() error {
 	for _, pathName := range pathNames {
 		metadata := paths[pathName]
 
-		formatter.PrintEmpty()
-		formatter.PrintSection(0, SymbolWorkflow, pathName)
+		c.Formatter.PrintEmpty()
+		c.Formatter.PrintSection(0, SymbolWorkflow, pathName)
 
 		// Description
 		if metadata.Description != "" {
-			formatter.PrintKeyValue(1, "Description", metadata.Description)
+			c.Formatter.PrintKeyValue(1, "Description", metadata.Description)
 		}
 
 		// Workflow file
 		if metadata.WorkflowFile != "" {
-			formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
+			c.Formatter.PrintKeyValue(1, "Workflow", metadata.WorkflowFile)
 		}
 
 		// Category and duration
 		if metadata.Category != "" {
-			formatter.PrintKeyValue(1, "Category", metadata.Category)
+			c.Formatter.PrintKeyValue(1, "Category", metadata.Category)
 		}
 		if metadata.EstimatedDuration != "" {
-			formatter.PrintKeyValue(1, "Duration", metadata.EstimatedDuration)
+			c.Formatter.PrintKeyValue(1, "Duration", metadata.EstimatedDuration)
 		}
 
 		// Tags
 		if len(metadata.Tags) > 0 {
-			formatter.PrintKeyValue(1, "Tags", strings.Join(metadata.Tags, ", "))
+			c.Formatter.PrintKeyValue(1, "Tags", strings.Join(metadata.Tags, ", "))
 		}
 
 		// Required parameters (backward compatibility)
 		if len(metadata.RequiredParams) > 0 {
-			formatter.PrintSection(1, "", "Required Parameters:")
+			c.Formatter.PrintSection(1, "", "Required Parameters:")
 			for _, param := range metadata.RequiredParams {
-				formatter.PrintItem(2, SymbolBullet, param)
+				c.Formatter.PrintItem(2, SymbolBullet, param)
 			}
 		}
 
 		// Optional parameters with defaults (backward compatibility)
 		if len(metadata.OptionalParams) > 0 {
-			formatter.PrintSection(1, "", "Optional Parameters:")
+			c.Formatter.PrintSection(1, "", "Optional Parameters:")
 			for param, defaultValue := range metadata.OptionalParams {
-				formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s (default: %s)", param, defaultValue))
+				c.Formatter.PrintItem(2, SymbolBullet, fmt.Sprintf("%s (default: %s)", param, defaultValue))
 			}
 		}
 
-		formatter.PrintDivider(0)
+		c.Formatter.PrintDivider(0)
 	}
 
-	formatter.PrintEmpty()
-	formatter.PrintInfo("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]")
+	c.Formatter.PrintEmpty()
+	c.Formatter.PrintInfo("Run a golden path: ./innominatus-ctl run <path-name> [score-spec.yaml] [--param key=value]")
 
 	return nil
 }
@@ -1590,6 +1608,16 @@ func (c *Client) ListWorkflowsCommand(appName string) error {
 		return err
 	}
 
+	// JSON output mode
+	if c.Formatter.IsJSON() {
+		return c.Formatter.PrintJSON(workflows)
+	}
+
+	// YAML output mode
+	if c.Formatter.IsYAML() {
+		return c.Formatter.PrintYAML(workflows)
+	}
+
 	if len(workflows) == 0 {
 		if appName != "" {
 			fmt.Printf("No workflow executions found for application '%s'\n", appName)
@@ -2124,6 +2152,16 @@ func (c *Client) ListResourcesCommand(appName, resourceType, state string) error
 	// Apply client-side filtering
 	if resourceType != "" || state != "" {
 		resources = c.filterResources(resources, resourceType, state)
+	}
+
+	// JSON output mode
+	if c.Formatter.IsJSON() {
+		return c.Formatter.PrintJSON(resources)
+	}
+
+	// YAML output mode
+	if c.Formatter.IsYAML() {
+		return c.Formatter.PrintYAML(resources)
 	}
 
 	if len(resources) == 0 {
@@ -2835,35 +2873,43 @@ func (c *Client) ProviderCommand(args []string) error {
 
 // ListProvidersCommand lists all loaded providers
 func (c *Client) ListProvidersCommand() error {
-	formatter := NewOutputFormatter()
-
 	providers, err := c.ListProviders()
 	if err != nil {
 		return fmt.Errorf("failed to list providers: %w", err)
 	}
 
+	// JSON output mode
+	if c.Formatter.IsJSON() {
+		return c.Formatter.PrintJSON(providers)
+	}
+
+	// YAML output mode
+	if c.Formatter.IsYAML() {
+		return c.Formatter.PrintYAML(providers)
+	}
+
 	if len(providers) == 0 {
-		formatter.PrintEmptyState("No providers loaded")
+		c.Formatter.PrintEmptyState("No providers loaded")
 		return nil
 	}
 
-	formatter.PrintHeader(fmt.Sprintf("Loaded Providers (%d):", len(providers)))
+	c.Formatter.PrintHeader(fmt.Sprintf("Loaded Providers (%d):", len(providers)))
 
 	for _, provider := range providers {
-		formatter.PrintEmpty()
-		formatter.PrintSection(0, SymbolApp, fmt.Sprintf("%s v%s", provider.Name, provider.Version))
+		c.Formatter.PrintEmpty()
+		c.Formatter.PrintSection(0, SymbolApp, fmt.Sprintf("%s v%s", provider.Name, provider.Version))
 
 		if provider.Category != "" {
-			formatter.PrintKeyValue(1, "Category", provider.Category)
+			c.Formatter.PrintKeyValue(1, "Category", provider.Category)
 		}
 		if provider.Description != "" {
-			formatter.PrintKeyValue(1, "Description", provider.Description)
+			c.Formatter.PrintKeyValue(1, "Description", provider.Description)
 		}
-		formatter.PrintKeyValue(1, "Provisioners", fmt.Sprintf("%d", provider.Provisioners))
-		formatter.PrintKeyValue(1, "Golden Paths", fmt.Sprintf("%d", provider.GoldenPaths))
+		c.Formatter.PrintKeyValue(1, "Provisioners", fmt.Sprintf("%d", provider.Provisioners))
+		c.Formatter.PrintKeyValue(1, "Golden Paths", fmt.Sprintf("%d", provider.GoldenPaths))
 	}
 
-	formatter.PrintEmpty()
+	c.Formatter.PrintEmpty()
 	return nil
 }
 

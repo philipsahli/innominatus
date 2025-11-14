@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { Application } from '@/lib/api';
 import { api } from '@/lib/api';
+import { formatAsYAML } from '@/lib/formatters';
 import { useDeprovisionApplication, useDeleteApplication } from '@/hooks/use-api';
 import {
   AlertDialog,
@@ -268,7 +269,7 @@ export function ApplicationDetailsPane({ application, onClose }: ApplicationDeta
                   <p className="text-sm text-muted-foreground">Loading spec...</p>
                 ) : spec ? (
                   <pre className="bg-gray-100 dark:bg-gray-900 p-3 rounded text-xs overflow-x-auto max-h-96 overflow-y-auto">
-                    <code>{JSON.stringify(spec, null, 2)}</code>
+                    <code>{formatAsYAML(spec)}</code>
                   </pre>
                 ) : (
                   <p className="text-sm text-muted-foreground">No spec data available</p>
