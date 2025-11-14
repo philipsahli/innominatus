@@ -66,7 +66,8 @@ func startCallbackServer(expectedState string) (port int, callbackURL string, re
 	// Create HTTP server
 	mux := http.NewServeMux()
 	server := &http.Server{
-		Handler: mux,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 	}
 
 	// Handle callback

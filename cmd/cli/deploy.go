@@ -44,6 +44,7 @@ Examples:
 		specFile := args[0]
 
 		// Read spec file
+		// #nosec G304 - specFile is a user-provided CLI argument (expected behavior)
 		specData, err := os.ReadFile(specFile)
 		if err != nil {
 			return fmt.Errorf("failed to read spec file: %w", err)

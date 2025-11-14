@@ -4434,6 +4434,7 @@ func getAPIKeyHashSecret() string {
 	secret := os.Getenv("API_KEY_HASH_SECRET")
 	if secret == "" {
 		// Default secret (CHANGE THIS IN PRODUCTION)
+		// #nosec G101 - This is a documented fallback for development only
 		secret = "innominatus-api-key-secret-change-me-in-production"
 	}
 	return secret

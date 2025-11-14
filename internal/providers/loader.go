@@ -268,6 +268,7 @@ func (l *Loader) validateProviderWorkflows(providerDir string, provider *sdk.Pro
 		workflowPath := filepath.Join(providerDir, workflowMeta.File)
 
 		// Read and parse workflow YAML
+		// #nosec G304 - workflowPath is constructed from validated providerDir and provider.yaml metadata
 		data, err := os.ReadFile(workflowPath)
 		if err != nil {
 			return fmt.Errorf("workflow '%s': failed to read file %s: %w",
