@@ -60,7 +60,7 @@ archives:
       - README.md
       - LICENSE
       - examples/admin-config.yaml
-      - examples/goldenpaths.yaml
+      # NOTE: goldenpaths.yaml removed - golden paths now defined in provider manifests
       - workflows/**
       - docs/**
 

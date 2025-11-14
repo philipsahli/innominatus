@@ -65,7 +65,7 @@ COPY --from=go-builder /build/innominatus-ctl /app/innominatus-ctl
 
 # Copy configuration files from examples directory
 COPY examples/admin-config.yaml /app/admin-config.yaml
-COPY examples/goldenpaths.yaml /app/goldenpaths.yaml
+# NOTE: goldenpaths.yaml removed - golden paths now defined in provider manifests
 COPY workflows/ /app/workflows/
 COPY providers/ /app/providers/
 

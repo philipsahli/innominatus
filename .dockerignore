@@ -62,10 +62,10 @@ terraform/.terraform.lock.hcl
 ansible/*.retry
 ansible/.ansible
 
-# Example and demo files (but keep admin-config.yaml and goldenpaths.yaml)
+# Example and demo files (but keep admin-config.yaml)
+# NOTE: goldenpaths.yaml removed - golden paths now defined in provider manifests
 examples/*
 !examples/admin-config.yaml
-!examples/goldenpaths.yaml
 example-*.yaml
 score-spec*.yaml
 
