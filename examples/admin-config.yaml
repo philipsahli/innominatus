@@ -7,10 +7,11 @@ admin:
 # Providers can be loaded from filesystem or Git repositories
 providers:
   # Filesystem provider (built-in provisioners)
+  # Disabled - no workflows defined yet
   - name: builtin
     type: filesystem
     path: ./providers/builtin
-    enabled: true
+    enabled: false
 
   # Filesystem provider (storage team demo)
   - name: storage-team
