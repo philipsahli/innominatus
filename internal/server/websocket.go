@@ -182,15 +182,74 @@ func getStringFromMap(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// handleGraphWebSocket handles WebSocket connections for real-time graph updates
-func (s *Server) handleGraphWebSocket(w http.ResponseWriter, r *http.Request, appName string) {
-	// Authenticate the connection using existing session system
-	_, exists := s.getSessionFromRequestWithToken(r)
-	if !exists {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+// HandleDebugWebSocket handles WebSocket connections for debugging (NO AUTHENTICATION)
+// WARNING: This endpoint is for development/debugging purposes only
+// It bypasses authentication to allow testing WebSocket connectivity
+func (s *Server) HandleDebugWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Upgrade HTTP connection to WebSocket WITHOUT authentication check
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to upgrade debug websocket: %v\n", err)
 		return
 	}
 
+	// Send debug information message
+	debugMsg := map[string]interface{}{
+		"status":    "connected",
+		"timestamp": time.Now().Format(time.RFC3339),
+		"message":   "Debug WebSocket connected successfully (no authentication required)",
+		"endpoint":  "/api/debug/ws",
+		"warning":   "This is a debug endpoint - authentication is bypassed",
+	}
+
+	message, err := json.Marshal(debugMsg)
+	if err == nil {
+		_ = conn.WriteMessage(websocket.TextMessage, message)
+	}
+
+	// Keep connection alive with ping/pong
+	go func() {
+		defer func() { _ = conn.Close() }()
+
+		// Set up ping/pong handlers
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetPongHandler(func(string) error {
+			_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			return nil
+		})
+
+		// Read loop for client messages
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+
+			// Echo back any messages received with debug prefix
+			response := map[string]interface{}{
+				"type":      "echo",
+				"timestamp": time.Now().Format(time.RFC3339),
+				"received":  string(msg),
+			}
+			respMsg, _ := json.Marshal(response)
+			_ = conn.WriteMessage(websocket.TextMessage, respMsg)
+		}
+	}()
+
+	// Send periodic pings
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			return
+		}
+	}
+}
+
+// handleGraphWebSocket handles WebSocket connections for real-time graph updates
+// Authentication is handled by AuthMiddleware before this handler is called
+func (s *Server) handleGraphWebSocket(w http.ResponseWriter, r *http.Request, appName string) {
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

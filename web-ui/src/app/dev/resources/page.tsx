@@ -88,7 +88,9 @@ export default function ResourcesPage() {
 
   // Count active filters
   const activeFilterCount =
-    (typeFilter !== 'all' ? 1 : 0) + (stateFilter !== 'all' ? 1 : 0) + (appFilter !== 'all' ? 1 : 0);
+    (typeFilter !== 'all' ? 1 : 0) +
+    (stateFilter !== 'all' ? 1 : 0) +
+    (appFilter !== 'all' ? 1 : 0);
 
   return (
     <div className="space-y-6">

@@ -282,6 +282,28 @@ func (s *Server) getSessionFromRequestWithToken(r *http.Request) (*auth.Session,
 		}
 	}
 
+	// Finally, try to get token from query string (for WebSocket connections)
+	// WebSocket API doesn't support custom headers, so token must be passed in URL
+	queryToken := r.URL.Query().Get("token")
+	if queryToken != "" {
+		// First try session token
+		if session, exists := s.sessionManager.GetSession(queryToken); exists {
+			return session, true
+		}
+
+		// Then try API key authentication
+		if user, err := s.authenticateWithAPIKey(queryToken); err == nil {
+			// Create a temporary session for the API key user
+			session := &auth.Session{
+				ID:        queryToken, // Use API key as session ID
+				User:      user,
+				CreatedAt: time.Now(),
+				ExpiresAt: time.Now().Add(24 * time.Hour), // Temporary session
+			}
+			return session, true
+		}
+	}
+
 	return nil, false
 }
 

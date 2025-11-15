@@ -4,6 +4,7 @@
  */
 
 import type { GraphNode, GraphEdge } from './api';
+import { getWebSocketAuthToken } from './api';
 
 // Event from the backend when graph changes occur
 export interface GraphEvent {
@@ -71,9 +72,22 @@ export class GraphWebSocket {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/graph/${encodeURIComponent(this.appName)}/ws`;
+    // Detect Next.js dev server (port 3000) vs Go server (port 8081+)
+    // Port 3000 = Next.js dev server → connect to Go server on 8081
+    // Port 8081 (or other) = Go server → connect to same host
+    const isNextDevServer = typeof window !== 'undefined' && window.location.port === '3000';
+    const protocol =
+      typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = isNextDevServer
+      ? 'localhost:8081'
+      : typeof window !== 'undefined'
+        ? window.location.host
+        : 'localhost:8081';
+
+    // Get authentication token for WebSocket connection
+    const token = getWebSocketAuthToken();
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+    const wsUrl = `${protocol}//${host}/api/graph/${encodeURIComponent(this.appName)}/ws${tokenParam}`;
 
     try {
       this.ws = new WebSocket(wsUrl);

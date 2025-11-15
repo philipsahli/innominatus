@@ -8,10 +8,10 @@ import yaml from 'js-yaml';
 export function formatAsYAML(data: any): string {
   try {
     return yaml.dump(data, {
-      indent: 2,           // 2 spaces per indent level
-      lineWidth: -1,       // No line wrapping
-      noRefs: true,        // Don't use anchors/references
-      sortKeys: false,     // Preserve original key order (IMPORTANT!)
+      indent: 2, // 2 spaces per indent level
+      lineWidth: -1, // No line wrapping
+      noRefs: true, // Don't use anchors/references
+      sortKeys: false, // Preserve original key order (IMPORTANT!)
     });
   } catch (error) {
     console.error('Failed to format as YAML:', error);

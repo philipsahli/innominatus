@@ -779,6 +779,33 @@ export interface ProviderStats {
 
 export const api = new ApiClient();
 
+/**
+ * Get authentication token for WebSocket connections
+ * Checks both localStorage (for API keys) and cookies (for session tokens)
+ * @returns Authentication token or null if not authenticated
+ */
+export function getWebSocketAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  // First try localStorage (for API keys)
+  const apiToken = localStorage.getItem('auth-token');
+  if (apiToken) {
+    return apiToken;
+  }
+
+  // Then try session cookie (for web UI login)
+  // Session ID is stored in 'session_token' cookie
+  const cookies = document.cookie.split(';');
+  for (const cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'session_token') {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 // Safe date formatter that handles invalid dates
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return '—';

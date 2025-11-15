@@ -14,7 +14,11 @@ interface ActivityFeedProps {
  * Live activity feed showing real-time graph events
  * Displays what's happening in the system as it happens
  */
-export function ActivityFeed({ appName = 'system', maxEvents = 20, className = '' }: ActivityFeedProps) {
+export function ActivityFeed({
+  appName = 'system',
+  maxEvents = 20,
+  className = '',
+}: ActivityFeedProps) {
   const [events, setEvents] = useState<GraphEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<GraphWebSocket | null>(null);
@@ -63,7 +67,9 @@ export function ActivityFeed({ appName = 'system', maxEvents = 20, className = '
 
   if (events.length === 0) {
     return (
-      <div className={`rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950 ${className}`}>
+      <div
+        className={`rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950 ${className}`}
+      >
         <h3 className="mb-4 text-sm font-semibold text-zinc-900 dark:text-white">Live Activity</h3>
         <div className="text-center text-sm text-zinc-500 dark:text-zinc-500">
           <p>No recent activity</p>
@@ -74,7 +80,9 @@ export function ActivityFeed({ appName = 'system', maxEvents = 20, className = '
   }
 
   return (
-    <div className={`rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${className}`}>
+    <div
+      className={`rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${className}`}
+    >
       {/* Header */}
       <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div className="flex items-center justify-between">

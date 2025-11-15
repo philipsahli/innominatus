@@ -211,9 +211,7 @@ export function StepDetailsPane({ step, onClose }: StepDetailsPaneProps) {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        copyToClipboard(formatAsYAML(stepConfig), setCopiedConfig)
-                      }
+                      onClick={() => copyToClipboard(formatAsYAML(stepConfig), setCopiedConfig)}
                     >
                       {copiedConfig ? (
                         <>
