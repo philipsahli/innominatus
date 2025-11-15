@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"innominatus/internal/metrics"
 	"time"
 )
 
@@ -144,6 +145,23 @@ func (r *WorkflowRepository) UpdateWorkflowStepStatus(stepID int64, status strin
 	_, err := r.db.db.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update workflow step status: %w", err)
+	}
+
+	// Record step metrics when step completes or fails
+	if status == StepStatusCompleted || status == StepStatusFailed {
+		// Fetch step info to get step type and duration
+		var stepType string
+		var durationMs sql.NullInt64
+		err := r.db.db.QueryRow(`
+			SELECT step_type, duration_ms
+			FROM workflow_step_executions
+			WHERE id = $1
+		`, stepID).Scan(&stepType, &durationMs)
+
+		if err == nil && durationMs.Valid {
+			// Record step execution metrics
+			metrics.GetGlobal().RecordWorkflowStep(stepType, status == StepStatusCompleted, durationMs.Int64)
+		}
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"innominatus/internal/metrics"
 )
 
 // Common errors
@@ -237,6 +238,9 @@ func (r *ResourceRepository) UpdateResourceInstanceState(id int64, newState Reso
 		return fmt.Errorf("failed to create state transition record: %w", err)
 	}
 
+	// Record metrics for state transition
+	metrics.GetGlobal().RecordResourceStateTransition(currentState, string(newState))
+
 	return tx.Commit()
 }
 
@@ -276,8 +280,8 @@ func (r *ResourceRepository) UpdateResourceHints(id int64, hints []ResourceHint)
 }
 
 // CreateHealthCheck records a health check result
-func (r *ResourceRepository) CreateHealthCheck(resourceID int64, checkType, status string, responseTime *int64, errorMessage *string, metrics map[string]interface{}) error {
-	metricsJSON, _ := json.Marshal(metrics)
+func (r *ResourceRepository) CreateHealthCheck(resourceID int64, checkType, status string, responseTime *int64, errorMessage *string, metricsData map[string]interface{}) error {
+	metricsJSON, _ := json.Marshal(metricsData)
 
 	query := `
 		INSERT INTO resource_health_checks
@@ -288,6 +292,14 @@ func (r *ResourceRepository) CreateHealthCheck(resourceID int64, checkType, stat
 	if err != nil {
 		return fmt.Errorf("failed to create health check record: %w", err)
 	}
+
+	// Record health check metrics
+	success := status == "healthy"
+	var responseTimeMs int64
+	if responseTime != nil {
+		responseTimeMs = *responseTime
+	}
+	metrics.GetGlobal().RecordResourceHealthCheck(success, responseTimeMs)
 
 	return nil
 }
